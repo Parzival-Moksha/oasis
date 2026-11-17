@@ -38,6 +38,12 @@ describe('connectionWarnings', () => {
     expect(ids({ relay: { running: null, seen: true } })).toEqual([])
   })
 
+  it('says an outdated engine needs a restart while it is connected', () => {
+    const open = { status: 'open' as const, since: 0, nextRetryAt: null, error: null }
+    expect(ids({ engine: open, engineOutdated: true })).toEqual(['engine-old'])
+    expect(ids({ engine: open, engineOutdated: false })).toEqual([])
+  })
+
   it('with the server down, the relay (checked through it) is not reported on top', () => {
     expect(ids({ serverFailures: SERVER_FAILS_DOWN, relay: { running: false, seen: true } })).toEqual(['oasis'])
   })

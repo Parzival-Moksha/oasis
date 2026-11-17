@@ -21,9 +21,11 @@ export interface WatchInput {
    * since this page loaded. It is optional locally, so it only counts as down once it was seen up.
    */
   relay: { running: boolean | null; seen: boolean } | null
+  /** The engine answered "unknown command" since it last connected: it runs older code than this page. */
+  engineOutdated?: boolean
 }
 
-export type WarningId = 'oasis' | 'engine' | 'relay'
+export type WarningId = 'oasis' | 'engine' | 'engine-old' | 'relay'
 
 export interface ConnectionWarningLine {
   id: WarningId
@@ -47,6 +49,9 @@ export function connectionWarnings(input: WatchInput): ConnectionWarningLine[] {
       detail: `Your agents can't hear you. Run pnpm dev:engine${retryIn !== null ? ` · retry in ${retryIn}s` : ''}.`,
       action: 'retry-engine',
     })
+  }
+  if (input.engineOutdated && engine?.status === 'open') {
+    out.push({ id: 'engine-old', title: 'Agent engine is older than this page', detail: 'Restart it: close the ENGINE window, double-click the OASIS shortcut.' })
   }
   if (!serverDown && input.relay?.seen && input.relay.running === false) {
     out.push({ id: 'relay', title: 'Relay offline', detail: 'Hermes and OpenClaw bridges are cut off. Run pnpm dev:relay.', action: 'start-relay' })

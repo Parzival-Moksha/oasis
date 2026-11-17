@@ -5,6 +5,9 @@
 // Save button (Ctrl+S too). Saving writes the file back through the engine, to the path the agent sent it from and
 // nowhere else. Leaving with unsaved edits (switching to Read, closing, Esc) asks first: Save / Discard / Keep editing.
 // If the file changed on disk meanwhile (the agent rewrote it), Save says so and offers to overwrite.
+// Edit has voice typing (the mic button, or Ctrl+Space): the live dictation of the agent chats
+// (lib/voice/village-dictation.ts, under the key md:<file>) writes where the cursor is; typing while it listens
+// moves the spot to the new cursor. Leaving Edit or closing stops the mic; what it wrote stays in the text.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
@@ -14,8 +17,76 @@ import remarkGfm from 'remark-gfm'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { closeMdReader, getMdReaderTarget, subscribeMdReader } from '../../lib/village/md-reader'
 import { useInputManager } from '../../lib/input-manager'
+import { dictationVersion, dictationView, draftText, setDraftText, stopDictation, subscribeDictation, toggleDictation } from '../../lib/voice/village-dictation'
 
 const READER_Z = 2147483100
+
+/** before + spoken + after, with a space on each side where the words would otherwise touch. */
+export function insertSpoken(before: string, spoken: string, after: string): { text: string; caret: number } {
+  if (!spoken) return { text: before + after, caret: before.length }
+  const left = before && !/\s$/.test(before) ? ' ' : ''
+  const right = after && !/^\s/.test(after) ? ' ' : ''
+  const head = `${before}${left}${spoken}${right}`
+  return { text: head + after, caret: head.length - right.length }
+}
+
+/**
+ * Voice typing into the reader's text: where the words go (the text before and after the cursor when the mic
+ * started, or when the owner last typed), and the dictation's words in between.
+ */
+function useReaderDictation(key: string, area: React.RefObject<HTMLTextAreaElement | null>, draft: string, setDraft: (text: string) => void, active: boolean) {
+  useSyncExternalStore(subscribeDictation, dictationVersion, () => 0)
+  const view = dictationView(key)
+  const anchor = useRef<{ before: string; after: string } | null>(null)
+
+  const anchorAtCursor = (text: string, at: number) => { anchor.current = { before: text.slice(0, at), after: text.slice(at) } }
+
+  // The words so far, placed between before and after; the cursor goes after them.
+  const spoken = view.listening || view.settling ? draftText(key) : ''
+  useEffect(() => {
+    const spot = anchor.current
+    if (!spot) return
+    const { text, caret } = insertSpoken(spot.before, draftText(key), spot.after)
+    if (text !== draft) {
+      setDraft(text)
+      requestAnimationFrame(() => {
+        const el = area.current
+        if (el && document.activeElement === el) el.setSelectionRange(caret, caret)
+      })
+    }
+    // The mic is off and its last words are in: the next start begins clean.
+    if (view.phase === 'idle') {
+      anchor.current = null
+      setDraftText(key, '')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spoken, view.phase])
+
+  // Out of Edit, or the reader closed: the mic stops (its words stay), and the spare draft goes.
+  useEffect(() => {
+    if (active) return
+    stopDictation(key)
+  }, [active, key])
+  useEffect(() => () => { stopDictation(key); setDraftText(key, '') }, [key])
+
+  return {
+    view,
+    toggle: () => {
+      if (!view.listening) {
+        const el = area.current
+        anchorAtCursor(draft, el ? el.selectionStart : draft.length)
+        setDraftText(key, '')
+      }
+      toggleDictation(key)
+    },
+    /** The owner typed: what is in the box is the text now, and the words go on at the new cursor. */
+    typed: (text: string, at: number) => {
+      if (!anchor.current) return
+      setDraftText(key, '')
+      anchorAtCursor(text, at)
+    },
+  }
+}
 
 type Mode = 'read' | 'edit'
 type Ask = null | 'leave' | 'overwrite'
@@ -51,6 +122,10 @@ function Reader({ fileId, name }: { fileId: string; name: string }) {
   // What the owner was doing when the question came up: closing the reader, or going back to Read.
   const [after, setAfter] = useState<'read' | 'close'>('close')
   const dirty = saved !== null && draft !== saved
+  const area = useRef<HTMLTextAreaElement>(null)
+  const mic = useReaderDictation(`md:${fileId}`, area, draft, setDraft, mode === 'edit' && saved !== null)
+  const micRef = useRef(mic)
+  micRef.current = mic
 
   useEffect(() => {
     let live = true
@@ -111,6 +186,9 @@ function Reader({ fileId, name }: { fileId: string; name: string }) {
         if (asking) setAsk(null)
         else if (current === 'edit' && isDirty) { setAfter('close'); setAsk('leave') }
         else closeMdReader()
+      } else if (event.ctrlKey && event.code === 'Space' && current === 'edit') {
+        event.preventDefault()
+        micRef.current.toggle()
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && current === 'edit') {
         event.preventDefault()
         if (isDirty) void doSave()
@@ -158,10 +236,24 @@ function Reader({ fileId, name }: { fileId: string; name: string }) {
           <span aria-hidden>📄</span>
           <span className="min-w-0 flex-1 truncate text-[14px] font-bold" title={name}>{name}{dirty ? ' •' : ''}</span>
           {message && <span data-reader-message className="text-[11px] text-emerald-200/90">{message}</span>}
+          {mode === 'edit' && mic.view.error && <span data-reader-mic-error className="max-w-[260px] truncate text-[11px] text-red-200" title={mic.view.error}>{mic.view.error}</span>}
           <div className="flex overflow-hidden rounded-md border border-white/15" role="group" aria-label="Reader mode">
             {tab('read', 'Read')}
             {tab('edit', 'Edit')}
           </div>
+          {mode === 'edit' && mic.view.supported && (
+            <button
+              type="button"
+              data-reader-mic={mic.view.listening ? 'on' : mic.view.settling ? 'settling' : 'off'}
+              onMouseDown={event => event.preventDefault()}
+              onClick={() => mic.toggle()}
+              className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-bold transition ${mic.view.listening ? 'border-rose-300/60 bg-rose-500/25 text-rose-50' : 'border-white/20 bg-white/5 text-slate-200 hover:bg-white/15'}`}
+              title={mic.view.listening ? 'Stop voice typing (Ctrl+Space)' : 'Voice typing: your words go where the cursor is (Ctrl+Space)'}
+            >
+              <span className={`h-2 w-2 rounded-full ${mic.view.listening ? 'animate-pulse bg-rose-400' : mic.view.settling ? 'bg-amber-300' : 'bg-slate-400'}`} style={mic.view.listening ? { boxShadow: `0 0 ${4 + Math.round(mic.view.level * 16)}px #fb7185` } : undefined} />
+              {mic.view.listening ? (mic.view.status || 'listening') : mic.view.settling ? 'settling' : '🎙 voice'}
+            </button>
+          )}
           {mode === 'edit' && (
             <button
               type="button"
@@ -188,10 +280,11 @@ function Reader({ fileId, name }: { fileId: string; name: string }) {
             </div>
           ) : (
             <textarea
+              ref={area}
               data-reader-text
               value={draft}
               spellCheck={false}
-              onChange={event => { setDraft(event.target.value); setMessage(null) }}
+              onChange={event => { setDraft(event.target.value); setMessage(null); mic.typed(event.target.value, event.target.selectionStart) }}
               className="block h-full w-full resize-none bg-slate-950 p-5 font-mono text-[13px] leading-relaxed text-slate-100 outline-none"
             />
           )}

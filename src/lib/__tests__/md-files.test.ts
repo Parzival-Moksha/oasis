@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { registerAttachment, readTextFile, writeTextFile, parseRange } from '../../../packages/oasis-agent-engine/src/files.js'
+import { normalizeLines } from '../../../packages/oasis-agent-engine/src/history.js'
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oasis-md-'))
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }))
@@ -45,5 +46,21 @@ describe('the md reader (engine side)', () => {
 
   it('answers byte ranges so a video can be seeked', () => {
     expect(parseRange('bytes=15368192-', 22124780)).toEqual({ start: 15368192, end: 22124779 })
+  })
+
+  it('a file card from before an engine restart opens again: replayed history registers the sent file anew', async () => {
+    const file = path.join(dir, 'open.md')
+    fs.writeFileSync(file, '# Questions\n')
+    // What the transcript holds: the SendUserFile call, then its result (as Claude Code writes them).
+    const lines = [
+      { type: 'user', message: { role: 'user', content: 'send me the questions' }, timestamp: '2026-11-17T10:00:00Z', uuid: 'u1' },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'tu1', name: 'SendUserFile', input: { files: [file] } }] }, timestamp: '2026-11-17T10:00:01Z', uuid: 'a1' },
+      { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'sent' }] }, toolUseResult: { attachments: [{ path: file, size: 12, isImage: false, media_type: 'text/markdown', pathValidated: true }] }, timestamp: '2026-11-17T10:00:02Z', uuid: 'u2' },
+    ].map((rec, i) => ({ at: i * 100, text: JSON.stringify(rec) }))
+    const events = normalizeLines('agent-1', lines) as Array<{ kind: string; attachments?: Array<{ id: string; name: string }> }>
+    const card = events.find(e => e.kind === 'tool.end' && e.attachments?.length)
+    expect(card?.attachments?.[0].name).toBe('open.md')
+    const read = await readTextFile(card!.attachments![0].id)
+    expect(read.text).toBe('# Questions\n')
   })
 })

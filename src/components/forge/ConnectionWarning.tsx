@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { useOasisStore } from '../../store/oasisStore'
-import { getAgentEngineClient } from '../../lib/agent-engine-client'
+import { ENGINE_OUTDATED_EVENT, getAgentEngineClient } from '../../lib/agent-engine-client'
 import { connectionWarnings, type ConnectionWarningLine } from '../../lib/connection-watch'
 import { showNotice } from './GlobalNotice'
 
@@ -55,6 +55,14 @@ export function ConnectionWarning({ local }: { local: boolean }) {
   const [relay, setRelay] = useState<{ running: boolean | null; seen: boolean }>({ running: null, seen: false })
   const [startingRelay, setStartingRelay] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  // The engine said "unknown command" (older than this page): until it connects again (a restart).
+  const [outdatedAt, setOutdatedAt] = useState<number | null>(null)
+  useEffect(() => {
+    const onOutdated = () => setOutdatedAt(useOasisStore.getState().agentEngine.connection.connectedAt ?? 0)
+    window.addEventListener(ENGINE_OUTDATED_EVENT, onOutdated)
+    return () => window.removeEventListener(ENGINE_OUTDATED_EVENT, onOutdated)
+  }, [])
+  const engineOutdated = outdatedAt !== null && outdatedAt === (connection.connectedAt ?? 0)
 
   // Since when the engine has not been connected (the grace period counts from there). Not from its last status
   // change: while it is down it flips between connecting and offline on every retry.
@@ -108,6 +116,7 @@ export function ConnectionWarning({ local }: { local: boolean }) {
     engine: { status: connection.status, since: engineDownSince.current ?? now, nextRetryAt: connection.nextRetryAt, error: connection.error },
     serverFailures,
     relay: local ? relay : null,
+    engineOutdated,
   })
   if (!lines.length) return null
 

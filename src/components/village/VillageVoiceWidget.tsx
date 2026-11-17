@@ -63,7 +63,8 @@ export function VillageVoiceWidget() {
   useSyncExternalStore(subscribeVoiceMessages, voiceMessagesVersion, () => 0)
   const focusedId = useOasisStore(s => s.agentEngine.focusedAgentId)
   const agents = useOasisStore(s => s.agentEngine.agents)
-  const dictations = runningDictations().filter(d => d.agentId !== focusedId)
+  // The md reader's mic (key md:<file>) shows in the reader itself and stops when it closes.
+  const dictations = runningDictations().filter(d => d.agentId !== focusedId && !d.agentId.startsWith('md:'))
   const messages = voiceMessageList().filter(m => m.agentId !== focusedId)
   const now = useNow(dictations.length + messages.length > 0)
   if (!dictations.length && !messages.length) return null

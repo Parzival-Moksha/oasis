@@ -31,6 +31,19 @@ export function onEngineEvent(tap: EngineEventTap): () => void {
 
 export const DEFAULT_AGENT_ENGINE_URL = 'ws://127.0.0.1:4530/ws'
 
+/**
+ * What the owner reads when the page asks the engine for a command it doesn't know: the page was updated (hot
+ * reload) and the engine still runs older code. Said instead of "unknown command X", for every command, and
+ * announced once as the 'oasis:engine-outdated' event (ConnectionWarning shows it until the engine reconnects).
+ */
+export const ENGINE_OLDER_THAN_PAGE = 'The agent engine is older than this page: restart it (close the ENGINE window, double-click the OASIS shortcut).'
+export const ENGINE_OUTDATED_EVENT = 'oasis:engine-outdated'
+
+/** An engine error that means "this engine doesn't have that command yet". */
+export function isUnknownCommandError(text: string | null | undefined): boolean {
+  return /^unknown command\b/i.test(String(text || '').trim())
+}
+
 export function resolveAgentEngineUrl(value: string | undefined = process.env.NEXT_PUBLIC_AGENT_ENGINE_URL): string {
   const url = typeof value === 'string' ? value.trim() : ''
   return /^wss?:\/\//i.test(url) ? url : DEFAULT_AGENT_ENGINE_URL
@@ -581,7 +594,13 @@ export class AgentEngineClient {
         const data = message.data as { ok?: unknown; error?: unknown } | null | undefined
         const failedInside = Boolean(data && typeof data === 'object' && !Array.isArray(data) && data.ok === false)
         if (message.ok && !failedInside) pending.resolve(message.data)
-        else pending.reject(new Error(message.error || (failedInside && data?.error ? String(data.error) : `${pending.cmd} failed`)))
+        else {
+          const text = message.error || (failedInside && data?.error ? String(data.error) : `${pending.cmd} failed`)
+          if (isUnknownCommandError(text)) {
+            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(ENGINE_OUTDATED_EVENT, { detail: { cmd: pending.cmd } }))
+            pending.reject(new Error(ENGINE_OLDER_THAN_PAGE))
+          } else pending.reject(new Error(text))
+        }
         return
       }
       default:
