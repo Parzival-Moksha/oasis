@@ -308,6 +308,20 @@ export function findNearestStation(
 
 export const ANORAK_PRO_AVATAR = '/avatars/gallery/UnicornPerson.vrm'
 
+/**
+ * Bodies made for one agent: an agent with that name wears it unless the owner picked another for it by hand.
+ * (Hacker: generated and rigged for the Council of 2026-11-18, scripts/glb-to-vrm.mjs.) They are not in the pool
+ * the others are dealt from.
+ */
+export const NAMED_AVATARS: Array<{ name: RegExp; path: string }> = [
+  { name: /^hacker$/i, path: '/avatars/gallery/Hacker.vrm' },
+]
+
+export function namedAvatarFor(name: string | undefined): string | null {
+  const label = (name || '').trim()
+  return NAMED_AVATARS.find(entry => entry.name.test(label))?.path ?? null
+}
+
 function hashString(value: string): number {
   let hash = 2166136261
   for (let i = 0; i < value.length; i += 1) {
@@ -338,9 +352,13 @@ export function assignVillageAvatars(
   const worn = new Set<string>()
   // Remembered bodies first, so a newcomer never takes one from an agent that already wears it.
   for (const agent of agents) {
-    const entry = next[villageAgentKey(agent)]
+    const key = villageAgentKey(agent)
+    const made = namedAvatarFor(agent.name)
+    // Its own body beats one it was dealt, not one the owner picked for it.
+    if (made && !next[key]?.picked && next[key]?.skin !== made) next[key] = { ...next[key], skin: made, seenAt: next[key]?.seenAt ?? now }
+    const entry = next[key]
     const skin = entry?.skin
-    if (skin && (known.has(skin) || entry?.picked)) {
+    if (skin && (known.has(skin) || entry?.picked || skin === made)) {
       bases[agent.id] = skin
       worn.add(skin)
     }
@@ -469,16 +487,17 @@ export interface FaceScreenLayout {
 }
 
 export const FACE_SCREEN = {
-  /** The share of the view's width that is the agent's. */
-  faceShare: 0.25,
+  /** The share of the view's width that is the agent's: a strip on the left; the screen gets the other 78%
+   *  (the owner, 2026-11-17: the panel "could go all the way to seventy-five or eighty percent"). */
+  faceShare: 0.22,
   /** The width the face gets in the world (a head with some air around it). */
-  faceWidth: 0.66,
-  /** Where the face sits across the view: 0 = the left edge, 1 = the right. A little right of the middle of its part,
-   *  so a head that leans or a long snout is not cut off by the edge. */
-  faceAt: 0.16,
+  faceWidth: 0.64,
+  /** Where the face sits across the view: 0 = the left edge, 1 = the right. The middle of its strip, so the head
+   *  is whole: clear of the left edge and of the screen. */
+  faceAt: 0.11,
   /** The screen fills this much of its part of the width, and at most this much of the height. */
-  screenFill: 0.94,
-  screenHeightFill: 0.9,
+  screenFill: 0.985,
+  screenHeightFill: 0.92,
   /** Narrower than this (width / height) there is no room for both: the screen alone. */
   minAspect: 1.3,
 } as const
@@ -506,14 +525,16 @@ export function faceScreenLayout(input: FaceScreenInput): FaceScreenLayout {
   const cameraZ = az + faceDistance
   // The screen: as far back as it takes to fit the rest of the width (and the height).
   const share = 1 - FACE_SCREEN.faceShare
+  // (It is a flat overlay drawn over the 3D picture, so it need not be behind the avatar: only where it lands in
+  // the view counts. Keeping it behind the avatar capped its width at 72% under the page's 75° field of view.)
   const screenDistance = Math.max(
     DESK_WINDOW_WORLD.width / (2 * tanH * share * FACE_SCREEN.screenFill),
     DESK_WINDOW_WORLD.height / (2 * tanV * FACE_SCREEN.screenHeightFill),
-    faceDistance + 0.6,
+    0.6,
   )
   // Against the right edge of the view (a small margin), so all the room it does not need is next to the face.
   const widthShare = DESK_WINDOW_WORLD.width / (2 * screenDistance * tanH)
-  const centreAt = Math.max(FACE_SCREEN.faceShare + widthShare / 2, 1 - 0.015 - widthShare / 2)
+  const centreAt = Math.max(FACE_SCREEN.faceShare + widthShare / 2, 1 - 0.008 - widthShare / 2)
   const windowX = cameraX + (2 * centreAt - 1) * screenDistance * tanH
   return {
     kind: 'face',

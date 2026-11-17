@@ -350,8 +350,12 @@ describe('the F view: face on the left, screen in the rest', () => {
     for (const aspect of [16 / 9, 16 / 10, 21 / 9]) {
       const layout = faceScreenLayout({ faceHeight: 1.6, fov: 50, aspect })
       const face: [number, number, number] = [STATION.avatar[0], 1.6, STATION.avatar[2]]
-      // 16% across the view: inside the left quarter, with air to the edge for a head that leans.
-      expect(ndcX(layout, face, 50, aspect)).toBeCloseTo(-0.68, 3)
+      // 11% across the view: the middle of its strip (the left 22%), the head whole on both sides.
+      expect(ndcX(layout, face, 50, aspect)).toBeCloseTo(-0.78, 3)
+      // A head 0.3 m wide ends before the strip does.
+      const half = 0.15 / ((layout.camera[2] - face[2]) * tanH(50, aspect))
+      expect(-0.78 + half).toBeLessThan(-0.56)
+      expect(-0.78 - half).toBeGreaterThan(-1)
       expect(ndcY(layout, face, 50)).toBeCloseTo(0, 5)
       // A head 0.25 m wide takes between 6% and 16% of the view's width: a face, not a dot.
       const distance = layout.camera[2] - face[2]
@@ -378,11 +382,22 @@ describe('the F view: face on the left, screen in the rest', () => {
       const right = ndcX(layout, [layout.window[0] + DESK_WINDOW_WORLD.width / 2, 0, layout.window[2]], 50, aspect)
       const top = ndcY(layout, [0, layout.window[1] + DESK_WINDOW_WORLD.height / 2, layout.window[2]], 50)
       // Right of the face's quarter (NDC -0.5), inside the view.
-      expect(left).toBeGreaterThanOrEqual(-0.5)
+      expect(left).toBeGreaterThanOrEqual(-0.56 - 1e-9)
       expect(right).toBeLessThanOrEqual(1)
       expect(top).toBeLessThanOrEqual(1)
-      // And further back than the avatar, so the face is in front of it.
-      expect(layout.window[2]).toBeLessThan(STATION.avatar[2])
+    }
+  })
+
+  it('gives the screen the right 75 to 80% of an ordinary wide view', () => {
+    // At the page's field of view (75°) and a narrower one.
+    for (const [fov, aspect] of [[75, 16 / 9], [75, 16 / 10], [50, 16 / 9], [50, 16 / 10]]) {
+      const layout = faceScreenLayout({ faceHeight: 1.5, fov, aspect })
+      const half = DESK_WINDOW_WORLD.width / 2
+      const left = (ndcX(layout, [layout.window[0] - half, 0, layout.window[2]], fov, aspect) + 1) / 2
+      const right = (ndcX(layout, [layout.window[0] + half, 0, layout.window[2]], fov, aspect) + 1) / 2
+      expect(right - left).toBeGreaterThanOrEqual(0.75)
+      expect(right - left).toBeLessThanOrEqual(0.8)
+      expect(right).toBeGreaterThan(0.98)
     }
   })
 

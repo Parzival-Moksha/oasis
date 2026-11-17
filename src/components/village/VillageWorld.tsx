@@ -594,10 +594,12 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
   // F: the camera sits at this avatar's eye height with its face in the left quarter of the view; its screen
   // takes the rest, further back (village-layout.ts faceScreenLayout). Measured from its skeleton when F opens.
   const viewSize = useThree(s => s.size)
-  const viewFov = useThree(s => (s.camera as THREE.PerspectiveCamera).fov || 50)
+  // The field of view is read when F opens: it is a setting changed on the camera itself, which no selector sees.
+  const getThree = useThree(s => s.get)
   const screenLayout = useMemo(
-    () => (onScreen ? faceScreenLayout({ faceHeight: measureVillageFace(agentId), fov: viewFov, aspect: viewSize.width / Math.max(1, viewSize.height) }) : null),
-    [onScreen, agentId, avatarUrl, viewFov, viewSize.width, viewSize.height],
+    () => (onScreen ? faceScreenLayout({ faceHeight: measureVillageFace(agentId), fov: (getThree().camera as THREE.PerspectiveCamera).fov || 50, aspect: viewSize.width / Math.max(1, viewSize.height) }) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [onScreen, agentId, avatarUrl, viewSize.width, viewSize.height],
   )
   // Shot by the player's bolts (village-combat.ts, cosmetic): flinch, or the knockout clip.
   const combatPose = useVillageCombatPose(agentId)
