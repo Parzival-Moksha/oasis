@@ -1684,6 +1684,13 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
 // frozen mannequins. With it, they LIVE — blink, sway, smile.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * VRM scenes that have been posed by an animation at least once. A body that mounts again on a scene it already
+ * wore (a hot reload, a remount: the loader hands back the same scene) keeps that pose until its new idle starts;
+ * a scene never posed is hidden until its first clip has been applied, so nobody shows the T-pose.
+ */
+const posedVrmScenes = new WeakSet<THREE.Object3D>()
+
 export function VRMCatalogRenderer({ path, scale, objectId, displayName, activityAnimationId, activityOnce = false, still = false, moving = false, lipSyncId }: { path: string; scale: number; objectId?: string; displayName?: string; activityAnimationId?: string | null; /** Play the activity clip once and hold its last frame (a death, a flinch). */ activityOnce?: boolean; /** Hold the pose it has (the Academy's stone trainees): no mixer, blink or spring bones. */ still?: boolean; /** Its owner is moving it (a village agent following the player): play the walk clip. */ moving?: boolean; /** Lip-sync registry key for a body that is not a world object (village agents). */ lipSyncId?: string }) {
   const groupRef = useRef<THREE.Group>(null)
   const vrmRef = useRef<VRM | null>(null)
@@ -1793,8 +1800,17 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
     currentActionRef.current = null
     activeAnimRef.current = 'none'
     activeClipRef.current = null
+    // Never posed yet: out of sight until the first clip is applied (the state machine below shows it), at most
+    // a few seconds (a body whose clips never come still appears).
+    let reveal: number | null = null
+    if (!posedVrmScenes.has(vrm.scene)) {
+      vrm.scene.visible = false
+      reveal = window.setTimeout(() => { vrm.scene.visible = true }, 4000)
+    }
     return () => {
-      mixer.stopAllAction()
+      if (reveal !== null) window.clearTimeout(reveal)
+      // No stopAllAction: stopping puts every bone back to the bind pose (the T-pose), and a remount would show
+      // that until the next idle faded in. The old mixer is simply dropped; the body keeps the pose it has.
       mixerRef.current = null
       currentActionRef.current = null
       activeAnimRef.current = 'none'
@@ -1933,6 +1949,8 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
     // (clip check catches behavior-to-behavior switches like dance→combat)
     if (target === activeAnimRef.current && targetClip === activeClipRef.current) return
 
+    // Nothing playing yet in this mixer (a fresh mount): the first clip starts at full weight, no fade from the bind pose.
+    const first = !currentActionRef.current
     // Fade out current action
     if (currentActionRef.current) {
       currentActionRef.current.fadeOut(0.3)
@@ -1961,7 +1979,17 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
         if (target === 'walk') action.timeScale = 2
         if (target === 'activity') action.timeScale = 1
       }
-      action.reset().fadeIn(0.3).play()
+      if (first) {
+        action.reset().play()
+        // Its first frame now, before anything is drawn, then it may be seen.
+        mixer.update(0)
+        const v = vrmRef.current
+        v?.humanoid?.update()
+        if (v) {
+          v.scene.visible = true
+          posedVrmScenes.add(v.scene)
+        }
+      } else action.reset().fadeIn(0.3).play()
       currentActionRef.current = action
     }
 

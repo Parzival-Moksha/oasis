@@ -54,6 +54,7 @@ import {
   setVillagePlaza,
   getVillageAnchors,
   setVillageStations,
+  clearVillageStations,
   setVillageAvatars,
   type VillageStationPlacement,
 } from './village-actions'
@@ -985,15 +986,17 @@ export function VillageWorld() {
     return map
   }, [seatsKey, terrainHeights, origin])
 
+  // The desks, and out of the registry again when they change or the village goes. One effect for both: a
+  // separate cleanup-only effect used to run after this one on a hot reload (React re-runs every effect then)
+  // and left the registry empty, so no agent was "nearby" any more (no T/E/F prompt) until a full reload.
   useLayoutEffect(() => {
     setVillageStations(placements)
+    return () => clearVillageStations(placements)
   }, [placements])
   // Who wears which body, for the report to the engine (VillagePresence).
   useLayoutEffect(() => {
     setVillageAvatars(avatars)
   }, [avatars])
-
-  useEffect(() => () => setVillageStations(new Map()), [])
 
   const visible = useVisibleDeskWindows(placements)
   const mobile = useIsMobileOasis()

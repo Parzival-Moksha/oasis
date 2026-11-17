@@ -34,10 +34,52 @@ export interface VillageStationPlacement {
   anchor: Vec3
 }
 
-let stations = new Map<string, VillageStationPlacement>()
+/**
+ * Where everything stands (desks, agents away from them, helpers, the plaza, what else claims the keys), kept in
+ * one record that outlives a hot reload. In development a reload of this file makes a new copy of the module
+ * while timers and effects of the old copy can go on running (the proximity tick, a registration): with one
+ * shared record both copies see the same places, so walking up to an agent still gives the T/E/F prompt after
+ * a reload (the owner, 2026-11-17: "I go close to you and I don't have this little thing popping up").
+ */
+interface VillagePlaces {
+  stations: Map<string, VillageStationPlacement>
+  live: Map<string, VillageStationPlacement>
+  avatars: Record<string, string>
+  minis: Map<string, Array<VillageSubagentRef & { position: Vec3; local?: Vec3 }>>
+  nearbyMini: VillageSubagentRef | null
+  nearbyMiniListeners: Set<() => void>
+  plaza: Vec3 | null
+  inPlaza: boolean
+  plazaListeners: Set<() => void>
+  rival: ((actor: Vec3 | null, agentDistance: number | null) => boolean) | null
+  rivals: Set<(actor: Vec3 | null, agentDistance: number | null) => boolean>
+}
+
+const places: VillagePlaces = (() => {
+  const holder = globalThis as unknown as { __oasisVillagePlaces?: Partial<VillagePlaces> }
+  const record = (holder.__oasisVillagePlaces ??= {})
+  // Field by field: a record made by an older copy of this file may lack what a newer one added.
+  record.stations ??= new Map()
+  record.live ??= new Map()
+  record.avatars ??= {}
+  record.minis ??= new Map()
+  record.nearbyMini ??= null
+  record.nearbyMiniListeners ??= new Set()
+  record.plaza ??= null
+  record.inPlaza ??= false
+  record.plazaListeners ??= new Set()
+  record.rival ??= null
+  record.rivals ??= new Set()
+  return record as VillagePlaces
+})()
 
 export function setVillageStations(next: Map<string, VillageStationPlacement>): void {
-  stations = next
+  places.stations = next
+}
+
+/** Empties the desks, unless someone else registered theirs since `owner` (a remount registers before the old copy unmounts). */
+export function clearVillageStations(owner: Map<string, VillageStationPlacement>): void {
+  if (places.stations === owner) places.stations = new Map()
 }
 
 /**
@@ -45,7 +87,7 @@ export function setVillageStations(next: Map<string, VillageStationPlacement>): 
  * as a station of its own (position and rotationY such that the station's avatar spot is the avatar).
  * VillageStation writes it every frame it moves, changing the same object in place.
  */
-const liveStations = new Map<string, VillageStationPlacement>()
+const liveStations = places.live
 
 export function setVillageLiveStation(agentId: string, live: VillageStationPlacement | null): void {
   if (live) liveStations.set(agentId, live)
@@ -54,28 +96,27 @@ export function setVillageLiveStation(agentId: string, live: VillageStationPlace
 
 /** Where the agent is: beside the owner when it follows, else its desk. Proximity, the camera and the eyes read this. */
 export function getVillageStation(agentId: string): VillageStationPlacement | null {
-  return liveStations.get(agentId) || stations.get(agentId) || null
+  return liveStations.get(agentId) || places.stations.get(agentId) || null
 }
 
 /** The body each agent wears (VillageWorld writes it; the presence report to the engine reads it). */
-let avatars: Record<string, string> = {}
 
 export function setVillageAvatars(next: Record<string, string>): void {
-  avatars = next
+  places.avatars = next
 }
 
 export function getVillageAvatar(agentId: string): string | null {
-  return avatars[agentId] || null
+  return places.avatars[agentId] || null
 }
 
 /** The agent's desk, wherever the agent itself is. */
 export function getVillageDesk(agentId: string): VillageStationPlacement | null {
-  return stations.get(agentId) || null
+  return places.stations.get(agentId) || null
 }
 
 export function getVillageAnchors(): Record<string, Vec3> {
   const out: Record<string, Vec3> = {}
-  for (const [id, station] of stations) out[id] = (liveStations.get(id) || station).anchor
+  for (const [id, station] of places.stations) out[id] = (liveStations.get(id) || station).anchor
   return out
 }
 
@@ -91,9 +132,8 @@ export interface VillageSubagentRef {
 }
 
 /** World positions of every mini on screen, per parent agent (`local`: its place in the parent's station). */
-const minis = new Map<string, Array<VillageSubagentRef & { position: Vec3; local?: Vec3 }>>()
-let nearbyMini: VillageSubagentRef | null = null
-const nearbyMiniListeners = new Set<() => void>()
+const minis = places.minis
+const nearbyMiniListeners = places.nearbyMiniListeners
 
 export function setVillageMinis(agentId: string, next: Array<VillageSubagentRef & { position: Vec3; local?: Vec3 }> | null): void {
   if (next && next.length) minis.set(agentId, next)
@@ -113,7 +153,7 @@ function miniPosition(mini: VillageSubagentRef & { position: Vec3; local?: Vec3 
 
 /** The helper within E's reach, if any (it wins E over its parent). */
 export function getNearbyVillageMini(): VillageSubagentRef | null {
-  return nearbyMini
+  return places.nearbyMini
 }
 
 export function subscribeNearbyVillageMini(listener: () => void): () => void {
@@ -136,8 +176,9 @@ function updateNearbyMini(actor: Vec3 | null): void {
     const id = findNearestStation(actor, anchors, VILLAGE_MINI_RADIUS, VILLAGE_TALK_HEIGHT)
     best = id ? refs.get(id) || null : null
   }
+  const nearbyMini = places.nearbyMini
   if (best?.agentId === nearbyMini?.agentId && best?.key === nearbyMini?.key && best?.description === nearbyMini?.description) return
-  nearbyMini = best
+  places.nearbyMini = best
   nearbyMiniListeners.forEach(listener => listener())
 }
 
@@ -150,21 +191,19 @@ export function focusVillageSubagent(agentId: string, key: string): boolean {
 
 // ─── plaza (the summoning circle; VillagePlaza writes, proximity + HUD read) ──
 
-let plaza: Vec3 | null = null
-let inPlaza = false
-const plazaListeners = new Set<() => void>()
+const plazaListeners = places.plazaListeners
 
 export function setVillagePlaza(center: Vec3 | null): void {
-  plaza = center
+  places.plaza = center
 }
 
 /** The plaza's centre in this world, when the village is mounted. */
 export function getVillagePlaza(): Vec3 | null {
-  return plaza
+  return places.plaza
 }
 
 export function isInVillagePlaza(): boolean {
-  return inPlaza
+  return places.inPlaza
 }
 
 export function subscribeVillagePlaza(listener: () => void): () => void {
@@ -403,10 +442,10 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
   ;(window as unknown as Record<string, unknown>).__oasisVillage = {
     camera: () => (rigCamera ? rigCamera.position.toArray().map(v => Number(v.toFixed(2))) : null),
     savedPose: () => (savedPose ? savedPose.position.toArray().map(v => Number(v.toFixed(2))) : null),
-    stations: () => Object.fromEntries([...stations].map(([id, s]) => [id, s.anchor.map(v => Number(v.toFixed(2)))])),
+    stations: () => Object.fromEntries([...places.stations].map(([id, s]) => [id, s.anchor.map(v => Number(v.toFixed(2)))])),
     /** Put the player avatar `meters` (default 2.4) in front of an agent's desk, facing it (the "walk up" shortcut). */
     teleportNear: (agentId: string, meters = 2.4) => {
-      const station = stations.get(agentId)
+      const station = places.stations.get(agentId)
       if (!station) return false
       const forward: Vec3 = [Math.sin(station.rotationY), 0, Math.cos(station.rotationY)]
       const position: Vec3 = [station.anchor[0] + forward[0] * meters, station.anchor[1], station.anchor[2] + forward[2] * meters]
@@ -416,11 +455,12 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
     },
     /** Put the player avatar in the middle of the summoning circle. */
     teleportToPlaza: () => {
+      const plaza = places.plaza
       if (!plaza) return false
       requestPlayerAvatarTeleport({ position: plaza, yaw: 0, forward: [0, 0, 1] })
       return true
     },
-    inPlaza: () => inPlaza,
+    inPlaza: () => places.inPlaza,
     sound: () => getVillageSoundDebug(),
     /** The agent whose screen fills the view (F), or null. */
     screen: () => screenAgentId,
@@ -532,15 +572,14 @@ export function getVillageActorPosition(): Vec3 | null {
  * the owner stands and how far the agent within reach is (null: none); true means it is nearer and
  * takes the keys and the prompt, so no agent counts as nearby.
  */
-let proximityRival: ((actor: Vec3 | null, agentDistance: number | null) => boolean) | null = null
 
-export function setVillageProximityRival(rival: typeof proximityRival): void {
-  proximityRival = rival
+export function setVillageProximityRival(rival: VillagePlaces['rival']): void {
+  places.rival = rival
 }
 
 /** More things to walk up to (the Academy's skill tree): asked the same way, after the mission wall. */
 type ProximityRival = (actor: Vec3 | null, agentDistance: number | null) => boolean
-const moreProximityRivals = new Set<ProximityRival>()
+const moreProximityRivals = places.rivals
 
 export function addVillageProximityRival(rival: ProximityRival): () => void {
   moreProximityRivals.add(rival)
@@ -557,6 +596,7 @@ export function updateVillageProximity(): void {
   const reached = nearby ? anchors[nearby] : null
   const reachedDistance = actor && reached ? Math.hypot(actor[0] - reached[0], actor[2] - reached[2]) : null
   const quiet = Boolean(store.agentEngine.focusedAgentId) || awayAgentWinsPrompt(Boolean(nearby && liveStations.has(nearby)), reachedDistance)
+  const proximityRival = places.rival
   if (proximityRival) {
     const at = nearby ? anchors[nearby] : null
     const agentDistance = actor && at ? Math.hypot(actor[0] - at[0], actor[2] - at[2]) : null
@@ -573,9 +613,10 @@ export function updateVillageProximity(): void {
   if (nearby !== store.agentEngine.nearbyAgentId) store.agentEngineDispatch({ type: 'nearby', agentId: nearby })
   updateNearbyMini(actor)
   // An agent within reach wins the E key; otherwise standing in the circle makes E summon.
+  const plaza = places.plaza
   const nextInPlaza = !nearby && Boolean(plaza && findNearestStation(actor, { plaza }, VILLAGE_PLAZA_RADIUS, VILLAGE_TALK_HEIGHT))
-  if (nextInPlaza !== inPlaza) {
-    inPlaza = nextInPlaza
+  if (nextInPlaza !== places.inPlaza) {
+    places.inPlaza = nextInPlaza
     plazaListeners.forEach(listener => listener())
   }
 }
@@ -614,11 +655,11 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
     focusedAgentId: village.focusedAgentId,
     nearbyAgentId: village.nearbyAgentId,
     worldKeysFree: input.can().enterFocuses || input.inputState === 'agent-focus' || inSessionView,
-    inPlaza,
+    inPlaza: places.inPlaza,
     agentCount: village.order.length,
   })
   // E next to a helper (a subagent mini) opens its work in the parent's panel; it wins over the parent.
-  const mini = nearbyMini
+  const mini = places.nearbyMini
   if (mini && event.code === 'KeyE' && (action === 'open' || (action === null && !event.ctrlKey && !event.metaKey && !event.altKey
     && !event.repeat && !isTypingTarget(event.target) && (input.can().enterFocuses || input.inputState === 'agent-focus' || inSessionView)))) {
     focusVillageSubagent(mini.agentId, mini.key)
