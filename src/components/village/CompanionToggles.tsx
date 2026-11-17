@@ -13,6 +13,7 @@ import { useOasisStore } from '../../store/oasisStore'
 import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { showNotice } from '../forge/GlobalNotice'
+import { SpokenPlayer } from './SpokenPlayer'
 import {
   getVillageFollowVersion,
   getAgentVoiceSettings,
@@ -102,14 +103,15 @@ export function VoiceToggle({ agent }: { agent: EngineAgentState }) {
 /** The agent whose thread is being drawn (AgentSessionView provides it), so a reply knows whose voice it is. */
 export const SpokenAgentContext = createContext<string | null>(null)
 
-/** A reply's spoken line in the thread: the play button, in that agent's voice. */
+/** A reply's spoken line in the thread: its player, in that agent's voice. */
 export function SpokenReply({ spoken }: { spoken: string }) {
   const agentId = useContext(SpokenAgentContext)
   const name = useOasisStore(s => (agentId ? s.agentEngine.agents[agentId]?.name ?? null : null))
   const sessionId = useOasisStore(s => (agentId ? s.agentEngine.agents[agentId]?.sessionId ?? null : null))
   const own = useOasisStore(s => (agentId ? s.agentEngine.agents[agentId]?.voiceChoice ?? null : null))
   if (!agentId) return null
-  return <div><SpokenPlayButton agentId={agentId} agentKey={sessionId || agentId} agentName={name} own={own} spoken={spoken} /></div>
+  // A player: play and pause, seek, speed, and the whole line with the word being said lit (SpokenPlayer.tsx).
+  return <SpokenPlayer agentId={agentId} agentKey={sessionId || agentId} agentName={name} own={own} spoken={spoken} />
 }
 
 /** Under a reply that has a spoken line: hear it (again). Cached by its text, so a replay costs nothing. */
