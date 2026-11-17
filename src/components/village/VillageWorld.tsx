@@ -278,6 +278,7 @@ function DeskWindow({ agentId, nearby, mode }: { agentId: string; nearby: boolea
   return (
     <div
       data-ui-panel="village-desk-window"
+      data-desk-mode={mode}
       className="relative flex flex-col overflow-hidden rounded-2xl text-white"
       style={{
         width: size.width,

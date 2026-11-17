@@ -3,7 +3,7 @@
 // The picture on each main-menu tile, drawn in SVG (no image files). Each has its own palette,
 // its own surface pattern and one emblem.
 
-export type MenuTileId = 'mindcraft' | 'profile' | 'config' | 'help' | 'invite' | 'continue'
+export type MenuTileId = 'mindcraft' | 'skills' | 'profile' | 'config' | 'help' | 'invite' | 'continue'
 
 export interface MenuTileDef {
   id: MenuTileId
@@ -14,6 +14,7 @@ export interface MenuTileDef {
 
 export const MENU_TILES: MenuTileDef[] = [
   { id: 'mindcraft', label: 'Mindcraft', sub: 'Your days, missions and XP', accent: '#5ef0a8' },
+  { id: 'skills', label: 'Skills', sub: "Your agents' skill map (K)", accent: '#ff8ad8' },
   { id: 'profile', label: 'Profile', sub: 'Who you are here', accent: '#c59bff' },
   { id: 'config', label: 'Settings', sub: 'Graphics, sound, controls', accent: '#6fe3ff' },
   { id: 'help', label: 'Help', sub: 'Keys, guide, glossary', accent: '#8fb4ff' },
@@ -85,6 +86,27 @@ function Art({ id }: { id: MenuTileId }) {
           <path d="M100 22L138 50L100 112L62 50Z" fill="none" stroke="#d9fff0" strokeOpacity="0.7" strokeWidth="1.2" />
           <path d="M150 26l2.5 7 7 2.5-7 2.5-2.5 7-2.5-7-7-2.5 7-2.5z" fill="#eafff6" opacity="0.9" />
           <path d="M48 78l1.6 4.4 4.4 1.6-4.4 1.6-1.6 4.4-1.6-4.4-4.4-1.6 4.4-1.6z" fill="#eafff6" opacity="0.7" />
+        </>
+      )
+    case 'skills':
+      return (
+        <>
+          <Surface id={id} from="#4a1640" to="#150612" pattern={
+            <pattern id={`ogm-pat-${id}`} width="16" height="16" patternUnits="userSpaceOnUse">
+              <circle cx="8" cy="8" r="0.9" fill="#ff8ad8" fillOpacity="0.2" />
+            </pattern>
+          } />
+          {/* a skill tree: a root, its branches, the learned nodes lit and the rest still dark */}
+          {[[100, 122, 62, 88], [100, 122, 138, 88], [62, 88, 40, 52], [62, 88, 84, 50], [138, 88, 118, 50], [138, 88, 160, 52], [84, 50, 100, 18], [118, 50, 100, 18]].map(([x1, y1, x2, y2], i) => (
+            <path key={i} d={`M${x1} ${y1}L${x2} ${y2}`} stroke="#ff8ad8" strokeOpacity={i < 4 ? 0.75 : 0.3} strokeWidth={i < 4 ? 2.5 : 1.5} strokeDasharray={i < 4 ? undefined : '3 4'} />
+          ))}
+          {[[100, 122, 1], [62, 88, 1], [138, 88, 1], [40, 52, 1], [84, 50, 1], [118, 50, 0], [160, 52, 0], [100, 18, 0]].map(([x, y, lit], i) => (
+            <g key={i}>
+              {lit ? <circle cx={x} cy={y} r="13" fill="#ff8ad8" opacity="0.22" /> : null}
+              <circle cx={x} cy={y} r="8" fill={lit ? '#ffd1f1' : '#2a0c24'} stroke={lit ? '#fff0fa' : '#ff8ad8'} strokeOpacity={lit ? 0.9 : 0.5} strokeWidth="1.5" />
+            </g>
+          ))}
+          <path d="M100 13l1.6 3.4 3.7.5-2.7 2.6.7 3.7-3.3-1.8-3.3 1.8.7-3.7-2.7-2.6 3.7-.5z" fill="#ff8ad8" opacity="0.8" />
         </>
       )
     case 'profile':

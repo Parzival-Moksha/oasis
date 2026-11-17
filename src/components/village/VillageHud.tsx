@@ -1,17 +1,15 @@
 'use client'
 
-// ░▒▓ VILLAGE HUD — engine status, summon, the Agents menu (VillageAgentsMenu), "T talk" / "N next" hints ▓▒░
+// ░▒▓ VILLAGE HUD — the Agents menu (VillageAgentsMenu), the Academy reader, the "T talk" / "E summon" prompts ▓▒░
+// The Village bar that sat at the top is gone (the owner, 2026-11-17: "ugly and useless"): the chime and voice
+// switches are in Settings → Agents, Skills is a main-menu tile (and K), Summon is the plaza's circle (E) and the
+// spellbook, and an offline engine is the red ConnectionWarning (forge/ConnectionWarning.tsx).
 
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useSyncExternalStore, type ReactNode } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
-import { selectAttentionQueue } from '../../store/slices/agentEngineSlice'
-import { getAgentEngineClient } from '../../lib/agent-engine-client'
-import { isInVillagePlaza, openVillagePicker, subscribeVillagePlaza } from './village-actions'
-import { isVillageSoundOn, setVillageSoundOn, subscribeVillageSound } from './village-sound'
-import { isVillageVoiceOn, setVillageVoiceOn, subscribeVillageVoice } from './village-companion'
+import { isInVillagePlaza, subscribeVillagePlaza } from './village-actions'
 import { VillageAgentsMenu } from './VillageAgentsMenu'
 import { VillageAcademyReader } from './VillageAcademyReader'
-import { AcademyMapButton } from './VillageAcademyMap'
 import { GAME_HUD_TEXT, GameKeycap } from '../forge/GameKeycap'
 
 /** Bottom-centre game prompt: a chamfered banner, a title, and key prompts in a row. */
@@ -43,67 +41,11 @@ export function KeyPrompt({ k, label, accent, primary = false, className = '' }:
   )
 }
 
-function useNow(active: boolean, everyMs = 1000): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!active) return
-    const timer = window.setInterval(() => setNow(Date.now()), everyMs)
-    return () => window.clearInterval(timer)
-  }, [active, everyMs])
-  return now
-}
-
-/** The engine's restart line stays in the pill this long after it came back; the tooltip keeps it. */
-const RESTART_LINE_MS = 30 * 60_000
-
-function EngineStatus() {
-  const connection = useOasisStore(s => s.agentEngine.connection)
-  const rate = useOasisStore(s => s.agentEngine.rateLimit)
-  const restart = connection.server?.restart || null
-  const recent = Boolean(restart?.line && Date.now() - restart.startedAt < RESTART_LINE_MS)
-  const now = useNow(connection.status === 'offline' || recent, connection.status === 'offline' ? 1000 : 60_000)
-  if (connection.status === 'open') {
-    const quota = typeof rate?.utilization === 'number' ? ` · 7-day ${Math.round(rate.utilization * 100)}%` : ''
-    const showLine = Boolean(restart?.line && now - restart.startedAt < RESTART_LINE_MS)
-    const unplanned = restart?.stop?.planned === false
-    const names = restart?.resumed?.length ? ` Told to carry on: ${restart.resumed.map(a => a.name).join(', ')}.` : ''
-    const title = `Agent engine connected (ws://127.0.0.1:4530)${restart?.line ? `. It ${restart.line}.${names}` : ''}`
-    return (
-      <span data-engine-restart={restart?.line || undefined} className="flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-100/85" title={title}>
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
-        <span className="max-[700px]:hidden">engine{quota}</span>
-        {showLine && (
-          <span className={`normal-case tracking-normal max-[900px]:hidden ${unplanned ? 'text-amber-200' : 'text-emerald-100/70'}`}>· {restart?.line}</span>
-        )}
-      </span>
-    )
-  }
-  const retryIn = connection.nextRetryAt ? Math.max(0, Math.ceil((connection.nextRetryAt - now) / 1000)) : null
-  return (
-    <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-400/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-amber-100" title={connection.error || 'agent engine not reachable'}>
-      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-      {connection.status === 'connecting' ? 'connecting to engine…' : 'engine offline'}
-      {connection.status === 'offline' && (
-        <>
-          <span className="normal-case tracking-normal text-amber-100/70 max-[700px]:hidden">run <code className="rounded bg-black/40 px-1">pnpm dev:engine</code>{retryIn !== null ? ` · retry in ${retryIn}s` : ''}</span>
-          <button type="button" className="rounded bg-amber-300/20 px-1.5 py-0.5 text-[9px] hover:bg-amber-300/35" onClick={() => getAgentEngineClient().retryNow()}>retry</button>
-        </>
-      )}
-    </span>
-  )
-}
-
 export function VillageHud() {
-  const attentionKey = useOasisStore(s => selectAttentionQueue(s.agentEngine).join(','))
   const focusedId = useOasisStore(s => s.agentEngine.focusedAgentId)
   const nearbyId = useOasisStore(s => s.agentEngine.nearbyAgentId)
   const nearbyName = useOasisStore(s => (s.agentEngine.nearbyAgentId ? s.agentEngine.agents[s.agentEngine.nearbyAgentId]?.name : null))
-  const connected = useOasisStore(s => s.agentEngine.connection.status === 'open')
   const inPlaza = useSyncExternalStore(subscribeVillagePlaza, isInVillagePlaza, () => false)
-  const soundOn = useSyncExternalStore(subscribeVillageSound, isVillageSoundOn, () => true)
-  const voiceOn = useSyncExternalStore(subscribeVillageVoice, isVillageVoiceOn, () => true)
-
-  const attention = attentionKey ? attentionKey.split(',') : []
 
   return (
     <>
@@ -111,48 +53,6 @@ export function VillageHud() {
       <VillageAgentsMenu />
       {/* The Academy: the prompt at a node of the skill tree, and the node's sheet. */}
       <VillageAcademyReader />
-      <div
-        data-ui-panel="village-hud"
-        className="fixed left-1/2 top-3 z-[180] flex max-w-[min(820px,calc(100vw-400px))] -translate-x-1/2 items-center gap-1.5 rounded-xl border border-white/10 bg-slate-950/75 px-2 py-1.5 text-white shadow-[0_10px_30px_rgba(0,0,0,0.4)] backdrop-blur-md max-[700px]:left-[84px] max-[700px]:right-2 max-[700px]:top-2 max-[700px]:max-w-none max-[700px]:translate-x-0 max-[700px]:flex-wrap"
-      >
-        <span className="shrink-0 pl-1 pr-0.5 text-[10px] font-black uppercase tracking-[0.22em] text-emerald-200/90 max-[700px]:hidden">Village</span>
-        <EngineStatus />
-        {attention.length > 0 && (
-          <span className="shrink-0 rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold text-amber-100" title="N jumps to the next agent that needs you">
-            <span className="mr-1 rounded bg-black/40 px-1 font-mono">N</span>{attention.length} need{attention.length === 1 ? 's' : ''} you
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={() => setVillageSoundOn(!soundOn)}
-          className="shrink-0 rounded-md border border-white/10 bg-black/30 px-1.5 py-1 text-[12px] leading-none transition hover:bg-white/10"
-          title={soundOn ? 'A chime plays when an agent needs you (click to mute)' : 'Muted: click for a chime when an agent needs you'}
-          aria-label={soundOn ? 'Mute agent chimes' : 'Unmute agent chimes'}
-        >
-          {soundOn ? '🔔' : '🔕'}
-        </button>
-        <button
-          type="button"
-          data-village-voice-mute={voiceOn ? 'on' : 'muted'}
-          onClick={() => setVillageVoiceOn(!voiceOn)}
-          className="shrink-0 rounded-md border border-white/10 bg-black/30 px-1.5 py-1 text-[12px] leading-none transition hover:bg-white/10"
-          title={voiceOn ? 'Agents with Voice on say a short version of each reply out loud (click to mute)' : 'Agent voices muted: nothing is spoken or generated (click to unmute)'}
-          aria-label={voiceOn ? 'Mute agent voices' : 'Unmute agent voices'}
-        >
-          {voiceOn ? '🔊' : '🔇'}
-        </button>
-        <button
-          type="button"
-          disabled={!connected}
-          onClick={() => openVillagePicker(true)}
-          className="shrink-0 rounded-md border border-emerald-300/40 bg-emerald-400/15 px-2.5 py-1 text-[11px] font-black text-emerald-50 transition hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-40"
-          title={connected ? 'Summon a Claude Code session as an agent' : 'Start the agent engine first: pnpm dev:engine'}
-        >
-          + Summon
-        </button>
-        {/* The Academy's skill map (K). */}
-        <AcademyMapButton />
-      </div>
 
       {nearbyId && !focusedId && (
         <PromptBanner accent="#34d399" title={nearbyName || 'agent'}>

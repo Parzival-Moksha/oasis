@@ -6,9 +6,33 @@
 // NPCs and agent-spawned spells play out.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { useContext } from 'react'
+import { useContext, useSyncExternalStore } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import { DESK_SCREEN_LIMIT, isDeskScreensMode, type DeskScreensMode } from '@/lib/village/desk-screens'
+import { isVillageSoundOn, setVillageSoundOn, subscribeVillageSound } from '@/components/village/village-sound'
+import { isVillageVoiceOn, setVillageVoiceOn, subscribeVillageVoice } from '@/components/village/village-companion'
+
+/** An on/off row: a switch, a title and a line on what it does now. */
+function SwitchRow({ on, onToggle, title, hint, data }: { on: boolean; onToggle: () => void; title: string; hint: string; data: string }) {
+  return (
+    <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
+      <div
+        role="switch"
+        aria-checked={on}
+        data-setting={data}
+        data-state={on ? 'on' : 'off'}
+        onClick={onToggle}
+        className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${on ? 'bg-cyan-600 shadow-lg shadow-cyan-500/30' : 'bg-gray-700'}`}
+      >
+        <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${on ? 'translate-x-5' : 'translate-x-0.5'}`} />
+      </div>
+      <div className="min-w-0">
+        <div className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">{title}</div>
+        <div className="text-[10px] text-gray-500">{hint}</div>
+      </div>
+    </label>
+  )
+}
 
 const DESK_SCREEN_CHOICES: Array<{ mode: DeskScreensMode; label: string; hint: string }> = [
   { mode: 'off', label: 'Off', hint: 'No screen above the desks. E or F next to an agent still opens its panel or screen at once.' },
@@ -20,6 +44,10 @@ export function AgentsTab() {
   const { settings, updateSetting } = useContext(SettingsContext)
 
   const deskScreens: DeskScreensMode = isDeskScreensMode(settings.villageDeskScreens) ? settings.villageDeskScreens : 'off'
+  // Kept in this browser by village-sound.ts / village-companion.ts (they used to be the bell and speaker on the
+  // Village bar).
+  const chimeOn = useSyncExternalStore(subscribeVillageSound, isVillageSoundOn, () => true)
+  const voicesOn = useSyncExternalStore(subscribeVillageVoice, isVillageVoiceOn, () => true)
 
   return (
     <div className="space-y-4">
@@ -48,6 +76,20 @@ export function AgentsTab() {
             {DESK_SCREEN_CHOICES.find(choice => choice.mode === deskScreens)?.hint} Name labels and status signs always show.
           </div>
         </div>
+        <SwitchRow
+          data="village-chime"
+          on={chimeOn}
+          onToggle={() => setVillageSoundOn(!chimeOn)}
+          title="Chime when an agent needs you"
+          hint={chimeOn ? 'A chime plays when an agent asks you something, finishes its work, or hits an error.' : 'Silent: the ! and ? over their heads still show it.'}
+        />
+        <SwitchRow
+          data="village-voices"
+          on={voicesOn}
+          onToggle={() => setVillageVoiceOn(!voicesOn)}
+          title="Agent voices"
+          hint={voicesOn ? 'Agents with Voice on (their settings menu) say a short version of each reply out loud.' : 'Muted: nothing is spoken or generated, whatever each agent is set to.'}
+        />
         <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
           <div
             role="switch"

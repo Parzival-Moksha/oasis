@@ -9,7 +9,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { KeyboardControls, Stars, Grid, Environment, Html, useProgress } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
-import React, { Fragment, Suspense, useState, useRef, useContext, useEffect, useTransition, useCallback } from 'react'
+import React, { Fragment, Suspense, useState, useRef, useContext, useEffect, useTransition, useCallback, useSyncExternalStore } from 'react'
 import * as THREE from 'three'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -84,7 +84,9 @@ import { AgentSessionPanel } from './village/AgentSessionPanel'
 import { SessionPicker } from './village/SessionPicker'
 import { readLatestFps, trackFrame } from '../lib/fps-meter'
 import { VillageVoiceWidget } from './village/VillageVoiceWidget'
-import { openVillagePicker } from './village/village-actions'
+import { VillageScreenBackdrop } from './village/VillageScreenBackdrop'
+import { ConnectionWarning } from './forge/ConnectionWarning'
+import { getVillageScreen, openVillagePicker, subscribeVillageScreen } from './village/village-actions'
 import { installTestHarness } from '@/lib/test-harness'
 import { HOSTED_USER_LOCKED_SPELL_IDS, isHostedUserLockedSpell, type SpellId } from '@/lib/spellbook'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
@@ -563,8 +565,33 @@ function ModeSwitchLabel() {
 // POST-PROCESSING EFFECTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function DesktopKeyHints({ village = false }: { village?: boolean }) {
+/**
+ * The FPS reading, refreshed 5 times a second while the counter is on (lib/fps-meter.ts).
+ * Black-outlined so it reads over any background.
+ */
+function useFpsReading(enabled: boolean): number | null {
+  const [fps, setFps] = useState<number | null>(null)
+  useEffect(() => {
+    if (!enabled) return
+    setFps(readLatestFps())
+    const interval = setInterval(() => setFps(readLatestFps()), 200)
+    return () => clearInterval(interval)
+  }, [enabled])
+  return fps
+}
+
+const fpsColor = (fps: number | null) => fps === null ? '#94a3b8' : fps >= 55 ? '#22c55e' : fps >= 30 ? '#facc15' : '#ef4444'
+/** A black outline (eight 1.5 px shadows and a soft one): readable over sky, snow and night alike. */
+const FPS_OUTLINE = '-1.5px -1.5px 0 #000, 0 -1.5px 0 #000, 1.5px -1.5px 0 #000, 1.5px 0 0 #000, 1.5px 1.5px 0 #000, 0 1.5px 0 #000, -1.5px 1.5px 0 #000, -1.5px 0 0 #000, 0 0 4px #000'
+
+// The key hints at the top right. With the FPS counter on, its reading is the first row, in the same columns
+// (the separate counter only shows on phones and narrow windows, where these hints are hidden). While an agent's
+// full screen (F) is open the hints step aside (it covers that corner; HTML in the 3D view can't be drawn over
+// them), all but the FPS row.
+function DesktopKeyHints({ village = false, fpsFontSize = null }: { village?: boolean; fpsFontSize?: number | null }) {
   const mobileOasis = useIsMobileOasis()
+  const fps = useFpsReading(fpsFontSize !== null && !mobileOasis)
+  const agentScreenOpen = useSyncExternalStore(subscribeVillageScreen, () => getVillageScreen() !== null, () => false)
   const pointerLocked = useInputManager(s => s.pointerLocked)
   const selectedObjectId = useOasisStore(s => s.selectedObjectId)
   const hasAgentWindows = useOasisStore(s => s.placedAgentWindows.length > 0)
@@ -572,6 +599,8 @@ function DesktopKeyHints({ village = false }: { village?: boolean }) {
   const villageAgents = useOasisStore(s => s.agentEngine.order.length > 0)
   const hasSlides = useOasisStore(s => s.placedCatalogAssets.some(asset => Boolean(asset.imageUrl || asset.videoUrl)))
   if (mobileOasis) return null
+  if (agentScreenOpen && fpsFontSize === null) return null
+  const keys = !agentScreenOpen
 
   // Game-style key prompts: a chunky keycap and an outlined label, no boxes. Dim = not usable here.
   const hint = (key: string, label: string, options: { dim?: boolean; accent?: string } = {}) => (
@@ -588,8 +617,21 @@ function DesktopKeyHints({ village = false }: { village?: boolean }) {
   return (
     <div
       className="fixed right-2 top-2 z-[96] pointer-events-none grid grid-cols-[auto_auto] items-center gap-x-1.5 gap-y-[5px] rounded-bl-2xl py-2 pl-5 pr-2 max-[700px]:hidden"
-      style={{ background: 'radial-gradient(120% 100% at 100% 0%, rgba(2,6,23,0.55), rgba(2,6,23,0.25) 55%, transparent 80%)' }}
+      style={{ background: keys ? 'radial-gradient(120% 100% at 100% 0%, rgba(2,6,23,0.55), rgba(2,6,23,0.25) 55%, transparent 80%)' : undefined }}
     >
+      {fpsFontSize !== null && (
+        <>
+          <span className="text-right text-[9.5px] leading-[19px]" style={{ ...GAME_HUD_TEXT, opacity: 0.92 }}>FPS</span>
+          <span
+            data-testid="oasis-fps-display"
+            className="justify-self-start font-mono font-bold leading-none tabular-nums select-none"
+            style={{ fontSize: fpsFontSize, color: fpsColor(fps), textShadow: FPS_OUTLINE }}
+          >
+            {fps === null ? '--' : fps}
+          </span>
+        </>
+      )}
+      {keys && <>
       {selectedObjectId && (
         <span className="col-span-2 mb-0.5 text-right text-[8.5px]" style={{ ...GAME_HUD_TEXT, color: '#a5f3fc' }}>
           Selected
@@ -606,6 +648,7 @@ function DesktopKeyHints({ village = false }: { village?: boolean }) {
         ? hint('N', 'Next Agent', { dim: !villageAgents })
         : hint('N', 'Focus Agent', { dim: !hasAgentWindows })}
       {hint('PgDn', 'Next Pic', { dim: !hasSlides })}
+      </>}
     </div>
   )
 }
@@ -687,31 +730,20 @@ function FPSTracker() {
   return null
 }
 
+// Phones and narrow windows only: on a desktop the reading is the first row of the key hints (DesktopKeyHints).
 function FPSDisplay({ enabled, fontSize }: { enabled: boolean; fontSize: number }) {
-  const [fps, setFps] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (!enabled) return
-
-    const interval = setInterval(() => {
-      setFps(readLatestFps())
-    }, 200)
-
-    return () => clearInterval(interval)
-  }, [enabled])
-
+  const mobileOasis = useIsMobileOasis()
+  const fps = useFpsReading(enabled)
   if (!enabled) return null
-
-  const color = fps === null ? '#94a3b8' : fps >= 55 ? '#22c55e' : fps >= 30 ? '#facc15' : '#ef4444'
 
   return (
     <div
       data-testid="oasis-fps-display"
-      className="fixed top-4 right-4 z-[100] font-mono font-bold pointer-events-none select-none"
+      className={`fixed top-4 right-4 z-[100] font-mono font-bold pointer-events-none select-none ${mobileOasis ? '' : 'hidden max-[700px]:block'}`}
       style={{
         fontSize: `${fontSize}px`,
-        color,
-        textShadow: `0 0 10px ${color}40, 0 2px 4px rgba(0,0,0,0.5)`,
+        color: fpsColor(fps),
+        textShadow: FPS_OUTLINE,
       }}
     >
       {fps === null ? '--' : fps} FPS
@@ -2106,6 +2138,7 @@ export default function Scene() {
           <VillageHud />
           {/* Dictation / a voice message that goes on after Esc: who for, a timer, the last words, Send, Stop. */}
           <VillageVoiceWidget />
+          <VillageScreenBackdrop />
           <AgentSessionPanel />
           <SessionPicker />
         </>
@@ -2121,6 +2154,8 @@ export default function Scene() {
       />
       {!hideEditTools && <PlaceMenu />}
       <GlobalNotice />
+      {/* Red, at the top, while the Oasis server, the agent engine or the relay is offline. */}
+      <ConnectionWarning local={!hostedMode} />
       <ForkWelcomeModal />
       {!villageProfile && <QuestProgressTracker activeWorldId={activeWorldId} />}
 
@@ -2143,7 +2178,7 @@ export default function Scene() {
       {/* ─═̷─═̷─🎮 MODE SWITCH LABEL ─═̷─═̷─🎮 */}
       <MouseLookDebugOverlay />
       <ModeSwitchLabel />
-      <DesktopKeyHints village={villageProfile} />
+      <DesktopKeyHints village={villageProfile} fpsFontSize={settings.fpsCounterEnabled ? settings.fpsCounterFontSize : null} />
       <PortalTransitionOverlay />
       <WorldLoadingBar />
       {!villageProfile && (
