@@ -30,6 +30,8 @@ import path from 'node:path';
 
 const ENGINE_KEYS = ['name', 'session', 'voice', 'look', 'avatar', 'world', 'home', 'place'];
 const KEYS = [...ENGINE_KEYS, 'role', 'updated'];
+/** How results reach the owner (his words, 2026-11-17: a player in the thread, not a path to the mp4). */
+export const SHOW_FILES = 'To show the owner a picture, an audio file, a video or a document, send the file with SendUserFile: it plays or opens in the thread. A file path alone is not enough.';
 export const ROLE_MAX = 240;
 export const WHO_MAX = 1200;
 
@@ -59,7 +61,7 @@ export function serializeCard({ fields = {}, who = '' }) {
  * The note an agent reads: who it is, in a few lines. No `]` inside (the thread hides `[Oasis you: …]` blocks,
  * normalize.js). `tools`: the path of scripts/me.mjs, so the agent can look at itself and around, and edit its card.
  */
-export function characterNote(card, { file = '', tools = '' } = {}) {
+export function characterNote(card, { file = '', tools = '', showFiles = true } = {}) {
   const f = card.fields || {};
   const parts = [`You are ${f.name || 'an agent'}, an agent in the owner's Oasis, a 3D village on this machine where the owner walks around and talks to you.`];
   if (f.role) parts.push(`Role: ${f.role}`);
@@ -70,6 +72,8 @@ export function characterNote(card, { file = '', tools = '' } = {}) {
   if (tools) {
     parts.push(`In a shell, node "${tools}" look saves a front picture of your avatar, around saves four pictures of what is around you (read the files it prints), card prints this card${card.who ? '' : ', and who "<a few sentences>" writes your own who-you-are (nobody has yet)'}.`);
   }
+  // Not for a session in another window: it may not have the tool, so the mod says it there only when it does.
+  if (showFiles) parts.push(SHOW_FILES);
   if (file) parts.push(`Your card is the file ${file}.`);
   return `[Oasis you: ${parts.map((p) => (/[.!?]$/.test(p) ? p : `${p}.`)).join(' ').replace(/\]/g, ')')}]`;
 }

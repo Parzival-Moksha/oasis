@@ -107,7 +107,10 @@ describe('character cards', () => {
     expect(ENGINE_NOTE.test(note)).toBe(true) // the thread hides it (no "]" inside)
     for (const piece of ['You are Citizens', 'Role: Makes agents citizens.', 'Who you are: You care', 'Your look: the avatar "Orion"', 'Your voice: Brian', 'the world "Oasis Dusk"', 'me.mjs" look', 'C:/data/characters/x.md']) expect(note).toContain(piece)
     expect(note).not.toContain('nobody has yet')
-    expect(note.length).toBeLessThan(1100)
+    // Results the owner should see or hear go as files, not as paths.
+    expect(note).toContain('send the file with SendUserFile')
+    expect(note.length).toBeLessThan(1300)
+    expect(characterNote(card, { showFiles: false })).not.toContain('SendUserFile')
     // No words of its own yet: it is told it can write them.
     expect(characterNote({ fields: { name: 'New' }, who: '' }, { tools: 'me.mjs' })).toContain('who "<a few sentences>" writes your own who-you-are')
   })

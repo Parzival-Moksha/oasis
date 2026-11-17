@@ -28,24 +28,25 @@ import type { Register, EngineInterface } from 'claude-code'
 /** Where the owner keeps the mission board; OASIS_MISSIONS_DIR overrides it. */
 const MISSIONS_DIR = 'C:\\7c_oasis\\docs\\missions'
 
-/** Facts only, under 150 tokens: it changes nothing about how the session does its work. */
-function oasisNote(missions: string): string {
+/** Facts only, about 150 tokens: it changes nothing about how the session does its work. */
+function oasisNote(missions: string, canSendFiles: boolean): string {
   return [
     '# The Oasis',
     "This session is also an agent in the owner's Oasis, a 3D village on this machine where each Claude Code session has an avatar at a desk.",
     'The owner may talk to this session there, by voice or text; what they say arrives here as an ordinary prompt.',
     'The Oasis MCP server (tools named oasis) can look at that world, place and change things in it, and take screenshots.',
+    ...(canSendFiles ? ['To show the owner a picture, an audio file, a video or a document, send the file with SendUserFile (it plays or opens in the thread); a file path alone is not enough.'] : []),
     `The mission board is the folder ${missions}.`,
   ].join('\n')
 }
 
 /** The section, or null when the Oasis engine doesn't answer (then the session is told nothing). */
-async function oasisSection($: EngineInterface, fallback: string): Promise<string | null> {
+async function oasisSection($: EngineInterface, fallback: string, canSendFiles: boolean): Promise<string | null> {
   try {
     const at = ((await $.env.get('OASIS_ENGINE_URL')) || fallback).replace(/\/+$/, '')
     const health = await $.http.fetch(`${at}/health`)
     if (!health.ok) return null
-    return oasisNote((await $.env.get('OASIS_MISSIONS_DIR')) || MISSIONS_DIR)
+    return oasisNote((await $.env.get('OASIS_MISSIONS_DIR')) || MISSIONS_DIR, canSendFiles)
   } catch {
     return null
   }
@@ -135,7 +136,8 @@ export const register: Register = on => {
   on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
     if (e.traits.includes('bare') || e.traits.includes('teammate')) return composed
-    const text = await (note ??= oasisSection($, engine))
+    // SendUserFile exists only where the host shows files (the engine's agents; the desktop app, when it does): say it then.
+    const text = await (note ??= oasisSection($, engine, e.tools.includes('SendUserFile')))
     if (!text) return composed
     return { sections: [...composed.sections, { id: 'oasis:village', text, scope: 'session' }] }
   })

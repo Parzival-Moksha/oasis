@@ -173,7 +173,7 @@ function refreshLook(sessionId) {
 function characterFor(agent) {
   if (!agent?.sessionId || !characters.fileFor(agent.sessionId)) return null;
   const card = characters.setFacts(agent.sessionId, { name: agent.name || undefined });
-  return { note: characterNote(card, { file: card.file, tools: ME_SCRIPT }), stamp: cardStamp(card), card };
+  return { note: characterNote(card, { file: card.file, tools: ME_SCRIPT, showFiles: agent.kind === 'owned' }), stamp: cardStamp(card), card };
 }
 
 /** An agent by id, session id or name (exact, else the one name that starts with it). */
