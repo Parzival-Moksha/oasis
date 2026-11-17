@@ -272,6 +272,16 @@ export class AgentEngineClient {
     return this.cmd('voiceMessage', { agentId, audio, mime, ...(durationMs ? { durationMs } : {}), ...(priority ? { priority } : {}) }, { timeoutMs })
   }
 
+  /** The md reader: a text file an agent sent (the engine allows only those, .md / .markdown / .txt). */
+  readFile(fileId: string) {
+    return this.cmd('readFile', { fileId })
+  }
+
+  /** Save it back to its own path. Refused (the message says "changed on disk") when the file changed since it was read, unless forced. */
+  writeFile(fileId: string, text: string, expectedMtimeMs: number | null, force = false) {
+    return this.cmd('writeFile', { fileId, text, expectedMtimeMs, force })
+  }
+
   /** Claude in Chrome for an agent: restarts its process with the same session. */
   setChrome(agentId: string, chrome: boolean) {
     return this.cmd('setChrome', { agentId, chrome })

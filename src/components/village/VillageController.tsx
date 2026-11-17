@@ -10,6 +10,7 @@ import { effectiveStatus, selectAttentionQueue } from '../../store/slices/agentE
 import { playVillageChime, unlockVillageAudio } from './village-sound'
 import { loadSeen, markSeen, planUnseenRestore, saveSeen } from '../../lib/village/village-seen'
 import { VillageImageViewer } from './VillageImageViewer'
+import { MarkdownReader } from './MarkdownReader'
 import { VillageMissionReader } from './VillageMissionReader'
 import { WorkVowHud } from './WorkVowHud'
 import {
@@ -154,6 +155,7 @@ export function VillageController() {
   return (
     <>
       <VillageImageViewer />
+      <MarkdownReader />
       <VillageMissionReader />
       {/* The Mindcraft work counter: today's time toward the vow, bottom left. */}
       <WorkVowHud />

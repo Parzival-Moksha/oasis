@@ -2,7 +2,7 @@
 // (the full-screen viewer) or any other file (downloaded without leaving the Oasis). By its media type, else by
 // its extension, like the engine's files.js serves it.
 
-export type AttachmentKind = 'image' | 'audio' | 'video' | 'file'
+export type AttachmentKind = 'image' | 'audio' | 'video' | 'text' | 'file'
 
 const AUDIO = new Set(['mp3', 'wav', 'm4a', 'ogg', 'oga', 'opus', 'flac', 'aac'])
 const VIDEO = new Set(['mp4', 'm4v', 'mov', 'webm'])
@@ -15,6 +15,7 @@ export function attachmentKind(file: { name: string; isImage?: boolean; mediaTyp
   const ext = (file.name.split('.').pop() || '').toLowerCase()
   if (AUDIO.has(ext)) return 'audio'
   if (VIDEO.has(ext)) return 'video'
+  if (ext === 'md' || ext === 'markdown' || ext === 'mdx' || ext === 'txt') return 'text'
   return 'file'
 }
 

@@ -140,3 +140,49 @@ export function serveAttachment(id, res, req = null) {
     fs.createReadStream(f.path).on('error', () => res.destroy()).pipe(res);
   });
 }
+
+// ─── the md reader: read and save back a text file an agent sent ───────────────────────────────────────────
+// Only files that got an id above (the agent sent them with SendUserFile) and only text types: nothing else on
+// disk is reachable, and a save goes to that same path, never anywhere else. A save refuses when the file changed
+// on disk since it was read (the agent may have rewritten it), unless the owner forces it.
+const TEXT_EDIT_TYPES = new Set(['.md', '.markdown', '.mdx', '.txt']);
+const MAX_TEXT_BYTES = 2 * 1024 * 1024;
+
+export function isReadableText(name) {
+  return TEXT_EDIT_TYPES.has(path.extname(String(name || '')).toLowerCase());
+}
+
+function textFileOf(id) {
+  const f = byId.get(String(id));
+  if (!f) throw new Error('unknown file (it was not sent in this engine run: ask the agent to send it again)');
+  if (!isReadableText(f.path)) throw new Error('only .md, .markdown and .txt files can be read here');
+  return f;
+}
+
+/** { name, text, mtimeMs, size } of a sent text file. */
+export async function readTextFile(id) {
+  const f = textFileOf(id);
+  const st = await fs.promises.stat(f.path).catch(() => null);
+  if (!st || !st.isFile()) throw new Error('file is gone');
+  if (st.size > MAX_TEXT_BYTES) throw new Error(`too big to read here (${Math.round(st.size / 1024)} KB, limit ${MAX_TEXT_BYTES / 1024} KB)`);
+  const text = await fs.promises.readFile(f.path, 'utf8');
+  return { name: path.basename(f.path), text, mtimeMs: st.mtimeMs, size: st.size };
+}
+
+/** Save back to the file's own path. expectedMtimeMs: what the reader saw; a different file on disk is refused unless force. */
+/** @param {string} id @param {string} text @param {{ expectedMtimeMs?: number | null, force?: boolean }} [options] */
+export async function writeTextFile(id, text, { expectedMtimeMs = null, force = false } = {}) {
+  const f = textFileOf(id);
+  if (typeof text !== 'string') throw new Error('nothing to save');
+  if (Buffer.byteLength(text, 'utf8') > MAX_TEXT_BYTES) throw new Error(`too big to save here (limit ${MAX_TEXT_BYTES / 1024} KB)`);
+  const st = await fs.promises.stat(f.path).catch(() => null);
+  if (!st || !st.isFile()) throw new Error('file is gone');
+  if (!force && expectedMtimeMs !== null && Math.abs(st.mtimeMs - expectedMtimeMs) > 1) {
+    const e = new Error('the file changed on disk since you opened it (the agent may have rewritten it)');
+    e.code = 'changed';
+    throw e;
+  }
+  await fs.promises.writeFile(f.path, text, 'utf8');
+  const after = await fs.promises.stat(f.path);
+  return { name: path.basename(f.path), mtimeMs: after.mtimeMs, size: after.size };
+}

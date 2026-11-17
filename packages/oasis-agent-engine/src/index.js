@@ -29,7 +29,7 @@ import { takePictures } from './pictures.js';
 import { resolveClaude } from './claude.js';
 import { listen as earsListen, warmEars, earsStatus, stopEars } from './ears.js';
 import { listenScribe, hasLiveScribe, LIVE_SCRIBE_MODEL } from './scribe-live.js';
-import { serveAttachment } from './files.js';
+import { readTextFile, serveAttachment, writeTextFile } from './files.js';
 import { startClipWatchdog, stopClipWatchdog, clipWatchdogState } from './clip-watchdog.js';
 import { startTelegram } from './telegram.js';
 import { listVoices } from './voice.js';
@@ -332,6 +332,9 @@ ${you.note}` : text);
     const sent = await a.send(transcript, { priority, voice });
     return { ok: true, data: { transcript, fileId, uuid: sent?.uuid } };
   },
+  /** The md reader (files.js): a text file an agent sent, read and saved back. */
+  readFile({ fileId }) { return readTextFile(fileId); },
+  writeFile({ fileId, text, expectedMtimeMs, force }) { return writeTextFile(fileId, text, { expectedMtimeMs: typeof expectedMtimeMs === 'number' ? expectedMtimeMs : null, force: force === true }); },
   interrupt({ agentId, cancelQueued }) { return getAgent(agentId, { owned: true }).interrupt({ cancelQueued }); },
   setModel({ agentId, model }) { return getAgent(agentId, { owned: true }).setModel(model); },
   setPermissionMode({ agentId, mode }) { return getAgent(agentId, { owned: true }).setPermissionMode(mode); },

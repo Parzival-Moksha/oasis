@@ -444,6 +444,8 @@ export interface EngineCommandMap {
   /** The answer to a stage.request. */
   stageResult: { args: { requestId: string; ok: boolean; data?: unknown; error?: string }; result: { ok: boolean } }
   /** A recorded voice message (base64 audio): kept, transcribed by ElevenLabs Scribe, the transcript sent to the agent. */
+  readFile: { args: { fileId: string }; result: { name: string; text: string; mtimeMs: number; size: number } }
+  writeFile: { args: { fileId: string; text: string; expectedMtimeMs: number | null; force?: boolean }; result: { name: string; mtimeMs: number; size: number } }
   voiceMessage: { args: { agentId: string; audio: string; mime: string; durationMs?: number; priority?: 'now' | 'later' }; result: { ok: boolean; data?: { transcript: string; fileId: string; uuid?: string }; error?: string } }
   /** This page can take eyes pictures (once per connection). */
   canSee: { args: { on: boolean }; result: { ok: boolean } }

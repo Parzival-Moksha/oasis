@@ -31,6 +31,7 @@ import { SpokenAgentContext, SpokenReply } from './CompanionToggles'
 import { AgentSettingsButton } from './AgentSettingsMenu'
 import { VoiceClip } from './VoiceMessage'
 import { attachmentKind, downloadInPlace } from '../../lib/village/attachment-kind'
+import { openMdReader } from '../../lib/village/md-reader'
 import { showNotice as noticeForFiles } from '../forge/GlobalNotice'
 
 /** 2d: the side panel · 3d: the desk window (recent lines) · screen: the desk window zoomed in with F */
@@ -213,8 +214,9 @@ function SentFilesCard({ entry, compact }: { entry: Extract<AgentLogEntry, { typ
   const images = files.filter(file => file.isImage)
   const sounds = files.filter(file => attachmentKind(file) === 'audio')
   const videos = files.filter(file => attachmentKind(file) === 'video')
+  const texts = files.filter(file => attachmentKind(file) === 'text')
   const others = files.filter(file => attachmentKind(file) === 'file')
-  const what = images.length && !others.length
+  const what = images.length && !others.length && !texts.length
     ? `${images.length === 1 ? 'a picture' : `${images.length} pictures`}`
     : `${files.length === 1 ? 'a file' : `${files.length} files`}`
   return (
@@ -266,6 +268,32 @@ function SentFilesCard({ entry, compact }: { entry: Extract<AgentLogEntry, { typ
                 <span className="absolute inset-0 flex items-center justify-center text-[28px] text-white/90 drop-shadow transition group-hover:scale-110">▶</span>
                 <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1.5 py-0.5 text-[10px] text-white/85">{file.name}</span>
               </button>
+            ))}
+          </div>
+        )}
+        {texts.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {texts.map(file => (
+              <span key={file.id} className="inline-flex overflow-hidden rounded-full border border-cyan-300/30 bg-cyan-400/10 text-[11px] text-cyan-100">
+                <button
+                  type="button"
+                  data-text-attachment
+                  onClick={() => openMdReader({ fileId: file.id, name: file.name })}
+                  title={`${file.name} · read it here (and edit)`}
+                  className="px-2.5 py-1 hover:bg-cyan-400/20"
+                >
+                  📖 {file.name}{file.size !== null ? ` · ${formatBytes(file.size)}` : ''}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void downloadInPlace(agentEngineFileUrl(file.id), file.name).catch(error => noticeForFiles(`${file.name}: ${error instanceof Error ? error.message : String(error)}`, 'warn')) }}
+                  title={`Download ${file.name}`}
+                  aria-label={`Download ${file.name}`}
+                  className="border-l border-cyan-300/25 px-2 py-1 hover:bg-cyan-400/20"
+                >
+                  ⬇
+                </button>
+              </span>
             ))}
           </div>
         )}
