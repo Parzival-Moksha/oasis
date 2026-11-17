@@ -82,6 +82,7 @@ import { VillageController } from './village/VillageController'
 import { VillageHud } from './village/VillageHud'
 import { AgentSessionPanel } from './village/AgentSessionPanel'
 import { SessionPicker } from './village/SessionPicker'
+import { readLatestFps, trackFrame } from '../lib/fps-meter'
 import { VillageVoiceWidget } from './village/VillageVoiceWidget'
 import { openVillagePicker } from './village/village-actions'
 import { installTestHarness } from '@/lib/test-harness'
@@ -679,45 +680,11 @@ function PostProcessing() {
 // FPS COUNTER
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const FPS_SAMPLE_WINDOW_MS = 1000
-const FPS_SAMPLE_LIMIT = 240
-const FPS_STALE_AFTER_MS = 3000
-
-let latestFps: number | null = null
-let latestFpsSampleAt = 0
-let frameTimes: number[] = []
-
+// The meter itself is lib/fps-meter.ts (shared on globalThis: a hot reload of this file used to leave the counter
+// reading a meter nobody fed, a gray "-- FPS").
 function FPSTracker() {
-  useFrame(() => {
-    const now = performance.now()
-
-    frameTimes.push(now)
-
-    while (frameTimes.length > FPS_SAMPLE_LIMIT) {
-      frameTimes.shift()
-    }
-
-    while (frameTimes.length > 2 && now - frameTimes[0] > FPS_SAMPLE_WINDOW_MS) {
-      frameTimes.shift()
-    }
-
-    const sampleCount = frameTimes.length
-    if (sampleCount >= 2) {
-      const firstFrameAt = frameTimes[0]
-      const lastFrameAt = frameTimes[sampleCount - 1]
-      const elapsed = lastFrameAt - firstFrameAt
-      if (elapsed > 0) latestFps = Math.round(((sampleCount - 1) * 1000) / elapsed)
-    }
-
-    latestFpsSampleAt = now
-  })
-
+  useFrame(() => trackFrame())
   return null
-}
-
-function readLatestFps(): number | null {
-  if (latestFps === null || typeof performance === 'undefined') return null
-  return performance.now() - latestFpsSampleAt <= FPS_STALE_AFTER_MS ? latestFps : null
 }
 
 function FPSDisplay({ enabled, fontSize }: { enabled: boolean; fontSize: number }) {
