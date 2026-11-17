@@ -145,6 +145,34 @@ describe('a value never appears in a response, an error or a log', () => {
     expect(readFileSync(path.join(paths.root, '.env'), 'utf8')).not.toContain(D)
   })
 
+  it('a name already in .env.local (which wins over .env) is changed there, and every copy of it', async () => {
+    writeFileSync(path.join(paths.root, '.env.local'), `ELEVENLABS_API_KEY=old\r\nX=1\r\nexport ELEVENLABS_API_KEY=older\r\n`)
+    const result = await keychainAction({ key: 'elevenlabs', action: 'store', value: C }, options())
+    expect(result).toMatchObject({ ok: true, file: '.env.local' })
+    expect(readFileSync(path.join(paths.root, '.env.local'), 'utf8')).toBe(`ELEVENLABS_API_KEY=${C}\r\nX=1\r\nexport ELEVENLABS_API_KEY=${C}\r\n`)
+    expect(readFileSync(path.join(paths.root, '.env'), 'utf8')).not.toContain('ELEVENLABS')
+    noSecret(JSON.stringify(result), 'the answer')
+  })
+
+  it('warns when the same name is set outside the files (the system environment wins), without a value', async () => {
+    const result = await keychainAction({ key: 'elevenlabs', action: 'store', value: C }, { paths, run, env: { ELEVENLABS_API_KEY: D } as unknown as NodeJS.ProcessEnv })
+    expect(result).toMatchObject({ ok: true, file: '.env', warning: expect.stringContaining('ELEVENLABS_API_KEY is also set outside') })
+    noSecret(JSON.stringify(result), 'the warning')
+  })
+
+  it('an old mark on an API key does not make it held, and can still be taken back', async () => {
+    writeFileSync(paths.state, JSON.stringify({ v: 1, have: { elevenlabs: { at: 1 } } }))
+    const before = await keychainSnapshot(options())
+    expect(before.keys.find(key => key.id === 'elevenlabs')).toMatchObject({ state: 'missing', marked: true })
+    expect(await keychainAction({ key: 'elevenlabs', action: 'unmark' }, options())).toMatchObject({ ok: true, key: { marked: false } })
+  })
+
+  it('a network folder in the roster is not scanned', async () => {
+    writeFileSync(paths.roster, JSON.stringify({ v: 1, agents: [{ cwd: '\\\\offline-server\\share\\agent' }, { cwd: '//offline/share' }] }))
+    const snapshot = await keychainSnapshot(options())
+    expect(snapshot.sources.folders).toBe(1)
+  })
+
   it('a damaged marks file is an error, not an empty keychain written over it', async () => {
     writeFileSync(paths.state, '{ not json ' + C)
     const result = await keychainAction({ key: 'vercel', action: 'have' }, options())
@@ -192,6 +220,8 @@ describe('the route', () => {
     expect(stored.status).toBe(200)
     expect(storedText).not.toContain(C)
     expect(readFileSync(path.join(paths.root, '.env'), 'utf8')).toContain(`ELEVENLABS_API_KEY=${C}`)
+    // Not put into this server's environment by hand: every Claude CLI the Oasis starts inherits that.
+    expect(process.env.ELEVENLABS_API_KEY).toBeUndefined()
     const broken = await POST(request('POST', `{"key":"elevenlabs","action":"store","value":"${D}`))
     const brokenText = await broken.text()
     expect(broken.status).toBe(400)
@@ -217,5 +247,38 @@ describe('codex status', () => {
     expect(codexStatus('\nLogged in using ChatGPT\n', 0)).toEqual({ loggedIn: true, method: 'chatgpt' })
     expect(codexStatus('Logged in using an API key - sk-***', 0)).toEqual({ loggedIn: true, method: 'api-key' })
     expect(codexStatus('Not logged in', 1)).toEqual({ loggedIn: false, method: '' })
+  })
+})
+
+describe('the Claude CLI environment', () => {
+  it('never carries an Anthropic API key or token into a Claude process the Oasis starts', async () => {
+    const { buildClaudeCliEnv } = await import('../claude-cli-env')
+    const before = { key: process.env.ANTHROPIC_API_KEY, token: process.env.ANTHROPIC_AUTH_TOKEN, keep: process.env.OASIS_KEEP_API_KEY }
+    try {
+      process.env.ANTHROPIC_API_KEY = A
+      process.env.ANTHROPIC_AUTH_TOKEN = B
+      delete process.env.OASIS_KEEP_API_KEY
+      const env = buildClaudeCliEnv()
+      expect(env.ANTHROPIC_API_KEY).toBeUndefined()
+      expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
+      // The owner's escape hatch, as in the agent engine.
+      process.env.OASIS_KEEP_API_KEY = '1'
+      expect(buildClaudeCliEnv().ANTHROPIC_API_KEY).toBe(A)
+    } finally {
+      for (const [name, value] of [['ANTHROPIC_API_KEY', before.key], ['ANTHROPIC_AUTH_TOKEN', before.token], ['OASIS_KEEP_API_KEY', before.keep]] as const) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+    }
+  })
+})
+
+describe('network paths', () => {
+  it('are told apart from local ones', async () => {
+    const { isNetworkPath } = await import('../keychain-server')
+    expect(isNetworkPath(String.raw`\\server\share`)).toBe(true)
+    expect(isNetworkPath('//server/share')).toBe(true)
+    expect(isNetworkPath(String.raw`C:\af_oasis`)).toBe(false)
+    expect(isNetworkPath('/home/me')).toBe(false)
   })
 })

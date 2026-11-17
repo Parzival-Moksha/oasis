@@ -5,6 +5,7 @@ import {
   buildKeychain,
   findKey,
   formatEnvValue,
+  isKeyEnvName,
   keyEnvNames,
   keyState,
   parseEnvNames,
@@ -20,7 +21,7 @@ const skill = (id: string, keys: string[], order = 0) => ({ id, name: id.toUpper
 const key = (id: string, kind: string, extra: Record<string, unknown> = {}) => ({ id, name: id, kind, cost: '', link: 'https://example.com', ...extra })
 const content = normalizeAcademyContent(
   [skill('a', ['openai', 'anthropic'], 1), skill('b', ['claude'], 2), skill('c', [], 3), skill('d', ['card'], 4), skill('e', ['openai'], 5)],
-  { keys: [key('openai', 'api'), key('anthropic', 'api'), key('claude', 'subscription'), key('card', 'account'), key('pi', 'hardware'), key('vercel', 'account'), key('custom', 'api', { env: ['CUSTOM_API_KEY', 'bad name'] })] },
+  { keys: [key('openai', 'api'), key('anthropic', 'api'), key('claude', 'subscription'), key('card', 'account'), key('pi', 'hardware'), key('vercel', 'account'), key('custom', 'api', { env: ['CUSTOM_API_KEY', 'bad name', 'NODE_OPTIONS', 'NEXT_PUBLIC_LEAK_KEY'] })] },
   'folder',
 ) as AcademyContent
 
@@ -58,6 +59,14 @@ describe('.env parsing keeps names and nothing else', () => {
     ])
   })
 
+  it('a comment right after the "=" leaves it empty', () => {
+    expect(parseEnvNames('KEY= # later\nTWO=#x\nTHREE=a#b\n')).toEqual([
+      { name: 'KEY', filled: false },
+      { name: 'TWO', filled: false },
+      { name: 'THREE', filled: true },
+    ])
+  })
+
   it('returns no value, whatever the line looks like', () => {
     expect(JSON.stringify(parseEnvNames(text))).not.toContain(SECRET)
     expect(JSON.stringify(parseEnvNames(text))).not.toContain('quoted value')
@@ -70,7 +79,12 @@ describe('writing a value into a .env line', () => {
     expect(formatEnvValue('sk-abc_123.XYZ')).toBe('sk-abc_123.XYZ')
     expect(formatEnvValue('has space #hash')).toBe("'has space #hash'")
     expect(formatEnvValue("it's #1")).toBe('"it\'s #1"')
-    expect(formatEnvValue("it's $x")).toBeNull()
+    // Next expands $NAME in every kind of quote: each $ is written as \$.
+    expect(formatEnvValue("it's $x")).toBe(String.raw`"it's \$x"`)
+    expect(formatEnvValue('sk-ab$cd')).toBe(String.raw`'sk-ab\$cd'`)
+    // A backslash right before a $ cannot be told apart from that escape.
+    expect(formatEnvValue(String.raw`a\$b`)).toBeNull()
+    expect(formatEnvValue("it's \"both\"")).toBeNull()
     expect(formatEnvValue('two\nlines')).toBeNull()
     expect(formatEnvValue('')).toBeNull()
     expect(formatEnvValue('x'.repeat(4001))).toBeNull()
@@ -86,6 +100,11 @@ describe('writing a value into a .env line', () => {
     expect(setEnvValue('A=1\n', 'KEY', 'v')).toBe('A=1\nKEY=v\n')
     expect(setEnvValue('', 'KEY', 'v')).toBe('KEY=v\n')
     expect(setEnvValue('KEY_TWO=1\n', 'KEY', 'v')).toBe('KEY_TWO=1\nKEY=v\n')
+  })
+
+  it('replaces every assignment of the name (the last one counts) and keeps an export in front', () => {
+    expect(setEnvValue('KEY=a\nB=1\nexport KEY=b\n', 'KEY', 'v')).toBe('KEY=v\nB=1\nexport KEY=v\n')
+    expect(() => setEnvValue('', 'BAD NAME', 'v')).toThrow()
   })
 })
 
@@ -118,6 +137,8 @@ describe('is a key held?', () => {
   it('a plugin and a mark count', () => {
     expect(findKey(keyOf('vercel'), facts({ plugins: ['vercel'] }))[0]).toMatchObject({ source: 'plugin', label: 'Claude plugin: vercel' })
     expect(findKey(keyOf('card'), facts({ marks: { card: { at: 1 } } }))).toEqual([{ source: 'marked', label: 'marked as held by you' }])
+    // An API key is held when it is stored somewhere, not by a mark (an old one is ignored).
+    expect(findKey(keyOf('openai'), facts({ marks: { openai: { at: 1 } } }))).toEqual([])
   })
 
   it('have / missing / unknown', () => {
@@ -128,6 +149,12 @@ describe('is a key held?', () => {
     expect(keyState(keyOf('card'), [], f)).toBe('unknown')
     expect(keyState(keyOf('pi'), [], f)).toBe('unknown')
     expect(keyState(keyOf('openai'), [{ source: 'marked', label: '' }], f)).toBe('have')
+  })
+
+  it("a key may only be stored under a secret's name, never one that changes how the Oasis runs", () => {
+    for (const name of ['OPENAI_API_KEY', 'TELEGRAM_BOT_TOKEN', 'STRIPE_SECRET_KEY', 'GH_TOKEN']) expect(isKeyEnvName(name), name).toBe(true)
+    for (const name of ['PATH', 'NODE_OPTIONS', 'DATABASE_URL', 'NEXT_PUBLIC_LEAK_KEY', 'OASIS_ADMIN_TOKEN', 'NODE_AUTH_TOKEN', 'lower_key', 'GEMINI_LIVE_MODEL']) expect(isKeyEnvName(name), name).toBe(false)
+    for (const rule of Object.values(KEY_RULES)) for (const name of rule.env || []) expect(isKeyEnvName(name), name).toBe(true)
   })
 
   it('the content may add variable names, valid ones only', () => {

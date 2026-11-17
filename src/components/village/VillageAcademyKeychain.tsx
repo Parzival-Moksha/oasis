@@ -10,7 +10,7 @@
 // React-controlled input, it is read once when you press Save and emptied at once; the answer from the
 // server carries no value, and nothing here sends it to an agent.
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { useInputManager, useUILayer } from '../../lib/input-manager'
 import { ACADEMY_KEY_COLOR, type AcademyKeyKind } from '../../lib/village/village-academy'
@@ -81,7 +81,8 @@ function Row({ item }: { item: KeychainKeyView }) {
       return
     }
     setAdding(false)
-    showNotice(`${item.name} saved to this Oasis's .env (a restart reads it; the running Oasis has it now).`, 'info')
+    showNotice(`${item.name} saved to this Oasis's ${result.file || '.env'}; the Oasis reads it again in a few seconds.`, 'info')
+    if (result.warning) showNotice(result.warning, 'warn')
   }
   const mark = async (action: 'have' | 'unmark') => {
     setBusy(true)
@@ -126,17 +127,24 @@ function Row({ item }: { item: KeychainKeyView }) {
               </select>
             )}
             {item.envNames.length === 1 && <span className="font-mono text-[11px] text-white/60">{item.envNames[0]}=</span>}
+            {/* A text field drawn as dots, not a password field: a password field outside a form that
+                disappears after a request is what browsers take for a login, and they offer to save it. */}
             <input
               ref={input}
-              type="password"
-              name="academy-key-value"
+              type="text"
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
               autoFocus
               spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
+              data-form-type="other"
+              // No voice-typing mic on a key (VoiceTypeMic offers one on every text field).
+              data-voice-mic="off"
               placeholder="paste the key"
               disabled={busy}
+              style={{ WebkitTextSecurity: 'disc' } as CSSProperties}
               onKeyDown={event => {
                 if (event.key === 'Escape') { if (input.current) input.current.value = ''; setAdding(false); return }
                 event.stopPropagation()
@@ -146,13 +154,13 @@ function Row({ item }: { item: KeychainKeyView }) {
             />
             <button type="button" className={`${BUTTON} border-emerald-300/45 bg-emerald-400/20 text-emerald-50`} disabled={busy} onClick={() => { void save() }}>save</button>
             <button type="button" className={BUTTON} disabled={busy} onClick={() => { if (input.current) input.current.value = ''; setAdding(false) }}>cancel</button>
-            <div className="basis-full text-[10.5px] text-white/45">Written to this Oasis&rsquo;s local .env only. Shown nowhere, sent to no agent, never committed.</div>
+            <div className="basis-full text-[10.5px] text-white/45">Written to this Oasis&rsquo;s local .env only (gitignored), never shown again, never put into a message to an agent.</div>
           </div>
         )}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
         {item.envNames.length > 0 && !adding && <button type="button" data-keychain-add className={BUTTON} disabled={busy} onClick={() => setAdding(true)}>{item.state === 'have' ? 'replace' : 'add key'}</button>}
-        {item.canMark && item.marked && <button type="button" data-keychain-unmark className={BUTTON} disabled={busy} onClick={() => { void mark('unmark') }}>unmark</button>}
+        {item.marked && <button type="button" data-keychain-unmark className={BUTTON} disabled={busy} onClick={() => { void mark('unmark') }}>unmark</button>}
         {item.canMark && !item.marked && item.state !== 'have' && <button type="button" data-keychain-mark className={BUTTON} disabled={busy} onClick={() => { void mark('have') }}>mark as have</button>}
       </div>
     </div>

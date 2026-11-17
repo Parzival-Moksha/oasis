@@ -69,11 +69,20 @@ export const KEY_RULES: Record<string, KeyRule> = {
   'api-key': { env: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY'] },
 }
 
-const ENV_NAME = /^[A-Z][A-Z0-9_]{1,63}$/
+/**
+ * A name a key may be stored under: a secret's name (…_KEY, …_TOKEN, …_SECRET), never one that changes how
+ * the Oasis runs or ends up in the browser's code. The content's own `env` names pass the same check, since
+ * agents can write that folder.
+ */
+export function isKeyEnvName(name: string): boolean {
+  return /^[A-Z][A-Z0-9_]{1,63}$/.test(name)
+    && /_(KEY|TOKEN|SECRET)$/.test(name)
+    && !/^(NEXT_|NODE_|OASIS_|NPM_|__)/.test(name)
+}
 
 /** The variable names a key can be stored under: its rule's, then the content's own. */
 export function keyEnvNames(key: Pick<AcademyKey, 'id' | 'env'>): string[] {
-  return [...new Set([...(KEY_RULES[key.id]?.env || []), ...(key.env || [])])].filter(name => ENV_NAME.test(name))
+  return [...new Set([...(KEY_RULES[key.id]?.env || []), ...(key.env || [])])].filter(isKeyEnvName)
 }
 
 // ─── `.env` files: names only ───────────────────────────────────────────────
@@ -94,7 +103,8 @@ export function parseEnvNames(text: string): EnvEntry[] {
     const match = ASSIGNMENT.exec(line)
     if (!match) continue
     let value = match[2].trim()
-    if (!/^["']/.test(value)) value = value.replace(/\s+#.*$/, '').trim()
+    // Unquoted: a `#` at the start or after a space begins a comment (`KEY= # later` is empty).
+    if (!/^["']/.test(value)) value = value.replace(/(^|\s+)#.*$/, '').trim()
     else value = value.replace(/^(["'])(.*?)\1.*$/, '$2').trim()
     out.push({ name: match[1], filled: value.length > 0 })
   }
@@ -102,29 +112,40 @@ export function parseEnvNames(text: string): EnvEntry[] {
 }
 
 /**
- * A value as an `.env` line wants it: bare when it is plain, quoted when it has spaces or `#`, refused
- * (null) when it cannot be written safely (a line break, or both kinds of quote).
+ * A value as an `.env` line wants it, so that Next reads back exactly what was pasted: bare when it is
+ * plain, single-quoted otherwise, double-quoted when it has a single quote. Next expands `$NAME` and
+ * `${NAME}` inside every kind of quote (dotenv-expand), so each `$` is written as `\$`. Refused (null)
+ * when it cannot round-trip: a line break, a backslash right before a `$`, or a value with a single
+ * quote plus a double quote, a backtick or a backslash.
  */
 export function formatEnvValue(value: string): string | null {
-  if (!value || value.length > 4000 || /[\r\n\0]/.test(value)) return null
+  if (!value || value.length > 4000 || /[\r\n\0\v\f]/.test(value)) return null
+  if (/\\\$/.test(value)) return null
   if (/^[A-Za-z0-9_\-./+=:@~,%]+$/.test(value)) return value
-  if (!value.includes("'")) return `'${value}'`
-  if (!/["`$\\]/.test(value)) return `"${value}"`
+  const escaped = value.replace(/\$/g, '\\$')
+  if (!value.includes("'")) return `'${escaped}'`
+  if (!/["`\\]/.test(value)) return `"${escaped}"`
   return null
 }
 
 /**
- * The `.env` text with `name` set: its first assignment is replaced in place (a commented line is left
- * alone), otherwise one is added at the end. Line endings and every other line stay as they were.
+ * The `.env` text with `name` set: every assignment of it is replaced in place (the last one is the one
+ * that counts, so all of them), keeping an `export ` in front; a commented line is left alone. None: one is
+ * added at the end. Line endings and every other line stay as they were.
  */
 export function setEnvValue(text: string, name: string, formatted: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error('not a variable name')
   const eol = text.includes('\r\n') ? '\r\n' : '\n'
   const lines = text.split(/\r?\n/)
-  const at = lines.findIndex(line => !/^\s*#/.test(line) && new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=`).test(line))
-  if (at >= 0) {
-    lines[at] = `${name}=${formatted}`
-    return lines.join(eol)
+  const assignment = new RegExp(`^\\s*(export\\s+)?${name}\\s*=`)
+  let replaced = false
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = assignment.exec(lines[index])
+    if (!match) continue
+    lines[index] = `${match[1] || ''}${name}=${formatted}`
+    replaced = true
   }
+  if (replaced) return lines.join(eol)
   const body = text.length === 0 || text.endsWith('\n') ? text : text + eol
   return `${body}${name}=${formatted}${eol}`
 }
@@ -201,7 +222,8 @@ export function findKey(key: AcademyKey, facts: KeychainFacts): KeyFound[] {
     const plugin = facts.plugins.find(name => rule.plugin!.test(name))
     if (plugin) found.push({ source: 'plugin', label: `Claude plugin: ${plugin}` })
   }
-  if (facts.marks[key.id]) found.push({ source: 'marked', label: 'marked as held by you' })
+  // A mark stands for a plan, an account or a machine; an API key is held when it is stored somewhere.
+  if (facts.marks[key.id] && key.kind !== 'api') found.push({ source: 'marked', label: 'marked as held by you' })
   return found
 }
 

@@ -131,14 +131,14 @@ export type KeychainChange =
   | { key: string; action: 'store'; value: string; name?: string }
 
 /** Mark, unmark, or store a pasted key. The value is passed on and dropped; the answer holds none. */
-export async function changeKeychain(change: KeychainChange): Promise<{ ok: boolean; error?: string }> {
+export async function changeKeychain(change: KeychainChange): Promise<{ ok: boolean; error?: string; warning?: string; file?: string }> {
   try {
     const response = await fetch('/api/academy/keychain', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(change) })
-    const data = await response.json().catch(() => ({})) as { error?: string; key?: KeychainKeyView }
+    const data = await response.json().catch(() => ({})) as { error?: string; key?: KeychainKeyView; warning?: string; file?: string }
     if (!response.ok) return { ok: false, error: data.error || `HTTP ${response.status}` }
     lastBody = ''
     await refreshKeychain(true)
-    return { ok: true }
+    return { ok: true, ...(data.warning ? { warning: data.warning } : {}), ...(data.file ? { file: data.file } : {}) }
   } catch {
     return { ok: false, error: 'could not reach the Oasis' }
   }

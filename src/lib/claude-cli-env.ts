@@ -36,6 +36,14 @@ export function buildClaudeCliEnv(extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
     }
   }
 
+  // The Oasis runs Claude on the owner's subscription login, never an API key (as the agent engine does,
+  // packages/oasis-agent-engine/src/claude.js). An Anthropic key in the Oasis's .env (the Academy keychain
+  // can store one) would otherwise switch every Claude CLI this server starts to API billing.
+  if (!process.env.OASIS_KEEP_API_KEY) {
+    delete env.ANTHROPIC_API_KEY
+    delete env.ANTHROPIC_AUTH_TOKEN
+  }
+
   return {
     ...env,
     ...extra,
