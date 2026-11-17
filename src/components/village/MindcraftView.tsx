@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useMindcraftLook } from './mindcraft-look'
 import { ManualTimeForm } from './ManualTimeForm'
-import { formatClock, type MindcraftBook, type MindcraftDay, type WorkSnapshot } from '../../lib/village/work-vow'
+import { formatClock, type MindcraftBook, type MindcraftDay, type WorkSnapshot, type WorkUnit } from '../../lib/village/work-vow'
 
 const UNIT_COLOR = { mission: '#38bdf8', agent: '#c084fc', free: '#34d399', manual: '#f59e0b' }
 
@@ -27,7 +27,60 @@ function dayLabel(date: string): string {
   return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
 }
 
-function DayList({ days, today, target, empty }: { days: MindcraftDay[]; today: string; target: number | null; empty: string }) {
+/** `1:23:45`, spelled so nobody misreads it: hours, minutes, seconds. */
+function hms(seconds: number): string {
+  return formatClock(seconds)
+}
+
+function UnitRow({ unit, date, onRemoveManual }: { unit: WorkUnit; date: string; onRemoveManual?: (date: string, index: number) => void }) {
+  const [open, setOpen] = useState(false)
+  const foldable = Boolean(unit.parts?.length)
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className={`flex items-start gap-3 text-white/90 ${foldable ? 'cursor-pointer' : ''}`} onClick={foldable ? () => setOpen(value => !value) : undefined}>
+        <span className="mt-[7px] h-2 w-2 shrink-0 rounded-full" style={{ background: UNIT_COLOR[unit.kind] }} />
+        <span className="min-w-0 flex-1 break-words">
+          {foldable ? (open ? '▾ ' : '▸ ') : ''}{unit.label}
+          {/* An agent's XP is its minutes × its mission's priority: say which mission, and the rate. */}
+          {unit.kind === 'agent' && !unit.parts && (
+            <span className="text-white/55">
+              {unit.mission
+                ? <> · counted for “{unit.mission}”{typeof unit.priority === 'number' ? <> at {unit.priority} XP a minute (that mission&rsquo;s priority)</> : null}</>
+                : <> · no mission names it: hours, no XP</>}
+              {unit.split ? <> · own {hms(unit.split.own)} + helpers {hms(unit.split.helpers)}</> : null}
+            </span>
+          )}
+        </span>
+        <span className="shrink-0 whitespace-nowrap text-right font-bold tabular-nums">{hms(unit.seconds)}</span>
+        <span className="min-w-[78px] shrink-0 whitespace-nowrap text-right tabular-nums text-white/60">{unit.xp} XP</span>
+        {unit.kind === 'manual' && typeof unit.manualIndex === 'number' && onRemoveManual && (
+          <button
+            type="button"
+            data-mindcraft="manual-delete"
+            title="Delete this entry"
+            onClick={event => { event.stopPropagation(); onRemoveManual(date, unit.manualIndex as number) }}
+            className="shrink-0 rounded border border-rose-300/40 bg-rose-500/15 px-2 py-0.5 text-[12px] font-bold text-rose-100 hover:bg-rose-500/35"
+          >
+            delete
+          </button>
+        )}
+      </div>
+      {open && unit.parts && (
+        <div className="ml-5 flex flex-col gap-0.5 border-l border-white/10 pl-3">
+          {unit.parts.map(part => (
+            <div key={part.label} className="flex items-start gap-3 text-white/75">
+              <span className="min-w-0 flex-1 break-words">{part.label}</span>
+              <span className="shrink-0 whitespace-nowrap tabular-nums">{hms(part.seconds)}</span>
+              <span className="min-w-[78px] shrink-0" />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DayList({ days, today, target, empty, onRemoveManual }: { days: MindcraftDay[]; today: string; target: number | null; empty: string; onRemoveManual?: (date: string, index: number) => void }) {
   const [open, setOpen] = useState<Record<string, boolean>>({})
   if (!days.length) return <div className="py-6 text-center text-white/45">{empty}</div>
   const top = Math.max(1, ...days.map(day => day.seconds))
@@ -40,23 +93,22 @@ function DayList({ days, today, target, empty }: { days: MindcraftDay[]; today: 
           <div key={day.date} className="mc-card">
             <button type="button" onClick={() => setOpen(value => ({ ...value, [day.date]: !isOpen }))} className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-white/5">
               <span className="w-3 text-white/50">{isOpen ? '▾' : '▸'}</span>
-              <span className="mc-strong w-[124px] shrink-0 text-[13px]">{dayLabel(day.date)}{day.date === today ? ' · today' : ''}</span>
+              <span className="mc-strong w-[136px] shrink-0 text-[14px]">{dayLabel(day.date)}{day.date === today ? ' · today' : ''}</span>
               <span className="mc-track min-w-0 flex-1">
                 <span className="block h-full" style={{ width: `${(day.seconds / (target ? Math.max(target, top) : top)) * 100}%`, background: hit ? '#34d399' : '#fbbf24' }} />
               </span>
-              <span className="w-[66px] shrink-0 text-right tabular-nums">{formatClock(day.seconds)}</span>
-              <span className="w-[72px] shrink-0 text-right font-bold tabular-nums" style={{ color: hit ? '#34d399' : '#fde68a' }}>{day.xp} XP</span>
+              {/* Hours are the main number; XP stands beside it, smaller. */}
+              <span className="shrink-0 whitespace-nowrap text-right text-[17px] font-bold tabular-nums" style={{ color: hit ? '#34d399' : '#fff' }}>{hms(day.seconds)}</span>
+              <span className="min-w-[78px] shrink-0 whitespace-nowrap text-right tabular-nums text-white/65">{day.xp} XP</span>
             </button>
             {isOpen && (
               <div className="flex flex-col gap-1 border-t border-white/10 px-3 py-2">
-                {day.units.map((unit, index) => (
-                  <div key={index} className="flex items-center gap-3 text-white/85">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: UNIT_COLOR[unit.kind] }} />
-                    <span className="min-w-0 flex-1 truncate">{unit.label}{unit.mission ? <span className="text-white/45"> · {unit.mission}</span> : null}</span>
-                    <span className="w-[66px] shrink-0 text-right tabular-nums text-white/70">{formatClock(unit.seconds)}</span>
-                    <span className="w-[72px] shrink-0 text-right tabular-nums">{unit.xp} XP</span>
+                {day.units.map((unit, index) => <UnitRow key={index} unit={unit} date={day.date} onRemoveManual={onRemoveManual} />)}
+                {(day.bonusXp || day.penaltyXp) ? (
+                  <div className="mt-1 text-white/55">
+                    {day.bonusXp ? <>The day was kept: its XP counts double (+{day.bonusXp}).</> : <>The day fell short: −{day.penaltyXp} XP for the missing minutes.</>} That is inside the {day.xp} XP above.
                   </div>
-                ))}
+                ) : null}
               </div>
             )}
           </div>
@@ -70,7 +122,7 @@ export function MindcraftView() {
   useMindcraftLook() // the look (textures, typefaces) lives in mindcraft-look.tsx; this file carries its class names
   const [book, setBook] = useState<MindcraftBook | null>(null)
   const [snapshot, setSnapshot] = useState<WorkSnapshot | null>(null)
-  const [tab, setTab] = useState<string>('mine')
+  const [tab, setTab] = useState<'you' | 'agents'>('you')
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
@@ -94,19 +146,21 @@ export function MindcraftView() {
     return () => window.clearInterval(timer)
   }, [load])
 
-  const setValor = async (value: number) => {
-    await fetch('/api/village/work', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ settings: { freeValor: value } }) }).catch(() => null)
+  const post = async (body: unknown) => {
+    await fetch('/api/village/work', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
     void load()
+  }
+  const removeManual = (date: string, index: number) => {
+    const entry = book?.owner.find(day => day.date === date)?.units.find(unit => unit.manualIndex === index)
+    if (entry && window.confirm(`Delete "${entry.label}" (${formatClock(entry.seconds)}) from ${date}?`)) void post({ manual: { date, remove: index } })
   }
 
   if (error && !book) return <div className="p-6 text-rose-200">Mindcraft can&rsquo;t read the work book: {error}</div>
   if (!book || !snapshot) return <div className="p-6 text-white/50">Opening the book…</div>
 
-  const agent = book.agents.find(item => item.key === tab)
   const tabs = [
-    { id: 'mine', label: 'Mine', sub: `${formatClock(book.totals.owner.seconds)} · ${book.totals.owner.xp} XP` },
-    { id: 'oasis', label: 'The Oasis', sub: `${formatClock(book.totals.oasis.seconds)} · ${book.totals.oasis.xp} XP` },
-    ...book.agents.map(item => ({ id: item.key, label: item.name, sub: `${formatClock(item.seconds)} · ${item.xp} XP` })),
+    { id: 'you' as const, label: 'You', sub: `${hms(book.totals.owner.seconds)} · ${book.totals.owner.xp} XP` },
+    { id: 'agents' as const, label: 'The Agents', sub: `${hms(book.totals.oasis.seconds)} · ${book.totals.oasis.xp} XP` },
   ]
   const vow = snapshot.commitments[0]
   return (
@@ -115,11 +169,11 @@ export function MindcraftView() {
         <div>
           <div className="mc-eyebrow">Mindcraft</div>
           <div className="mc-title text-[26px] leading-tight">
-            Today {formatClock(snapshot.today.seconds)} <span className="text-white/45">/ {formatClock(snapshot.targetSeconds)}</span> · {snapshot.today.xp} XP
+            Today {hms(snapshot.today.seconds)} <span className="text-white/45">/ {hms(snapshot.targetSeconds)}</span> <span className="text-[17px] text-white/60">· {book.owner.find(day => day.date === snapshot.date)?.xp ?? snapshot.today.xp} XP</span>
           </div>
           {vow && (
-            <div className="mc-note">
-              {vow.label}: a day hit <span className="text-emerald-300">×{vow.multiplier}</span>, a missing minute <span className="text-rose-300">−{vow.penaltyPerMinute} XP</span>. So far {snapshot.totals.xp} + {snapshot.totals.bonusXp} − {snapshot.totals.penaltyXp} = <span className="font-bold text-white">{snapshot.totals.netXp} XP</span>.
+            <div className="mc-note" style={{ fontSize: 21 }}>
+              {vow.label}. A day kept counts <span className="text-emerald-300">double</span>; a missing minute costs <span className="text-rose-300">{vow.penaltyPerMinute} XP</span>.
             </div>
           )}
         </div>
@@ -127,7 +181,7 @@ export function MindcraftView() {
           Valor with nothing in focus
           <select
             value={String(snapshot.settings.freeValor)}
-            onChange={event => { void setValor(Number(event.target.value)) }}
+            onChange={event => { void post({ settings: { freeValor: Number(event.target.value) } }) }}
             onKeyDown={event => event.stopPropagation()}
             className="rounded border border-white/15 bg-black/50 px-1 py-0.5 text-white"
           >
@@ -137,26 +191,38 @@ export function MindcraftView() {
       </div>
       <div className="flex shrink-0 flex-wrap gap-2.5 px-1 pb-1">
         {tabs.map(item => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setTab(item.id)}
-            className="mc-tab"
-            data-on={tab === item.id ? '1' : '0'}
-          >
+          <button key={item.id} type="button" onClick={() => setTab(item.id)} className="mc-tab" style={{ minWidth: 260 }} data-on={tab === item.id ? '1' : '0'}>
             <div>{item.label}</div>
             <div>{item.sub}</div>
           </button>
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-        {tab === 'mine' && <DayList days={book.owner} today={snapshot.date} target={snapshot.targetSeconds} empty="Nothing counted yet. Time counts while the Oasis is in front and you are doing something." />}
-        {tab === 'oasis' && <DayList days={book.oasis} today={snapshot.date} target={null} empty="No agent has finished a turn yet while an Oasis page was listening." />}
-        {agent && <DayList days={agent.days} today={snapshot.date} target={null} empty="Nothing yet." />}
+        {tab === 'you' && <DayList days={book.owner} today={snapshot.date} target={snapshot.targetSeconds} onRemoveManual={removeManual} empty="Nothing counted yet. Time counts while the Oasis is in front and you are doing something." />}
+        {tab === 'agents' && (
+          <div className="flex flex-col gap-3">
+            {book.agents.length > 0 && (
+              <div className="mc-card flex flex-col gap-1 px-3 py-2">
+                <div className="mc-strong text-[14px]">All days: who worked longest</div>
+                {book.agents.map(agent => (
+                  <UnitRow key={agent.key} date="" unit={{ kind: 'agent', label: agent.name, seconds: agent.seconds, xp: agent.xp, ...(agent.mission ? { mission: agent.mission } : {}), ...(typeof agent.priority === 'number' ? { priority: agent.priority } : {}) }} />
+                ))}
+              </div>
+            )}
+            <DayList days={book.oasis} today={snapshot.date} target={null} empty="No agent has finished a turn yet while an Oasis page was listening." />
+          </div>
+        )}
       </div>
-      {tab === 'mine' && <ManualTimeForm today={snapshot.date} onSaved={() => { void load() }} />}
-      <div className="mc-foot shrink-0 pt-2 leading-snug">
-        {snapshot.rule} A day runs from {snapshot.settings.dayStartsAt} to {snapshot.settings.dayStartsAt}. One row per mission, per agent and for the Oasis each day, never one per turn.
+      {tab === 'you' && (
+        <ManualTimeForm
+          today={snapshot.date}
+          targetSeconds={snapshot.targetSeconds}
+          daySeconds={date => book.owner.find(day => day.date === date)?.seconds || 0}
+          onSaved={() => { void load() }}
+        />
+      )}
+      <div className="mc-foot shrink-0 pt-2 leading-snug" style={{ fontSize: 21 }}>
+        Hours are the main number. You earn 1 XP a minute with an agent or a mission open, {snapshot.settings.freeValor} with nothing open; an agent earns its minutes × its mission&rsquo;s priority. A day runs from {snapshot.settings.dayStartsAt} to {snapshot.settings.dayStartsAt}.
       </div>
     </div>
   )
@@ -186,17 +252,8 @@ export function MindcraftWindow() {
       <div className="fixed inset-0 z-[9390] bg-slate-950/70 backdrop-blur-sm" onClick={() => setOpen(false)} />
       <div
         data-ui-panel="mindcraft"
-        className="fixed left-1/2 top-[5%] z-[9395] flex h-[90%] w-[min(900px,calc(100vw-32px))] -translate-x-1/2 flex-col px-3 pb-2 pt-3"
-        style={{
-          // The spell book's materials (Hipster, 2026-11-16): a painted iron frame, nine-sliced so its
-          // jewelled corners keep their shape, around a dark page.
-          border: '46px solid transparent',
-          borderImage: 'url(/ui/rail/frame-large.png) 118 / 46px / 5px stretch',
-          // The page runs under the frame, to its edge: nothing of the world shows between the two.
-          background: 'linear-gradient(180deg, rgba(13,15,22,0.9) 0%, rgba(9,10,15,0.95) 100%) border-box, url(/ui/spellbook/frame/page-bg-agent.jpg) center / cover border-box',
-          borderRadius: 10,
-          boxShadow: '0 24px 70px rgba(0,0,0,0.6)',
-        }}
+        data-jewels="1"
+        className="oasis-frame fixed left-1/2 top-[5%] z-[9395] flex h-[90%] w-[min(900px,calc(100vw-32px))] -translate-x-1/2 flex-col px-2 pb-1 pt-0"
       >
         <button type="button" onClick={() => setOpen(false)} title="Close (Esc)" className="mc-scope absolute right-1 top-1 z-10"><span className="mc-close flex items-center justify-center">✕</span></button>
         <MindcraftView />

@@ -65,8 +65,11 @@ export interface AgentHours {
   helpers: number
   /** Working minutes × the priority of the mission it was on. */
   xp: number
-  /** The mission its latest minutes counted on. */
+  /** The mission its latest minutes counted on, and that mission's priority (its XP rate per minute). */
   mission?: string
+  priority?: number
+  /** Its seconds per mission this day, by mission file. */
+  missions?: Record<string, number>
 }
 
 export interface WorkDay {
@@ -118,6 +121,8 @@ export interface WorkFile {
   releasedSeq?: number
   /** What the owner can change in Mindcraft. */
   settings?: { freeValor?: number }
+  /** The mission an agent said it is working on, by agent name (lower case): wins over the missions' `who`. */
+  agentMissions?: Record<string, string>
   /** Agent hours: the latest event booked per agent and kind, so a replayed or doubled event is not booked twice. */
   marks?: Record<string, number>
 }
@@ -164,7 +169,7 @@ export function parseWorkFile(value: unknown): WorkFile {
       if (a && typeof a === 'object') (parsed.agents ||= {})[key] = { name: String(a.name || key), seconds: num(a.seconds), xp: num(a.xp) }
     }
     for (const [key, h] of Object.entries(day.hours || {})) {
-      if (h && typeof h === 'object') (parsed.hours ||= {})[key] = { name: String(h.name || key), ownSeconds: num(h.ownSeconds), helperSeconds: num(h.helperSeconds), turns: num(h.turns), helpers: num(h.helpers), xp: num(h.xp), ...(typeof h.mission === 'string' && h.mission ? { mission: h.mission } : {}) }
+      if (h && typeof h === 'object') (parsed.hours ||= {})[key] = { name: String(h.name || key), ownSeconds: num(h.ownSeconds), helperSeconds: num(h.helperSeconds), turns: num(h.turns), helpers: num(h.helpers), xp: num(h.xp), ...(typeof h.mission === 'string' && h.mission ? { mission: h.mission } : {}), ...(typeof h.priority === 'number' ? { priority: num(h.priority) } : {}), ...(h.missions && typeof h.missions === 'object' ? { missions: Object.fromEntries(Object.entries(h.missions).filter(([, v]) => num(v)).map(([k, v]) => [k, num(v)])) } : {}) }
     }
     for (const m of Array.isArray(day.manual) ? day.manual : []) {
       if (m && typeof m === 'object' && num(m.seconds)) (parsed.manual ||= []).push({ seconds: num(m.seconds), xp: num(m.xp), reason: String(m.reason || ''), at: num(m.at) })
@@ -177,6 +182,9 @@ export function parseWorkFile(value: unknown): WorkFile {
   if (typeof raw.released === 'string') file.released = raw.released
   if (typeof raw.releasedSeq === 'number') file.releasedSeq = raw.releasedSeq
   if (raw.settings && typeof raw.settings.freeValor === 'number' && raw.settings.freeValor >= 0 && raw.settings.freeValor <= 1) file.settings = { freeValor: raw.settings.freeValor }
+  if (raw.agentMissions && typeof raw.agentMissions === 'object') {
+    for (const [name, mission] of Object.entries(raw.agentMissions)) if (typeof mission === 'string' && mission) (file.agentMissions ||= {})[name] = mission
+  }
   if (raw.marks && typeof raw.marks === 'object') {
     for (const [key, ts] of Object.entries(raw.marks)) if (num(ts)) (file.marks ||= {})[key] = ts as number
   }
@@ -421,7 +429,7 @@ export interface AgentWorkReport {
   /** turn: the agent's own time (ownTurnMs). helper: how long the helper ran. */
   ms: number
   /** The mission these minutes count on (the server looks it up from the missions' `who`). */
-  mission?: { title: string; priority: number } | null
+  mission?: { file?: string; title: string; priority: number } | null
 }
 
 /** Book one finished turn or helper. The same event again (a second tab, a replay after a reload) is ignored. */
@@ -439,6 +447,8 @@ export function applyAgentWork(input: WorkFile, report: AgentWorkReport, offsetM
   if (report.mission) {
     hours.xp = (hours.xp || 0) + (seconds / 60) * Math.max(0, report.mission.priority)
     hours.mission = report.mission.title
+    hours.priority = Math.max(0, report.mission.priority)
+    if (report.mission.file) (hours.missions ||= {})[report.mission.file] = (hours.missions?.[report.mission.file] || 0) + seconds
   }
   if (report.kind === 'turn') {
     hours.ownSeconds += seconds
@@ -542,12 +552,24 @@ export interface WorkUnit {
   xp: number
   /** A mission the unit's minutes counted on (agents). */
   mission?: string
+  /** That mission's priority: the agent's XP per minute. Absent with no mission (no XP). */
+  priority?: number
+  /** An agent's own time and its helpers' (seconds), when it had helpers. */
+  split?: { own: number; helpers: number }
+  /** "With agents": each agent and the owner's seconds with it, most first. */
+  parts?: Array<{ label: string; seconds: number }>
+  /** A manual entry's place in the day's list (for taking it back). */
+  manualIndex?: number
 }
 
 export interface MindcraftDay {
   date: string
   seconds: number
+  /** The one XP number of the day: what the time earned, plus the commitment's bonus, minus its penalty. */
   xp: number
+  /** What is inside `xp` from the commitment (owner days only). */
+  bonusXp?: number
+  penaltyXp?: number
   units: WorkUnit[]
 }
 
@@ -555,41 +577,50 @@ export interface MindcraftBook {
   /** The owner's days, newest first: units are his missions, his time with agents, and in the Oasis. */
   owner: MindcraftDay[]
   /** Each agent's days: one unit a day (own time plus helpers, XP on its mission). */
-  agents: Array<{ key: string; name: string; seconds: number; xp: number; days: MindcraftDay[] }>
+  agents: Array<{ key: string; name: string; seconds: number; xp: number; days: MindcraftDay[]; mission?: string; priority?: number }>
   /** All agents together, per day: one unit per agent. */
   oasis: MindcraftDay[]
   totals: { owner: { seconds: number; xp: number }; oasis: { seconds: number; xp: number } }
 }
 
 /** Everything in the book as day lists: the owner's Mindcraft, each agent's, and the whole Oasis'. */
-export function mindcraftBook(file: WorkFile): MindcraftBook {
+export function mindcraftBook(file: WorkFile, today = localDay(Date.now())): MindcraftBook {
   const dates = Object.keys(file.days).sort().reverse()
+  const vowDays = new Map(evaluateCommitment(file, file.vow, today).days.map(day => [day.date, day]))
   const owner: MindcraftDay[] = []
   const oasis: MindcraftDay[] = []
-  const byAgent = new Map<string, { key: string; name: string; seconds: number; xp: number; days: MindcraftDay[] }>()
+  const byAgent = new Map<string, MindcraftBook['agents'][number]>()
   const valor = freeValor(file)
   for (const date of dates) {
     const day = file.days[date]
     const units: WorkUnit[] = [
       ...Object.values(day.missions).map(m => ({ kind: 'mission' as const, label: m.title, seconds: m.seconds, xp: round1(m.xp) })),
       // Time with agents and no mission, one unit per agent would double the seconds: the agents' split is in the summary.
-      ...(day.agentSeconds ? [{ kind: 'agent' as const, label: `With agents${agentNames(day)}`, seconds: day.agentSeconds, xp: round1(day.agentXp || 0) }] : []),
+      ...(day.agentSeconds ? [{ kind: 'agent' as const, label: 'With agents', seconds: day.agentSeconds, xp: round1(day.agentXp || 0), parts: Object.values(day.agents || {}).sort((a, b) => b.seconds - a.seconds).map(agent => ({ label: agent.name, seconds: agent.seconds })) }] : []),
       ...(day.freeSeconds ? [{ kind: 'free' as const, label: `In the Oasis ×${valor}`, seconds: day.freeSeconds, xp: round1(day.freeXp) }] : []),
-      ...(day.manual || []).map(m => ({ kind: 'manual' as const, label: `Added by hand: ${m.reason}`, seconds: m.seconds, xp: round1(m.xp) })),
-    ].sort((a, b) => b.xp - a.xp)
-    if (units.length) owner.push({ date, seconds: daySeconds(day), xp: dayXp(day), units })
+      ...(day.manual || []).map((m, manualIndex) => ({ kind: 'manual' as const, label: `Added by hand: ${m.reason}`, seconds: m.seconds, xp: round1(m.xp), manualIndex })),
+    ].sort((a, b) => b.seconds - a.seconds)
+    const stake = vowDays.get(date)
+    const bonusXp = stake?.status === 'hit' ? stake.bonusXp : 0
+    const penaltyXp = stake?.status === 'missed' ? stake.penaltyXp : 0
+    if (units.length || penaltyXp) owner.push({ date, seconds: daySeconds(day), xp: round1(dayXp(day) + bonusXp - penaltyXp), ...(bonusXp ? { bonusXp } : {}), ...(penaltyXp ? { penaltyXp } : {}), units })
     const agentUnits: WorkUnit[] = []
     for (const [key, h] of Object.entries(day.hours || {})) {
       const seconds = Math.round(h.ownSeconds + h.helperSeconds)
       if (!seconds) continue
-      const unit: WorkUnit = { kind: 'agent', label: h.name, seconds, xp: round1(h.xp || 0), ...(h.mission ? { mission: h.mission } : {}) }
+      const unit: WorkUnit = { kind: 'agent', label: h.name, seconds, xp: round1(h.xp || 0), ...(h.mission ? { mission: h.mission } : {}), ...(typeof h.priority === 'number' ? { priority: h.priority } : {}), ...(h.helperSeconds ? { split: { own: Math.round(h.ownSeconds), helpers: Math.round(h.helperSeconds) } } : {}) }
       agentUnits.push(unit)
       const agent = byAgent.get(key) || { key, name: h.name, seconds: 0, xp: 0, days: [] }
       byAgent.set(key, agent)
-      agent.name = agent.days.length ? agent.name : h.name
+      if (!agent.days.length) {
+        // Dates run newest first: the first day seen is the latest name, mission and rate.
+        agent.name = h.name
+        if (h.mission) agent.mission = h.mission
+        if (typeof h.priority === 'number') agent.priority = h.priority
+      }
       agent.seconds += seconds
       agent.xp = round1(agent.xp + (h.xp || 0))
-      agent.days.push({ date, seconds, xp: unit.xp, units: [{ ...unit, label: h.mission ? h.mission : 'No mission', ...(h.helperSeconds ? { mission: `own ${formatClock(h.ownSeconds)} + helpers ${formatClock(h.helperSeconds)}` } : {}) }] })
+      agent.days.push({ date, seconds, xp: unit.xp, units: [{ ...unit, label: h.mission || 'No mission' }] })
     }
     if (agentUnits.length) {
       agentUnits.sort((a, b) => b.seconds - a.seconds)
@@ -597,12 +628,25 @@ export function mindcraftBook(file: WorkFile): MindcraftBook {
     }
   }
   const sum = (days: MindcraftDay[]) => ({ seconds: days.reduce((t, d) => t + d.seconds, 0), xp: round1(days.reduce((t, d) => t + d.xp, 0)) })
+  // A missed day of the vow with nothing counted at all still costs: it gets a row.
+  for (const [date, stake] of vowDays) {
+    if (stake.status === 'missed' && !owner.some(day => day.date === date)) owner.push({ date, seconds: 0, xp: round1(-stake.penaltyXp), penaltyXp: stake.penaltyXp, units: [] })
+  }
+  owner.sort((a, b) => (a.date < b.date ? 1 : -1))
   return { owner, agents: [...byAgent.values()].sort((a, b) => b.seconds - a.seconds), oasis, totals: { owner: sum(owner), oasis: sum(oasis) } }
 }
 
-function agentNames(day: WorkDay): string {
-  const names = Object.values(day.agents || {}).sort((a, b) => b.seconds - a.seconds).slice(0, 3).map(agent => agent.name)
-  return names.length ? ` (${names.join(', ')})` : ''
+/** Per mission, over every day: the owner's time on it and the agents' time on it. */
+export function missionTimers(file: WorkFile): Record<string, { ownerSeconds: number; agentSeconds: number }> {
+  const out: Record<string, { ownerSeconds: number; agentSeconds: number }> = {}
+  const at = (key: string) => out[key] || (out[key] = { ownerSeconds: 0, agentSeconds: 0 })
+  for (const day of Object.values(file.days)) {
+    for (const [key, mission] of Object.entries(day.missions)) at(key).ownerSeconds += mission.seconds
+    for (const hours of Object.values(day.hours || {})) {
+      for (const [key, seconds] of Object.entries(hours.missions || {})) at(key).agentSeconds += Math.round(seconds)
+    }
+  }
+  return out
 }
 
 // ─── what the HUD and Anorak read ───────────────────────────────────────────

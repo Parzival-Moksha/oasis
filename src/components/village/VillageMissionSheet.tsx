@@ -24,6 +24,7 @@ import {
   type MissionPatch,
 } from './village-mission-store'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS } from './village-status'
+import { formatClock } from '../../lib/village/work-vow'
 import { getWorkVowState, setWorkMission, subscribeWorkVow } from './work-vow-client'
 
 const FIELD = 'rounded border border-white/15 bg-black/50 px-1 py-0.5 text-[11.5px] text-white outline-none focus:border-sky-300/70'
@@ -88,6 +89,17 @@ export function MissionSheet({ mission, mode }: { mission: Mission; mode: 'side'
   const [raw, setRaw] = useState<{ expected: string; text: string } | null>(null)
   const [who, setWho] = useState(mission.who)
   const [doneWhen, setDoneWhen] = useState(mission.doneWhen)
+  // The mission's timer: the owner's time on it and the agents' time on it, over every day.
+  const [timer, setTimer] = useState<{ ownerSeconds: number; agentSeconds: number } | null>(null)
+  useEffect(() => {
+    let gone = false
+    setTimer(null)
+    fetch('/api/village/work?missions=1', { cache: 'no-store' })
+      .then(response => (response.ok ? response.json() : null))
+      .then((data: { missions?: Record<string, { ownerSeconds: number; agentSeconds: number }> } | null) => { if (!gone) setTimer(data?.missions?.[mission.file] || { ownerSeconds: 0, agentSeconds: 0 }) })
+      .catch(() => {})
+    return () => { gone = true }
+  }, [mission.file])
   // The work counter: is this the mission being worked on?
   const working = useSyncExternalStore(subscribeWorkVow, () => getWorkVowState().snapshot?.active?.file === mission.file, () => false)
 
@@ -262,6 +274,12 @@ export function MissionSheet({ mission, mode }: { mission: Mission; mode: 'side'
                   {MISSION_STATES.map(state => <option key={state} value={state}>{state}</option>)}
                 </select>
               </label>
+              {timer && (
+                <span className="flex items-baseline gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-0.5" title="Time counted on this mission, over every day: yours (the card open, or 'work on this'), and the agents' working time booked on it">
+                  <span className="text-[9.5px] uppercase tracking-[0.14em] text-white/50">time</span>
+                  <span className="font-bold">you {formatClock(timer.ownerSeconds)} · agents {formatClock(timer.agentSeconds)}</span>
+                </span>
+              )}
               {scoreSelect('ease')}
               {scoreSelect('impact')}
               {scoreSelect('urgency')}

@@ -1,6 +1,9 @@
 // /api/village/work — the Mindcraft work counter (the owner's vow: three hours a day in the Oasis).
 //   GET   ?day=YYYY-MM-DD: that day's `summary` alone (time, XP, kept or not, per agent, per mission, top XP, agent hours).
 //   GET   ?mindcraft=1: every day as lists of work units (the owner's, each agent's, the whole Oasis').
+//   GET   ?missions=1: per mission, the owner's seconds on it and the agents'.
+//   POST  { agentMission: { agent: "Name", mission: "file.md" | null } }  an agent says which mission it works on
+//         (its minutes and XP are booked there; null: back to the mission whose `who` names it)
 //   POST  { manual: { date, minutes, reason, valor? } }  add time to a day by hand (shown as manual) · { manual: { date, remove: 0 } }
 //   POST  { settings: { freeValor: 0.7 } }  valor for time with nothing in focus.
 //   A day runs from 04:20 to 04:20 local.
@@ -16,7 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { guardAgentRoute } from '@/lib/local-request-guard'
-import { editManualTime, reportAgentWork, reportWorkBeat, setWorkSettings, switchWorkMission, workDaySummary, workMindcraft, workVowSnapshot } from '@/lib/work-vow-server'
+import { declareAgentMission, editManualTime, reportAgentWork, reportWorkBeat, setWorkSettings, switchWorkMission, workDaySummary, workMindcraft, workMissionTimers, workVowSnapshot } from '@/lib/work-vow-server'
 import type { AgentWorkReport } from '@/lib/village/work-vow'
 
 export const dynamic = 'force-dynamic'
@@ -34,6 +37,8 @@ export async function GET(request: NextRequest) {
     }
     // ?mindcraft=1: every day in the book as lists (the owner's, each agent's, the whole Oasis').
     if (new URL(request.url).searchParams.get('mindcraft')) return NextResponse.json(await workMindcraft())
+    // ?missions=1: per mission, the owner's time on it and the agents' time on it.
+    if (new URL(request.url).searchParams.get('missions')) return NextResponse.json({ missions: await workMissionTimers() })
     return NextResponse.json(await workVowSnapshot())
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
@@ -43,9 +48,15 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const denied = guardAgentRoute(request)
   if (denied) return denied
-  const body = await request.json().catch(() => null) as { tab?: unknown; seq?: unknown; seconds?: unknown; mission?: unknown; release?: unknown; back?: unknown; focus?: { agent?: { key?: unknown; name?: unknown } | null; mission?: unknown } | null; agentWork?: unknown; settings?: { freeValor?: unknown }; manual?: { date?: unknown; seconds?: unknown; minutes?: unknown; reason?: unknown; valor?: unknown; remove?: unknown } } | null
+  const body = await request.json().catch(() => null) as { tab?: unknown; seq?: unknown; seconds?: unknown; mission?: unknown; release?: unknown; back?: unknown; focus?: { agent?: { key?: unknown; name?: unknown } | null; mission?: unknown } | null; agentWork?: unknown; settings?: { freeValor?: unknown }; agentMission?: { agent?: unknown; mission?: unknown }; manual?: { date?: unknown; seconds?: unknown; minutes?: unknown; reason?: unknown; valor?: unknown; remove?: unknown } } | null
   if (!body || typeof body !== 'object') return NextResponse.json({ error: 'body must be a JSON object' }, { status: 400 })
   try {
+    if (body.agentMission && typeof body.agentMission === 'object') {
+      const { agent, mission } = body.agentMission
+      if (typeof agent !== 'string' || (mission !== null && typeof mission !== 'string')) return NextResponse.json({ error: 'agentMission is { agent: name, mission: "file.md" | null }' }, { status: 400 })
+      const result = await declareAgentMission(agent, mission)
+      return result.ok ? NextResponse.json(result) : NextResponse.json({ error: result.error }, { status: result.status })
+    }
     if (body.manual && typeof body.manual === 'object') {
       const m = body.manual
       if (typeof m.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(m.date)) return NextResponse.json({ error: 'manual.date is YYYY-MM-DD' }, { status: 400 })

@@ -17,6 +17,7 @@ import {
   daySummary,
   localDay,
   mindcraftBook,
+  missionTimers,
   emptyWorkFile,
   formatClock,
   parseWorkFile,
@@ -100,6 +101,34 @@ export function setWorkSettings(settings: { freeValor?: number }, now = Date.now
   })
 }
 
+/** Per mission: the owner's time and the agents' time, over every day. */
+export function workMissionTimers(): Promise<Record<string, { ownerSeconds: number; agentSeconds: number }>> {
+  return serial(async () => missionTimers(await readBook()))
+}
+
+/**
+ * An agent says which mission it is working on (null: back to the default, the mission whose `who`
+ * names it). Its working minutes are booked there from now on.
+ */
+export function declareAgentMission(agent: string, file: string | null): Promise<{ ok: true; agent: string; mission: string | null; title?: string; priority?: number } | { ok: false; status: number; error: string }> {
+  return serial(async () => {
+    const name = agent.trim().toLowerCase()
+    if (!name) return { ok: false as const, status: 400, error: 'agent is the agent\'s name' }
+    const book = await readBook()
+    let meta: { file: string; title: string; priority: number } | null = null
+    if (file !== null) {
+      meta = await missionMeta(file)
+      if (!meta) return { ok: false as const, status: 404, error: 'mission not found' }
+    }
+    const next = { ...(book.agentMissions || {}) }
+    if (meta) next[name] = meta.file
+    else delete next[name]
+    book.agentMissions = next
+    await writeBook(book)
+    return { ok: true as const, agent: name, mission: meta?.file || null, ...(meta ? { title: meta.title, priority: meta.priority } : {}) }
+  })
+}
+
 /** Add time to a day by hand (with a reason), or take an entry back. */
 export function editManualTime(edit: { date: string; seconds?: number; reason?: string; valor?: number; remove?: number }, now = Date.now()): Promise<{ ok: boolean; summary: WorkDaySummary }> {
   return serial(async () => {
@@ -143,8 +172,10 @@ export function reportAgentWork(reports: AgentWorkReport[]): Promise<{ booked: n
     const missions = reports.length ? await allMissions(Date.now()) : []
     for (const report of reports.slice(0, 200)) {
       // The agent's minutes count on the mission whose `who` names it: XP = minutes × that priority.
-      const mission = missionForAgent(missions, report.name)
-      const next = applyAgentWork(book, { ...report, mission: mission ? { title: mission.title, priority: mission.priority || 0 } : null })
+      // The mission the agent said it is on wins; else the open mission whose `who` names it.
+      const said = book.agentMissions?.[report.name.trim().toLowerCase()]
+      const mission = (said ? missions.find(item => item.file === said && item.column !== 'done') : null) || missionForAgent(missions, report.name)
+      const next = applyAgentWork(book, { ...report, mission: mission ? { file: mission.file, title: mission.title, priority: mission.priority || 0 } : null })
       if (next !== book) booked += 1
       book = next
     }

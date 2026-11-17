@@ -320,7 +320,7 @@ describe('agent hours', () => {
     expect(day.agentHours.totalSeconds).toBe(660)
     expect(day.agentHours.agents).toEqual([
       { key: 's1', name: 'Anorak', ownSeconds: 250, helperSeconds: 350, turns: 1, helpers: 2, xp: 0, totalSeconds: 600 },
-      { key: 's2', name: 'Morrow', ownSeconds: 60, helperSeconds: 0, turns: 1, helpers: 0, xp: 0.5, mission: 'The vow', totalSeconds: 60 },
+      { key: 's2', name: 'Morrow', ownSeconds: 60, helperSeconds: 0, turns: 1, helpers: 0, xp: 0.5, mission: 'The vow', priority: 0.5, totalSeconds: 60 },
     ])
     expect(daySummary(book, '2026-11-17', '2026-11-17').agentHours.totalSeconds).toBe(30)
     // Agent hours are not the owner's time: the vow does not move.
@@ -372,19 +372,20 @@ describe('Mindcraft: days of work units, the free-time valor setting', () => {
       hours: { s1: { name: 'Anorak', ownSeconds: 1000, helperSeconds: 800, turns: 9, helpers: 2, xp: 15, mission: 'A' }, s2: { name: 'Morrow', ownSeconds: 600, helperSeconds: 0, turns: 4, helpers: 0, xp: 0 } },
     }
     book.days['2026-11-17'] = { freeSeconds: 60, freeXp: 0.7, missions: {}, hours: { s1: { name: 'Anorak', ownSeconds: 120, helperSeconds: 0, turns: 1, helpers: 0, xp: 1, mission: 'A' } } }
-    const m = mindcraftBook(book)
+    const m = mindcraftBook(book, '2026-11-16')
     expect(m.owner.map(day => day.date)).toEqual(['2026-11-17', '2026-11-16'])
     expect(m.owner[1]).toMatchObject({ seconds: 5400, xp: 87 })
     expect(m.owner[1].units).toEqual([
       { kind: 'mission', label: 'A', seconds: 3600, xp: 60 },
-      { kind: 'agent', label: 'With agents (Anorak, Morrow)', seconds: 1200, xp: 20 },
+      { kind: 'agent', label: 'With agents', seconds: 1200, xp: 20, parts: [{ label: 'Anorak', seconds: 900 }, { label: 'Morrow', seconds: 300 }] },
       { kind: 'free', label: 'In the Oasis ×0.7', seconds: 600, xp: 7 },
     ])
     // Nine turns of Anorak are one unit for that day, not nine.
     expect(m.oasis[1]).toMatchObject({ date: '2026-11-16', seconds: 2400, xp: 15 })
     expect(m.oasis[1].units.map(unit => [unit.label, unit.seconds, unit.xp])).toEqual([['Anorak', 1800, 15], ['Morrow', 600, 0]])
     expect(m.agents.map(agent => [agent.name, agent.seconds, agent.xp, agent.days.length])).toEqual([['Anorak', 1920, 16, 2], ['Morrow', 600, 0, 1]])
-    expect(m.agents[0].days[1].units[0]).toMatchObject({ label: 'A', seconds: 1800, xp: 15, mission: 'own 0:16:40 + helpers 0:13:20' })
+    expect(m.agents[0].days[1].units[0]).toMatchObject({ label: 'A', seconds: 1800, xp: 15, split: { own: 1000, helpers: 800 } })
+    expect(m.agents[0]).toMatchObject({ mission: 'A' })
     expect(m.totals).toEqual({ owner: { seconds: 5460, xp: 87.7 }, oasis: { seconds: 2520, xp: 16 } })
   })
 })
@@ -417,7 +418,7 @@ describe('time added by hand', () => {
     expect(day).toMatchObject({ seconds: 7260, xp: 120.7, manualSeconds: 7200, freeSeconds: 60 })
     expect(day.manual).toEqual([{ seconds: 7200, xp: 120, reason: 'the counter was broken until 17:00', at: at('18:00:00') }])
     expect(day.topXp[0]).toEqual({ label: 'Added by hand: the counter was broken until 17:00', xp: 120, seconds: 7200, kind: 'manual' })
-    expect(mindcraftBook(book).owner[0].units[0]).toMatchObject({ kind: 'manual', seconds: 7200, xp: 120 })
+    expect(mindcraftBook(book, '2026-11-16').owner[0].units[0]).toMatchObject({ kind: 'manual', seconds: 7200, xp: 120, manualIndex: 0 })
     // It counts for the vow: one more hour makes the day.
     book = addManualTime(book, { date: '2026-11-16', seconds: 3600, reason: 'call', valor: 0.5 }, at('19:00:00'))
     expect(daySummary(book, '2026-11-16', '2026-11-16')).toMatchObject({ kept: true, xp: 150.7 })
@@ -435,5 +436,41 @@ describe('time added by hand', () => {
     expect(addManualTime(book, { date: 'yesterday', seconds: 600, reason: 'x' }, 1)).toBe(book)
     expect(addManualTime(book, { date: '2026-11-16', seconds: 0, reason: 'x' }, 1)).toBe(book)
     expect(addManualTime(book, { date: '2026-11-16', seconds: 90_000, reason: 'x' }, 1)).toBe(book)
+  })
+})
+
+describe('one XP number per day; where an agent\'s XP comes from; time per mission', () => {
+  it('a day\'s XP is what the time earned plus the commitment\'s bonus, minus its penalty; the total is the sum of the rows', async () => {
+    const { mindcraftBook } = await import('../village/work-vow')
+    const book = emptyWorkFile()
+    book.days['2026-11-16'] = { freeSeconds: 10_800, freeXp: 126, missions: {} }
+    book.days['2026-11-17'] = { freeSeconds: 9000, freeXp: 105, missions: {} }
+    book.days['2026-11-19'] = { freeSeconds: 600, freeXp: 7, missions: {} }
+    const m = mindcraftBook(book, '2026-11-19')
+    // 16th kept: 126 doubled. 17th half an hour short: 105 − 210. 18th: nothing at all, the full price. 19th: today, open.
+    expect(m.owner.map(day => [day.date, day.xp, day.bonusXp, day.penaltyXp])).toEqual([
+      ['2026-11-19', 7, undefined, undefined],
+      ['2026-11-18', -1260, undefined, 1260],
+      ['2026-11-17', -105, undefined, 210],
+      ['2026-11-16', 252, 126, undefined],
+    ])
+    expect(m.totals.owner.xp).toBe(-1106)
+    expect(m.totals.owner.xp).toBe(m.owner.reduce((sum, day) => sum + day.xp, 0))
+  })
+  it('an agent\'s row carries the mission its time counted for and that mission\'s priority; none: no XP', async () => {
+    const { applyAgentWork, mindcraftBook, missionTimers } = await import('../village/work-vow')
+    const ts = at('10:00:00')
+    let book = applyAgentWork(emptyWorkFile(), { key: 's1', name: 'Anorak', ts, kind: 'turn', ms: 600_000, mission: { file: 'a.md', title: 'A', priority: 0.48 } }, TZ)
+    book = applyAgentWork(book, { key: 's1', name: 'Anorak', ts: ts + 1, kind: 'helper', ms: 300_000, mission: { file: 'a.md', title: 'A', priority: 0.48 } }, TZ)
+    book = applyAgentWork(book, { key: 's2', name: 'Debugger', ts, kind: 'turn', ms: 120_000, mission: null }, TZ)
+    book.days['2026-11-16'].missions['a.md'] = { title: 'A', priority: 0.48, seconds: 90, xp: 1.5 }
+    const day = mindcraftBook(book, '2026-11-16').oasis[0]
+    expect(day.units).toEqual([
+      { kind: 'agent', label: 'Anorak', seconds: 900, xp: 7.2, mission: 'A', priority: 0.48, split: { own: 600, helpers: 300 } },
+      { kind: 'agent', label: 'Debugger', seconds: 120, xp: 0 },
+    ])
+    // The mission's timer: the owner's minutes on it and the agents'.
+    expect(missionTimers(book)).toEqual({ 'a.md': { ownerSeconds: 90, agentSeconds: 900 } })
+    expect(parseWorkFile(JSON.parse(JSON.stringify(book))).days['2026-11-16'].hours?.s1.missions).toEqual({ 'a.md': 900 })
   })
 })
