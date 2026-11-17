@@ -6,10 +6,10 @@
 
 import { useSyncExternalStore } from 'react'
 
-import { getAgentPanelColor, getPanelLook, getPanelLookVersion, panelStyle, subscribePanelLook } from '../../lib/village/panel-look'
+import { getAgentAccent, getAgentPanelColor, getPanelLook, getPanelLookVersion, panelStyle, subscribePanelLook } from '../../lib/village/panel-look'
 
 /** Background and blur for an agent's chat surface. */
 export function usePanelLook(agentKey: string) {
   useSyncExternalStore(subscribePanelLook, getPanelLookVersion, () => 0)
-  return panelStyle(getAgentPanelColor(agentKey), getPanelLook())
+  return { ...panelStyle(getAgentPanelColor(agentKey), getPanelLook()), accent: getAgentAccent(agentKey) }
 }

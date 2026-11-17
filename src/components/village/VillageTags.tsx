@@ -1,63 +1,87 @@
 'use client'
 
 // ░▒▓ VILLAGE TAGS — the name over each agent's head, and a quest marker when it wants the owner ▓▒░
-// In the 3D picture, not HTML: real text geometry from the repo's font (public/fonts), so it sits in the
-// world, is lit by nothing (always readable) and takes part in the picture's depth.
-//   The name   in the agent's own colour, a darker copy offset behind it (the extruded look, visible from any
-//              side because the tag always faces the camera), and a black outline around both. One mesh.
-//   The status the word under the name, in the status colour, with the same outline. One mesh.
-//   The marker a 3D "!" (it has something to tell you: finished, stuck) or "?" (it asks a decision), in the
-//              status colour, slowly turning from side to side and breathing: an MMO quest marker. One shared geometry per glyph.
-// It stands just above the avatar's own head: the body's height is measured from its skeleton and meshes
-// (village-companion.ts measureVillageBody), so a tall unicorn's and a short girl's sit where they should.
-// Cost: two or three draw calls per agent, no per-agent frame callbacks: one loop (VillageTagDriver) turns every
-// tag to the camera, scales the far ones up, and spins the markers.
+// In the 3D picture, not HTML. The name has four styles (Settings > Agents, lib/village/tag-style.ts) and a size:
+//   outlined  flat letters with a true outline: troika text (SDF), crisp at any distance.
+//   layered   the first look: flat letters, a darker copy stepped behind, a black copy around.
+//   3D        real solid letters (three TextGeometry, bevelled), one merged mesh per name, built once and cached.
+//   crazy     solid calligraphic letters on a wave, shading through the hues of the agent. Also one mesh.
+// The status word under it is flat, outlined. The name turns to the camera; the solid styles turn on the vertical
+// axis only (they stay upright) and sway a little, so their depth shows even when you stand square to them.
+// The marker, a 3D "!" or "?" with a rim in the agent's colour, is NOT turned to the camera: upright, it turns
+// slowly on its own vertical axis and breathes.
+// Cost: one or two draw calls per agent for the name, one for the status word, two for a marker (body and rim);
+// no per-agent frame callbacks: one loop (VillageTagDriver) moves every tag.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { Text } from '@react-three/drei'
 import * as THREE from 'three'
 import { FontLoader, type Font } from 'three/examples/jsm/loaders/FontLoader.js'
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { TAG, shadeColor, tagScale, tagText, type TagMarker } from '../../lib/village/village-tags'
+import { getTagSettings, getTagSettingsVersion, subscribeTagSettings, type TagStyle } from '../../lib/village/tag-style'
 import { measureVillageBody } from './village-companion'
 
-const FONT_URL = `${process.env.NEXT_PUBLIC_BASE_PATH || ''}/fonts/helvetiker_regular.typeface.json`
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
+const FONT_FILES = {
+  regular: `${BASE}/fonts/helvetiker_regular.typeface.json`,
+  bold: `${BASE}/fonts/helvetiker_bold.typeface.json`,
+  crazy: `${BASE}/fonts/gentilis_bold.typeface.json`,
+} as const
+/** The flat outlined style's font (an open-licence Inter Bold, served from here: nothing is fetched from a CDN). */
+const TROIKA_FONT = `${BASE}/fonts/inter-latin-700.woff`
+type FontKind = keyof typeof FONT_FILES
 
-// ─── the font, loaded once ──────────────────────────────────────────────────
+// ─── the fonts, loaded once each ────────────────────────────────────────────
 
-let font: Font | null = null
-let fontPromise: Promise<Font | null> | null = null
+const fonts: Partial<Record<FontKind, Font>> = {}
+const fontPromises: Partial<Record<FontKind, Promise<Font | null>>> = {}
 
-function loadFont(): Promise<Font | null> {
-  if (!fontPromise) {
-    fontPromise = new Promise(resolve => {
-      new FontLoader().load(FONT_URL, loaded => { font = loaded; resolve(loaded) }, undefined, () => {
-        console.warn('[village] the tag font did not load: agents have no name tags')
+function loadFont(kind: FontKind): Promise<Font | null> {
+  let promise = fontPromises[kind]
+  if (!promise) {
+    promise = new Promise(resolve => {
+      new FontLoader().load(FONT_FILES[kind], loaded => { fonts[kind] = loaded; resolve(loaded) }, undefined, () => {
+        console.warn(`[village] the tag font "${kind}" did not load`)
         resolve(null)
       })
     })
+    fontPromises[kind] = promise
   }
-  return fontPromise
+  return promise
 }
 
-function useTagFont(): Font | null {
-  const [ready, setReady] = useState<Font | null>(font)
+function useFont(kind: FontKind | null): Font | null {
+  const [ready, setReady] = useState<Font | null>(kind ? fonts[kind] ?? null : null)
   useEffect(() => {
+    if (!kind) { setReady(null); return }
     let alive = true
-    void loadFont().then(loaded => { if (alive) setReady(loaded) })
+    void loadFont(kind).then(loaded => { if (alive) setReady(loaded) })
     return () => { alive = false }
-  }, [])
-  return ready
+  }, [kind])
+  return kind ? fonts[kind] ?? ready : null
 }
 
 // ─── geometry: one mesh per piece of text, colours on the vertices ───────────
 
-/** Every tag shares this material: the colours are per vertex, nothing is lit. */
+/** Every tag shares this material: the colours are per vertex, nothing is lit (readable at night). */
 const tagMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })
 const textCache = new Map<string, THREE.BufferGeometry>()
-const TEXT_CACHE_MAX = 160
+const TEXT_CACHE_MAX = 200
 const _color = new THREE.Color()
+
+function remember(key: string, geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  textCache.set(key, geometry)
+  // Names are few; an old one leaves when the cache is full.
+  if (textCache.size > TEXT_CACHE_MAX) {
+    const oldest = textCache.keys().next().value as string
+    textCache.get(oldest)?.dispose()
+    textCache.delete(oldest)
+  }
+  return geometry
+}
 
 function paint(geometry: THREE.BufferGeometry, hex: string): THREE.BufferGeometry {
   const flat = geometry.index ? geometry.toNonIndexed() : geometry
@@ -73,24 +97,20 @@ function paint(geometry: THREE.BufferGeometry, hex: string): THREE.BufferGeometr
   flat.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   flat.deleteAttribute('uv')
   flat.deleteAttribute('normal')
+  flat.clearGroups()
   return flat
 }
 
-/**
- * Text as one geometry, centred on x, its baseline at y = 0: the letters in `color`, a darker copy offset behind
- * them when `extruded` (the 3D look), and a black copy grown by a bevel behind both (the outline).
- */
-function textGeometry(loaded: Font, text: string, size: number, color: string, extruded: boolean): THREE.BufferGeometry {
-  const key = `${text}\u0001${size}\u0001${color}\u0001${extruded ? 1 : 0}`
+/** The flat, layered style (and the status word): letters, a darker copy stepped behind when `extruded`, a black copy around. */
+function layeredGeometry(loaded: Font, text: string, size: number, color: string, extruded: boolean): THREE.BufferGeometry {
+  const key = `L\u0001${text}\u0001${size}\u0001${color}\u0001${extruded ? 1 : 0}`
   const cached = textCache.get(key)
   if (cached) return cached
   const flat = { font: loaded, size, height: 0.002, curveSegments: 3, bevelEnabled: false } as const
   const side = { ...flat, curveSegments: 1 } as const
   const depth = size * 0.16
-  const parts: THREE.BufferGeometry[] = []
-  parts.push(paint(new TextGeometry(text, flat), color))
+  const parts: THREE.BufferGeometry[] = [paint(new TextGeometry(text, flat), color)]
   if (extruded) {
-    // The side of the extrusion: the same letters, darker, stepped back and down in three layers.
     for (let layer = 1; layer <= 3; layer += 1) {
       const step = (depth * layer) / 3
       parts.push(paint(new TextGeometry(text, side).translate(step * 0.55, -step * 0.55, -step), shadeColor(color)))
@@ -104,24 +124,75 @@ function textGeometry(loaded: Font, text: string, size: number, color: string, e
   const box = merged.boundingBox as THREE.Box3
   merged.translate(-(box.min.x + box.max.x) / 2, 0, 0)
   merged.computeBoundingSphere()
-  textCache.set(key, merged)
-  // Names and status words are few; an old one leaves when the cache is full.
-  if (textCache.size > TEXT_CACHE_MAX) {
-    const oldest = textCache.keys().next().value as string
-    textCache.get(oldest)?.dispose()
-    textCache.delete(oldest)
-  }
-  return merged
+  return remember(key, merged)
 }
 
-// The markers: one extruded glyph each, shared by every agent; a material per status colour.
+/**
+ * Solid letters: the front in `color`, the sides and bevel darker. `crazy` puts the baseline on a wave and
+ * shades the hue along the word. Centred on x and z so it turns about its own middle.
+ */
+function solidGeometry(loaded: Font, text: string, size: number, color: string, crazy: boolean): THREE.BufferGeometry {
+  const key = `S${crazy ? 'c' : 'x'}\u0001${text}\u0001${size}\u0001${color}`
+  const cached = textCache.get(key)
+  if (cached) return cached
+  const depth = size * (crazy ? 0.42 : 0.34)
+  const geometry = new TextGeometry(text, {
+    font: loaded, size, height: depth, curveSegments: crazy ? 4 : 3,
+    bevelEnabled: true, bevelThickness: size * 0.035, bevelSize: size * 0.025, bevelOffset: 0, bevelSegments: 1,
+  })
+  const position = geometry.attributes.position
+  if (crazy) {
+    for (let i = 0; i < position.count; i += 1) {
+      position.setY(i, position.getY(i) + Math.sin(position.getX(i) / size * 2.4) * size * 0.16)
+    }
+  }
+  geometry.computeBoundingBox()
+  const box = geometry.boundingBox as THREE.Box3
+  const width = Math.max(1e-6, box.max.x - box.min.x)
+  geometry.translate(-(box.min.x + box.max.x) / 2, 0, -depth / 2)
+  const base = { h: 0, s: 0, l: 0 }
+  _color.set(color).getHSL(base)
+  const colors = new Float32Array(position.count * 3)
+  // Group 0 is the front and back faces, group 1 the sides (and the bevel): the sides are darker.
+  const sideOf = new Uint8Array(position.count)
+  for (const group of geometry.groups) {
+    if (group.materialIndex === 1) sideOf.fill(1, group.start, group.start + group.count)
+  }
+  for (let i = 0; i < position.count; i += 1) {
+    const along = (position.getX(i) + width / 2) / width
+    const hue = crazy ? (base.h + (along - 0.5) * 0.5 + 1) % 1 : base.h
+    _color.setHSL(hue, base.s, sideOf[i] ? base.l * 0.42 : base.l)
+    colors[i * 3] = _color.r
+    colors[i * 3 + 1] = _color.g
+    colors[i * 3 + 2] = _color.b
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geometry.deleteAttribute('uv')
+  geometry.deleteAttribute('normal')
+  geometry.clearGroups()
+  geometry.computeBoundingSphere()
+  return remember(key, geometry)
+}
+
+/** Triangle count of the geometry for a name in a style (for the cost numbers in the notes). */
+export function tagTriangleCount(style: TagStyle, text: string): number {
+  const size = TAG.nameSize
+  let vertices = 0
+  if (style === 'extruded' && fonts.bold) vertices = solidGeometry(fonts.bold, text, size, '#ffffff', false).attributes.position.count
+  else if (style === 'crazy' && fonts.crazy) vertices = solidGeometry(fonts.crazy, text, size * 1.1, '#ffffff', true).attributes.position.count
+  else if (style === 'layered' && fonts.regular) vertices = layeredGeometry(fonts.regular, text, size, '#ffffff', true).attributes.position.count
+  return Math.round(vertices / 3)
+}
+
+// The markers: one extruded glyph each, shared by every agent; a body material per status colour, a rim per agent colour.
 const markerGeometry = new Map<TagMarker, THREE.BufferGeometry>()
 const markerMaterial = new Map<string, THREE.MeshStandardMaterial>()
+const rimMaterial = new Map<string, THREE.MeshBasicMaterial>()
 
 function markerGeometryFor(loaded: Font, glyph: TagMarker): THREE.BufferGeometry {
   let geometry = markerGeometry.get(glyph)
   if (!geometry) {
-    geometry = new TextGeometry(glyph, { font: loaded, size: TAG.markerSize, height: TAG.markerSize * 0.28, curveSegments: 6, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.01, bevelSegments: 2 })
+    geometry = new TextGeometry(glyph, { font: loaded, size: TAG.markerSize, height: TAG.markerSize * 0.2, curveSegments: 6, bevelEnabled: true, bevelThickness: 0.014, bevelSize: 0.012, bevelSegments: 2 })
     geometry.center()
     markerGeometry.set(glyph, geometry)
   }
@@ -132,8 +203,18 @@ function markerMaterialFor(color: string): THREE.MeshStandardMaterial {
   let material = markerMaterial.get(color)
   if (!material) {
     // Its own light: readable at night, and it glows through the bloom.
-    material = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.85, roughness: 0.35, metalness: 0.2, toneMapped: false })
+    material = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.7, roughness: 0.3, metalness: 0.25, toneMapped: false })
     markerMaterial.set(color, material)
+  }
+  return material
+}
+
+/** The rim: the same glyph a little larger, drawn from the inside only, so it shows as an outline in the agent's colour. */
+function rimMaterialFor(color: string): THREE.MeshBasicMaterial {
+  let material = rimMaterial.get(color)
+  if (!material) {
+    material = new THREE.MeshBasicMaterial({ color, side: THREE.BackSide, toneMapped: false })
+    rimMaterial.set(color, material)
   }
   return material
 }
@@ -142,10 +223,14 @@ function markerMaterialFor(color: string): THREE.MeshStandardMaterial {
 
 interface TagEntry {
   agentId: string
-  /** Turned to the camera and scaled. */
-  group: THREE.Group
-  marker: THREE.Object3D | null
-  /** The body's top above its feet, once measured. */
+  /** At the top of the body, in the agent's group; never turned. */
+  root: THREE.Group
+  /** The name and the status word: turned to the camera, scaled. */
+  board: THREE.Group
+  /** Carries the marker up above the name, scaled with it. */
+  holder: THREE.Group
+  /** The marker itself: turns on its own vertical axis. */
+  spin: THREE.Object3D | null
   top: number
   measured: boolean
   tries: number
@@ -154,18 +239,21 @@ interface TagEntry {
 }
 
 const tags = new Set<TagEntry>()
-const _parentQuat = new THREE.Quaternion()
+const _rootQuat = new THREE.Quaternion()
+const _facing = new THREE.Quaternion()
 const _world = new THREE.Vector3()
+const _up = new THREE.Vector3(0, 1, 0)
 
-/** Mounted once with the village: every tag faces the camera, far ones grow, markers spin and breathe. */
+/** Mounted once with the village: every name faces the camera, far ones grow, markers turn and breathe. */
 export function VillageTagDriver() {
   useFrame(({ camera, clock }) => {
     if (!tags.size) return
     const t = clock.elapsedTime
+    const { style, size } = getTagSettings()
+    const solid = style === 'extruded' || style === 'crazy'
     for (const tag of tags) {
-      const group = tag.group
-      const parent = group.parent
-      if (!parent) continue
+      const root = tag.root
+      if (!root.parent) continue
       // The body may still be loading: look again twice a second until its height is known.
       if (!tag.measured && t >= tag.nextMeasureAt) {
         tag.nextMeasureAt = t + 0.5
@@ -176,21 +264,31 @@ export function VillageTagDriver() {
           tag.tries += 1
           tag.top = body.top
           tag.measured = body.rigged || tag.tries > 20
-          group.position.y = body.top
+          root.position.y = body.top
         }
       }
-      // Face the camera: the camera's own orientation, undone by whatever turns the agent.
-      parent.getWorldQuaternion(_parentQuat)
-      group.quaternion.copy(_parentQuat).invert().multiply(camera.quaternion)
-      group.getWorldPosition(_world)
-      const scale = tagScale(_world.distanceTo(camera.position))
-      if (group.scale.x !== scale) group.scale.setScalar(scale)
-      const marker = tag.marker
-      if (marker) {
-        // Turns slowly from side to side (never edge-on to the owner: it must stay readable) and breathes.
-        marker.rotation.y = Math.sin(t * 1.1 + tag.phase) * 0.7
-        const pulse = 1 + Math.sin(t * 2.4 + tag.phase) * 0.09
-        marker.scale.setScalar(pulse)
+      root.getWorldPosition(_world)
+      const scale = tagScale(_world.distanceTo(camera.position)) * size
+      if (tag.board.scale.x !== scale) tag.board.scale.setScalar(scale)
+      root.getWorldQuaternion(_rootQuat)
+      if (solid) {
+        // Upright: only turned about the vertical axis, towards the camera, with a sway that shows the depth.
+        const yaw = Math.atan2(camera.position.x - _world.x, camera.position.z - _world.z) + Math.sin(t * 0.9 + tag.phase) * (style === 'crazy' ? 0.5 : 0.36)
+        _facing.setFromAxisAngle(_up, yaw)
+        tag.board.quaternion.copy(_rootQuat).invert().multiply(_facing)
+      } else {
+        // The flat styles are cards: the camera's own orientation, undone by whatever turns the agent.
+        tag.board.quaternion.copy(_rootQuat).invert().multiply(camera.quaternion)
+      }
+      if (tag.holder.scale.x !== scale) {
+        tag.holder.scale.setScalar(scale)
+        tag.holder.position.y = TAG.markerAt * scale
+      }
+      const spin = tag.spin
+      if (spin) {
+        // Its own vertical axis, slowly, whatever the camera does; and it breathes.
+        spin.rotation.y = t * 0.9 + tag.phase
+        spin.scale.setScalar(1 + Math.sin(t * 2.2 + tag.phase) * 0.07)
       }
     }
   })
@@ -199,11 +297,15 @@ export function VillageTagDriver() {
 
 // ─── one agent's tag ────────────────────────────────────────────────────────
 
-export function VillageTag({ agentId, name, color, status, statusColor, marker, avatarKey, x, z }: {
+const NO_RAYCAST = () => {}
+
+export function VillageTag({ agentId, name, color, rim, status, statusColor, marker, avatarKey, x, z }: {
   agentId: string
   name: string
-  /** The agent's own colour (village-tags.ts agentTagColor). */
+  /** The agent's colour, lightened to read on any background (village-tags.ts readableAccent). */
   color: string
+  /** The agent's own colour as picked: the marker's rim. */
+  rim: string
   /** The status word ("working", "waiting for you"…), or empty. */
   status: string
   statusColor: string
@@ -214,27 +316,44 @@ export function VillageTag({ agentId, name, color, status, statusColor, marker, 
   x: number
   z: number
 }) {
-  const loaded = useTagFont()
-  const group = useRef<THREE.Group>(null)
-  const markerRef = useRef<THREE.Mesh>(null)
+  useSyncExternalStore(subscribeTagSettings, getTagSettingsVersion, () => 0)
+  const { style } = getTagSettings()
+  const regular = useFont(style === 'outline' ? null : 'regular')
+  const bold = useFont(style === 'extruded' || marker ? 'bold' : null)
+  const crazy = useFont(style === 'crazy' ? 'crazy' : null)
+  const root = useRef<THREE.Group>(null)
+  const board = useRef<THREE.Group>(null)
+  const holder = useRef<THREE.Group>(null)
+  const spinRef = useRef<THREE.Group>(null)
   const entry = useRef<TagEntry | null>(null)
 
-  const nameGeometry = useMemo(() => (loaded && name ? textGeometry(loaded, tagText(name), TAG.nameSize, color, true) : null), [loaded, name, color])
-  const statusGeometry = useMemo(() => (loaded && status ? textGeometry(loaded, tagText(status, 34), TAG.statusSize, statusColor, false) : null), [loaded, status, statusColor])
+  const plainName = tagText(name)
+  const plainStatus = tagText(status, 34)
+  const nameGeometry = useMemo(() => {
+    if (!plainName) return null
+    if (style === 'layered' && regular) return layeredGeometry(regular, plainName, TAG.nameSize, color, true)
+    if (style === 'extruded' && bold) return solidGeometry(bold, plainName, TAG.nameSize, color, false)
+    if (style === 'crazy' && crazy) return solidGeometry(crazy, plainName, TAG.nameSize * 1.1, color, true)
+    return null
+  }, [style, regular, bold, crazy, plainName, color])
+  const statusGeometry = useMemo(
+    () => (style !== 'outline' && regular && plainStatus ? layeredGeometry(regular, plainStatus, TAG.statusSize, statusColor, false) : null),
+    [style, regular, plainStatus, statusColor],
+  )
 
   useEffect(() => {
-    if (!group.current) return
+    if (!root.current || !board.current || !holder.current) return
     let sum = 0
     for (let i = 0; i < agentId.length; i += 1) sum += agentId.charCodeAt(i)
-    const tag: TagEntry = { agentId, group: group.current, marker: markerRef.current, top: TAG.defaultTop, measured: false, tries: 0, nextMeasureAt: 0, phase: (sum % 63) / 10 }
-    group.current.position.y = tag.top
+    root.current.position.y = TAG.defaultTop
+    const tag: TagEntry = { agentId, root: root.current, board: board.current, holder: holder.current, spin: null, top: TAG.defaultTop, measured: false, tries: 0, nextMeasureAt: 0, phase: (sum % 63) / 10 }
     entry.current = tag
     tags.add(tag)
     return () => {
       tags.delete(tag)
       entry.current = null
     }
-  }, [agentId, loaded])
+  }, [agentId])
 
   // Another body: measure its height again.
   useEffect(() => {
@@ -246,19 +365,41 @@ export function VillageTag({ agentId, name, color, status, statusColor, marker, 
 
   // The marker comes and goes with the status.
   useEffect(() => {
-    if (entry.current) entry.current.marker = markerRef.current
-  }, [marker, loaded])
+    if (entry.current) entry.current.spin = spinRef.current
+  }, [marker, bold])
 
-  if (!loaded) return null
+  const markerGeo = marker && bold ? markerGeometryFor(bold, marker) : null
   return (
-    <group ref={group} position-x={x} position-z={z} name="village-tag">
-      {statusGeometry && <mesh geometry={statusGeometry} material={tagMaterial} position={[0, TAG.statusAt, 0]} raycast={NO_RAYCAST} />}
-      {nameGeometry && <mesh geometry={nameGeometry} material={tagMaterial} position={[0, TAG.nameAt, 0]} raycast={NO_RAYCAST} />}
-      {marker && (
-        <mesh ref={markerRef} geometry={markerGeometryFor(loaded, marker)} material={markerMaterialFor(statusColor)} position={[0, TAG.markerAt, 0]} raycast={NO_RAYCAST} />
-      )}
+    <group ref={root} position-x={x} position-z={z} name="village-tag">
+      <group ref={board}>
+        {style === 'outline' ? (
+          <>
+            {plainStatus && (
+              <Text font={TROIKA_FONT} fontSize={TAG.statusSize * 1.05} color={statusColor} outlineWidth="14%" outlineColor="#000000" anchorX="center" anchorY="bottom" position={[0, TAG.statusAt, 0]} raycast={NO_RAYCAST} material-toneMapped={false}>
+                {plainStatus}
+              </Text>
+            )}
+            {plainName && (
+              <Text font={TROIKA_FONT} fontSize={TAG.nameSize * 1.05} color={color} outlineWidth="12%" outlineColor="#000000" anchorX="center" anchorY="bottom" position={[0, TAG.nameAt, 0]} raycast={NO_RAYCAST} material-toneMapped={false}>
+                {plainName}
+              </Text>
+            )}
+          </>
+        ) : (
+          <>
+            {statusGeometry && <mesh geometry={statusGeometry} material={tagMaterial} position={[0, TAG.statusAt, 0]} raycast={NO_RAYCAST} />}
+            {nameGeometry && <mesh geometry={nameGeometry} material={tagMaterial} position={[0, TAG.nameAt, 0]} raycast={NO_RAYCAST} />}
+          </>
+        )}
+      </group>
+      <group ref={holder} position={[0, TAG.markerAt, 0]}>
+        {markerGeo && (
+          <group ref={spinRef}>
+            <mesh geometry={markerGeo} material={markerMaterialFor(statusColor)} raycast={NO_RAYCAST} />
+            <mesh geometry={markerGeo} material={rimMaterialFor(rim)} scale={1.17} raycast={NO_RAYCAST} />
+          </group>
+        )}
+      </group>
     </group>
   )
 }
-
-const NO_RAYCAST = () => {}

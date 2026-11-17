@@ -21,15 +21,14 @@ import { villageAgentKey } from '../../lib/village/village-layout'
 import { getVillageAgentSkin, getVillageMemoryVersion, setVillageAgentSkin, subscribeVillageMemory } from '../../lib/village/village-memory'
 import {
   DEFAULT_LOOK,
-  DEFAULT_PANEL_COLOR,
-  PANEL_SWATCHES,
-  getAgentPanelColor,
+  getAgentAccent,
   getPanelLook,
   getPanelLookVersion,
-  setAgentPanelColor,
+  setAgentAccent,
   setPanelLook,
   subscribePanelLook,
 } from '../../lib/village/panel-look'
+import { ACCENT_SWATCHES } from '../../lib/village/village-tags'
 import { SPEECH_SPEED, VILLAGE_VOICES, villageVoice } from '../../lib/village/village-voices'
 import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { AvatarGallery } from '../forge/AvatarGallery'
@@ -161,7 +160,7 @@ export function AgentSettingsButton({ agent, large = false }: { agent: Pick<Engi
   useSyncExternalStore(subscribeVillageMemory, getVillageMemoryVersion, () => 0)
   const agentKey = villageAgentKey({ id: agent.id, sessionId: agent.sessionId })
   const look = getPanelLook()
-  const color = getAgentPanelColor(agentKey) || DEFAULT_PANEL_COLOR
+  const accent = getAgentAccent(agentKey)
   const { skin, picked } = getVillageAgentSkin(agentKey)
   const avatar = avatarLabel(skin)
   const name = agentDisplayName(agent as EngineAgentState)
@@ -221,19 +220,20 @@ export function AgentSettingsButton({ agent, large = false }: { agent: Pick<Engi
           </button>
 
           <div className={HEADING}>Colour · {name}</div>
-          <div className="mb-3 flex flex-wrap items-center gap-1.5">
-            {PANEL_SWATCHES.map(swatch => (
+          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+            {ACCENT_SWATCHES.map(swatch => (
               <button
                 key={swatch}
                 type="button"
-                onClick={() => setAgentPanelColor(agentKey, swatch === DEFAULT_PANEL_COLOR ? null : swatch)}
-                aria-label={`Background ${swatch}`}
-                className={`h-5 w-5 rounded border ${swatch === color ? 'border-white' : 'border-white/25'}`}
+                onClick={() => setAgentAccent(agentKey, swatch)}
+                aria-label={`Colour ${swatch}`}
+                className={`h-5 w-5 rounded border ${swatch === accent ? 'border-white' : 'border-white/25'}`}
                 style={{ background: swatch }}
               />
             ))}
-            <input type="color" value={color} onChange={event => setAgentPanelColor(agentKey, event.target.value)} aria-label="Custom background colour" className="h-5 w-7 cursor-pointer rounded border border-white/25 bg-transparent p-0" />
+            <input type="color" value={accent} onChange={event => setAgentAccent(agentKey, event.target.value)} aria-label="Custom colour" className="h-5 w-7 cursor-pointer rounded border border-white/25 bg-transparent p-0" />
           </div>
+          <div className="mb-3 text-[10px] text-white/45">One colour for its name tag, the rim of its marker, its panel and its screen.</div>
 
           <div className={HEADING}>All agent chats</div>
           <label className="mb-2 block">
@@ -246,7 +246,7 @@ export function AgentSettingsButton({ agent, large = false }: { agent: Pick<Engi
           </label>
           <button
             type="button"
-            onClick={() => { setPanelLook(DEFAULT_LOOK); setAgentPanelColor(agentKey, null); setAgentVoiceSpeed(agentKey, SPEECH_SPEED.default) }}
+            onClick={() => { setPanelLook(DEFAULT_LOOK); setAgentAccent(agentKey, null); setAgentVoiceSpeed(agentKey, SPEECH_SPEED.default) }}
             className="mt-3 text-[10.5px] text-white/55 underline-offset-2 hover:text-white hover:underline"
           >
             back to the defaults (look, colour, speed)

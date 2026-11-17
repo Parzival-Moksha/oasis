@@ -1,6 +1,11 @@
 // ░▒▓ PANEL LOOK — how agent chats look: the side panel (E) and the full screen (F) ▓▒░
 // Transparency and blur are one setting for every agent; the background colour is per agent (its
 // session). Kept in this browser (localStorage), like the old Oasis's defaults for agent windows.
+//
+// One colour per agent, its accent: the same for its name tag, its marker's rim, the border of its panel and
+// the dark background of its chat (derived from it). Random at first (a hue from its key), changeable.
+
+import { accentBackground, defaultAccent } from './village-tags'
 
 export interface PanelLook {
   /** Background opacity, 0.15 (see-through) to 1 (solid). */
@@ -15,6 +20,7 @@ export const PANEL_SWATCHES = ['#070c18', '#1a0b2e', '#062019', '#2a0f0f', '#0d1
 
 const LOOK_KEY = 'oasis.village.panelLook.v1'
 const COLORS_KEY = 'oasis.village.panelColors.v1'
+const ACCENT_KEY = 'oasis.village.accentColors.v1'
 
 export function clampLook(look: Partial<PanelLook> | null | undefined): PanelLook {
   const opacity = typeof look?.opacity === 'number' && Number.isFinite(look.opacity) ? look.opacity : DEFAULT_LOOK.opacity
@@ -49,6 +55,7 @@ const listeners = new Set<() => void>()
 let version = 0
 let lookCache: PanelLook | null = null
 let colorsCache: Record<string, string> | null = null
+let accentCache: Record<string, string> | null = null
 
 function read<T>(key: string): T | null {
   if (typeof window === 'undefined') return null
@@ -85,17 +92,26 @@ export function setPanelLook(patch: Partial<PanelLook>): void {
   changed()
 }
 
-export function getAgentPanelColor(key: string): string | null {
+/** The agent's colour: the owner's pick, else its starting one (the hue of an old chat colour, or one from its key). */
+export function getAgentAccent(key: string): string {
+  accentCache ??= read<Record<string, string>>(ACCENT_KEY) || {}
+  if (accentCache[key]) return accentCache[key]
   colorsCache ??= read<Record<string, string>>(COLORS_KEY) || {}
-  return colorsCache[key] || null
+  return defaultAccent(key, colorsCache[key] || null)
 }
 
-export function setAgentPanelColor(key: string, color: string | null): void {
-  colorsCache ??= read<Record<string, string>>(COLORS_KEY) || {}
-  const next = { ...colorsCache }
+/** null: back to its starting colour. */
+export function setAgentAccent(key: string, color: string | null): void {
+  accentCache ??= read<Record<string, string>>(ACCENT_KEY) || {}
+  const next = { ...accentCache }
   if (color && hexToRgb(color)) next[key] = color
   else delete next[key]
-  colorsCache = next
-  write(COLORS_KEY, next)
+  accentCache = next
+  write(ACCENT_KEY, next)
   changed()
+}
+
+/** The dark background of its chat surfaces, from its accent. */
+export function getAgentPanelColor(key: string): string {
+  return accentBackground(getAgentAccent(key))
 }

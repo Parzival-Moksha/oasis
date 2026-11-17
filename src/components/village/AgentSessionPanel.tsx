@@ -123,7 +123,7 @@ export function AgentSessionPanel() {
   const mergedModelsKey = useOasisStore(s => JSON.stringify(mergeModelLists(Object.values(s.agentEngine.agents).map(a => a.models))))
   const mergedModels = useMemo(() => JSON.parse(mergedModelsKey) as ModelOption[], [mergedModelsKey])
   // Transparency + blur for all agent chats, this agent's colour (PanelLook.tsx).
-  const panelLook = usePanelLook(agent?.sessionId || agentId || '')
+  const { accent: panelAccent, ...panelLook } = usePanelLook(agent?.sessionId || agentId || '')
 
   // F: the agent's own screen took over (camera + composer in the world); the layer above stays pushed.
   if (!agentId || !agent || screenAgentId === agentId) return null
@@ -176,7 +176,7 @@ export function AgentSessionPanel() {
     <div
       data-ui-panel="village-session"
       className={`fixed flex flex-col gap-2 rounded-xl border bg-slate-950/95 p-3 text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl ${VILLAGE_TYPE_CLASS}`}
-      style={{ ...style, ...panelLook, borderColor: `${color}88`, fontFamily: VILLAGE_FONT_BODY }}
+      style={{ ...style, ...panelLook, borderColor: `${color}88`, boxShadow: `inset 0 3px 0 ${panelAccent}, 0 24px 70px rgba(0,0,0,0.55)`, fontFamily: VILLAGE_FONT_BODY }}
       onPointerDown={() => bringToFront('village-session')}
     >
       {geometry.side === 'right' && (

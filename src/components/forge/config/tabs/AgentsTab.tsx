@@ -10,6 +10,7 @@ import { useContext, useSyncExternalStore } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import { DESK_SCREEN_LIMIT, isDeskScreensMode, type DeskScreensMode } from '@/lib/village/desk-screens'
 import { isVillageSoundOn, setVillageSoundOn, subscribeVillageSound } from '@/components/village/village-sound'
+import { TAG_SIZE, TAG_STYLES, getTagSettings, getTagSettingsVersion, setTagSettings, subscribeTagSettings } from '@/lib/village/tag-style'
 import { isVillageVoiceOn, setVillageVoiceOn, subscribeVillageVoice } from '@/components/village/village-companion'
 
 /** An on/off row: a switch, a title and a line on what it does now. */
@@ -48,9 +49,49 @@ export function AgentsTab() {
   // Village bar).
   const chimeOn = useSyncExternalStore(subscribeVillageSound, isVillageSoundOn, () => true)
   const voicesOn = useSyncExternalStore(subscribeVillageVoice, isVillageVoiceOn, () => true)
+  useSyncExternalStore(subscribeTagSettings, getTagSettingsVersion, () => 0)
+  const tagSettings = getTagSettings()
 
   return (
     <div className="space-y-4">
+      <section>
+        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Name tags</div>
+        <div className="py-1.5">
+          <div className="flex items-center justify-between gap-3 mb-1.5">
+            <span className="text-sm text-gray-300">Style</span>
+            <div className="flex overflow-hidden rounded-md border border-white/15" role="radiogroup" aria-label="Name tag style">
+              {TAG_STYLES.map(choice => (
+                <button
+                  key={choice.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={tagSettings.style === choice.id}
+                  data-tag-style={choice.id}
+                  onClick={() => setTagSettings({ style: choice.id })}
+                  className={`px-3 py-1 text-xs font-semibold transition-colors ${tagSettings.style === choice.id ? 'bg-cyan-600 text-white' : 'bg-transparent text-gray-400 hover:bg-white/10 hover:text-white'}`}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="text-[10px] text-gray-500 mb-2">{TAG_STYLES.find(choice => choice.id === tagSettings.style)?.hint}</div>
+          <label className="block">
+            <span className="flex justify-between text-sm text-gray-300"><span>Size</span><span className="text-gray-500">{Math.round(tagSettings.size * 100)}%</span></span>
+            <input
+              type="range"
+              data-tag-size
+              min={TAG_SIZE.min * 100}
+              max={TAG_SIZE.max * 100}
+              step={5}
+              value={Math.round(tagSettings.size * 100)}
+              onChange={event => setTagSettings({ size: Number(event.target.value) / 100 })}
+              className="w-full accent-cyan-400"
+            />
+          </label>
+          <div className="text-[10px] text-gray-500">The name always turns to you; the marker (! or ?) stands upright and turns slowly. The colour is the agent's own, set in its settings menu.</div>
+        </div>
+      </section>
       <section>
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Village</div>
         <div className="py-1.5">

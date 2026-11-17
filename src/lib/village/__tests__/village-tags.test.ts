@@ -66,3 +66,34 @@ describe('tagScale', () => {
     expect(tagScale(Number.NaN)).toBe(1)
   })
 })
+
+import { ACCENT_SWATCHES, accentBackground, defaultAccent, readableAccent } from '../village-tags'
+import { TAG_SIZE, clampTagSettings } from '../tag-style'
+
+describe('accent colour', () => {
+  it('starts the same every time for an agent, differs between agents', () => {
+    expect(defaultAccent('session-a')).toBe(defaultAccent('session-a'))
+    expect(defaultAccent('session-a')).not.toBe(defaultAccent('session-b'))
+  })
+  it('makes a dark pick readable, and keeps its hue', () => {
+    const lift = readableAccent('#10204a')
+    expect(lift).not.toBe('#10204a')
+    expect(readableAccent(ACCENT_SWATCHES[0])).toMatch(/^#[0-9a-f]{6}$/)
+    expect(readableAccent('nonsense')).toMatch(/^#[0-9a-f]{6}$/)
+  })
+  it('gives a dark chat background from it', () => {
+    const bg = accentBackground('#5eead4')
+    const n = parseInt(bg.slice(1), 16)
+    expect(Math.max((n >> 16) & 255, (n >> 8) & 255, n & 255)).toBeLessThan(70)
+  })
+})
+
+describe('tag settings', () => {
+  it('clamps size and falls back on an unknown style', () => {
+    expect(clampTagSettings({ size: 99 }).size).toBe(TAG_SIZE.max)
+    expect(clampTagSettings({ size: 0 }).size).toBe(TAG_SIZE.min)
+    expect(clampTagSettings({ style: 'nope' as never }).style).toBe('extruded')
+    expect(clampTagSettings(null)).toEqual({ style: 'extruded', size: 1 })
+    expect(clampTagSettings({ style: 'outline', size: 1.5 })).toEqual({ style: 'outline', size: 1.5 })
+  })
+})

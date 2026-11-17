@@ -22,10 +22,16 @@ function hashString(value: string): number {
     hash ^= value.charCodeAt(i)
     hash = Math.imul(hash, 16777619) >>> 0
   }
+  // Mixed at the end: keys that differ in one last character (s0, s1, s2) must still land far apart in hue.
+  hash ^= hash >>> 16
+  hash = Math.imul(hash, 0x85ebca6b) >>> 0
+  hash ^= hash >>> 13
+  hash = Math.imul(hash, 0xc2b2ae35) >>> 0
+  hash ^= hash >>> 16
   return hash >>> 0
 }
 
-function hslToHex(h: number, s: number, l: number): string {
+export function hslToHex(h: number, s: number, l: number): string {
   const a = s * Math.min(l, 1 - l)
   const channel = (n: number) => {
     const k = (n + h / 30) % 12
@@ -35,7 +41,7 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${channel(0)}${channel(8)}${channel(4)}`
 }
 
-function hexToHsl(hex: string): { h: number; s: number; l: number } | null {
+export function hexToHsl(hex: string): { h: number; s: number; l: number } | null {
   const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
   if (!match) return null
   const n = parseInt(match[1], 16)
@@ -65,6 +71,28 @@ export function agentTagColor(name: string, panelColor?: string | null): string 
   const hue = chosen && chosen.s > 0.15 ? chosen.h : hashString(name || 'agent') % 360
   return hslToHex(hue, 0.9, 0.66)
 }
+
+/** The colour an agent starts with: random in effect (a hue from its key), the same every time. The legacy chat colour's hue wins if it had one. */
+export function defaultAccent(key: string, legacyPanelColor?: string | null): string {
+  return agentTagColor(key, legacyPanelColor)
+}
+
+/** An accent the name can be read in: a dark pick is lifted to a light one with the same hue. */
+export function readableAccent(hex: string): string {
+  const hsl = hexToHsl(hex)
+  if (!hsl) return '#9be7ff'
+  return hslToHex(hsl.h, Math.max(hsl.s, 0.6), Math.max(hsl.l, 0.62))
+}
+
+/** The dark chat background that goes with an accent (the panel and the screen): same hue, very dark. */
+export function accentBackground(hex: string): string {
+  const hsl = hexToHsl(hex)
+  if (!hsl) return '#070c18'
+  return hslToHex(hsl.h, Math.min(0.55, Math.max(0.3, hsl.s * 0.55)), 0.075)
+}
+
+/** Colours to pick from in the agent's settings menu. */
+export const ACCENT_SWATCHES = ['#5eead4', '#7dd3fc', '#a5b4fc', '#d8b4fe', '#f9a8d4', '#fda4af', '#fdba74', '#fde047', '#bef264', '#86efac']
 
 /** A darker shade of a colour (the tag's extruded side). */
 export function shadeColor(hex: string, factor = 0.42): string {
@@ -98,8 +126,8 @@ export const TAG = {
   /** The name's baseline above the head (over the status word). */
   nameAt: 0.25,
   /** The marker's centre above the head (over the name). */
-  markerAt: 0.7,
-  markerSize: 0.4,
+  markerAt: 0.82,
+  markerSize: 0.5,
   /** Tags further than this from the camera grow, so a name across the plaza is still readable. */
   growFrom: 9,
   growMax: 2.6,

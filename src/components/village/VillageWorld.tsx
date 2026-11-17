@@ -67,8 +67,8 @@ import { VillageAcademyTree } from './VillageAcademyTree'
 import { AcademyLevelTag, AcademyVillageBody, useAcademyStone, useAcademyTrainee } from './VillageAcademyTrainee'
 import { VillageVoice } from './VillageVoice'
 import { VillageTag, VillageTagDriver } from './VillageTags'
-import { agentTagColor, tagMarker } from '../../lib/village/village-tags'
-import { getAgentPanelColor, getPanelLookVersion, subscribePanelLook } from '../../lib/village/panel-look'
+import { readableAccent, tagMarker } from '../../lib/village/village-tags'
+import { getAgentAccent, getPanelLookVersion, subscribePanelLook } from '../../lib/village/panel-look'
 import { getVillageCombatVersion, getVillageVitals, subscribeVillageCombat } from '../../lib/village/village-combat'
 import { useFrameWhen } from '../../lib/use-frame-when'
 import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
@@ -251,7 +251,8 @@ function StationTag({ agentId, colorKey, avatarKey }: { agentId: string; colorKe
     <VillageTag
       agentId={agentId}
       name={info.name}
-      color={agentTagColor(info.name, getAgentPanelColor(colorKey))}
+      color={readableAccent(getAgentAccent(colorKey))}
+      rim={getAgentAccent(colorKey)}
       status={info.label}
       statusColor={info.readOnly ? VILLAGE_OBSERVED_COLOR : statusColor(info.status)}
       marker={tagMarker(info.status, info.unseen)}
@@ -289,7 +290,7 @@ function DeskWindow({ agentId, nearby, mode }: { agentId: string; nearby: boolea
           ? look.background
           : 'linear-gradient(160deg, rgba(10,16,30,0.72) 0%, rgba(4,8,18,0.84) 100%)',
         border: `1px solid ${color}aa`,
-        boxShadow: `0 0 0 1px rgba(255,255,255,0.04) inset, 0 0 46px ${color}38, 0 0 120px rgba(0,0,0,0.35)`,
+        boxShadow: `inset 0 3px 0 ${look.accent}, 0 0 0 1px rgba(255,255,255,0.04) inset, 0 0 46px ${color}38, 0 0 120px rgba(0,0,0,0.35)`,
         backdropFilter: screen ? look.backdropFilter : 'blur(8px)',
       }}
       onPointerDown={stopDomEvent}
