@@ -16,6 +16,7 @@ import { useInputManager, useUILayer } from '../../lib/input-manager'
 import { academyLaneColor, nodeLook, type AcademyKeyKind } from '../../lib/village/village-academy'
 import { ACADEMY_MAP_KEY, academyLaneLook, academyMapKeyAction, layoutAcademyMap } from '../../lib/village/academy-map'
 import { AcademyMapEngine, type MapNodeSpec } from './academy-map-engine'
+import { getKeychainState, keyStates, openKeychain, subscribeKeychain, watchKeychainFromMap } from './keychain-store'
 import {
   VILLAGE_ACADEMY_MAP_LAYER,
   closeAcademyMap,
@@ -62,6 +63,12 @@ function Board() {
   const setId = useSyncExternalStore(subscribeAcademy, () => mapSetId(), () => null)
   const frame = useRef<HTMLDivElement>(null)
   const engine = useRef<AcademyMapEngine | null>(null)
+  // Which keys are held: a held key's gem is lit on every skill that lists it.
+  const keychain = useSyncExternalStore(subscribeKeychain, () => getKeychainState().keys, () => getKeychainState().keys)
+  useEffect(() => {
+    watchKeychainFromMap(true)
+    return () => watchKeychainFromMap(false)
+  }, [])
 
   useEffect(() => {
     if (!frame.current) return
@@ -107,6 +114,7 @@ function Board() {
   useEffect(() => {
     if (!engine.current || !content || !layout) return
     const kinds = new Map(content.keys.map(key => [key.id, key.kind]))
+    const held = keyStates(getKeychainState())
     const laneIndex = new Map(content.lanes.map((lane, index) => [lane.id, index]))
     const specs: MapNodeSpec[] = content.skills.map(skill => {
       const look = academyLaneLook(laneIndex.get(skill.lane) ?? 0)
@@ -119,7 +127,7 @@ function Board() {
         corners: look.corners,
         pattern: look.pattern,
         icon: skill.icon || null,
-        keys: skill.keys.map(id => kinds.get(id) || 'account' as AcademyKeyKind),
+        keys: skill.keys.map(id => ({ kind: kinds.get(id) || 'account' as AcademyKeyKind, state: held.get(id) || 'unknown' as const })),
         perk: Boolean(skill.perk),
         flag: Boolean(skill.flag),
         look: nodeLook(trainee, skill),
@@ -127,7 +135,7 @@ function Board() {
     })
     engine.current.setBoard(layout, specs, `${setId}:${trainee?.key || ''}`)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, layout, looksKey, trainee?.key, setId])
+  }, [content, layout, looksKey, trainee?.key, setId, keychain])
 
   useEffect(() => {
     engine.current?.setSelected(readerMap ? reader : null)
@@ -190,6 +198,7 @@ function Board() {
           )}
         </div>
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-slate-950/70 px-2 py-2">
+          <button type="button" data-academy-map-keychain className={BUTTON} onClick={openKeychain} title="Which keys you hold: a key you hold lights its gem here">Keychain</button>
           <button type="button" className={BUTTON} onClick={() => engine.current?.zoomBy(-260)} title="Closer (wheel)">+</button>
           <button type="button" className={BUTTON} onClick={() => engine.current?.zoomBy(260)} title="Further (wheel)">−</button>
           <button type="button" data-academy-map-fit className={BUTTON} onClick={() => engine.current?.fit()} title="The whole map (double-click the background)">fit</button>
@@ -244,6 +253,7 @@ export function VillageAcademyMap() {
         typing: isTypingTarget(event.target),
         mapOpen: current.mapOpen,
         readerOpen: Boolean(current.reader),
+        keychainOpen: getKeychainState().open,
         agentOpen: Boolean(village.focusedAgentId),
         worldKeysFree: useInputManager.getState().can().enterFocuses,
       })

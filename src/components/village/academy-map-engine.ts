@@ -8,6 +8,7 @@
 
 import * as THREE from 'three'
 import { ACADEMY_KEY_COLOR, type AcademyIconPart, type AcademyKeyKind, type AcademyNodeLook } from '../../lib/village/village-academy'
+import type { KeyState } from '../../lib/village/keychain'
 import {
   clampMapView,
   fitMapView,
@@ -29,7 +30,8 @@ export interface MapNodeSpec {
   corners: number
   pattern: AcademyMapPattern
   icon: AcademyIconPart[] | null
-  keys: AcademyKeyKind[]
+  /** Each key the skill lists, and whether it is held: a held key's gem is lit. */
+  keys: Array<{ kind: AcademyKeyKind; state: KeyState }>
   perk: boolean
   flag: boolean
   look: AcademyNodeLook
@@ -248,17 +250,27 @@ function drawNodeTile(ctx: CanvasRenderingContext2D, node: MapNodeSpec, x: numbe
   // Its keys: gems on the label's upper edge (subscriptions gold, API keys blue).
   const gems = node.keys.slice(0, 8)
   const gemR = u * 0.075
-  gems.forEach((kind, index) => {
+  gems.forEach(({ kind, state }, index) => {
     const gx = cx + (index - (gems.length - 1) / 2) * gemR * 2.5
     const gy = ly + pad
+    const color = ACADEMY_KEY_COLOR[kind]
+    if (state === 'have') {
+      // A key you hold: lit, with a halo and a white rim.
+      const halo = ctx.createRadialGradient(gx, gy, gemR * 0.4, gx, gy, gemR * 2.6)
+      halo.addColorStop(0, `${color}cc`)
+      halo.addColorStop(1, `${color}00`)
+      ctx.fillStyle = halo
+      ctx.fillRect(gx - gemR * 2.6, gy - gemR * 2.6, gemR * 5.2, gemR * 5.2)
+    }
     ctx.beginPath()
-    ctx.arc(gx, gy, gemR, 0, Math.PI * 2)
-    ctx.fillStyle = ACADEMY_KEY_COLOR[kind]
-    ctx.globalAlpha = locked ? 0.55 : 1
+    ctx.arc(gx, gy, state === 'have' ? gemR * 1.12 : gemR, 0, Math.PI * 2)
+    // Missing: a dim outline only. Unknown: as it was before the keychain knew.
+    ctx.fillStyle = state === 'missing' ? '#0b1020' : color
+    ctx.globalAlpha = state === 'have' ? 1 : state === 'missing' ? 0.9 : locked ? 0.55 : 0.85
     ctx.fill()
     ctx.globalAlpha = 1
-    ctx.lineWidth = Math.max(1, u * 0.014)
-    ctx.strokeStyle = '#05070d'
+    ctx.lineWidth = Math.max(1, u * (state === 'have' ? 0.024 : 0.014))
+    ctx.strokeStyle = state === 'have' ? '#ffffff' : state === 'missing' ? `${color}88` : '#05070d'
     ctx.stroke()
   })
 }
@@ -277,6 +289,11 @@ function drawLaneTile(ctx: CanvasRenderingContext2D, name: string, color: string
   ctx.fillText(text, x + w / 2, y + h / 2)
   ctx.globalAlpha = 1
   try { (ctx as unknown as { letterSpacing: string }).letterSpacing = '0px' } catch { /* older browsers */ }
+}
+
+/** What a node's tile shows: when this changes, the tile is printed again. */
+function tileSignature(spec: MapNodeSpec): string {
+  return `${spec.look}|${spec.keys.map(key => key.state[0]).join('')}`
 }
 
 // ─── shaders ────────────────────────────────────────────────────────────────
@@ -402,7 +419,7 @@ export class AcademyMapEngine {
   private flashKey = ''
   private flashes = new Map<number, number>()
   /** The look each node's tile was last printed with. */
-  private printed: AcademyNodeLook[] = []
+  private printed: string[] = []
 
   private atlas: { canvas: HTMLCanvasElement; texture: THREE.CanvasTexture; cols: number; u: number; tileW: number; tileH: number } | null = null
   private tiles: THREE.Mesh | null = null
@@ -501,7 +518,7 @@ export class AcademyMapEngine {
    * node that lights up for the same trainee flashes.
    */
   setBoard(layout: AcademyMapLayout, specs: MapNodeSpec[], flashKey: string): void {
-    const looksKey = specs.map(spec => spec.look).join(',')
+    const looksKey = specs.map(tileSignature).join(',')
     if (layout !== this.layout) {
       this.clearBoard()
       this.layout = layout
@@ -710,10 +727,10 @@ export class AcademyMapEngine {
     const all = this.printed.length !== layout.nodes.length || all_
     layout.nodes.forEach((node, index) => {
       const spec = this.specOf(node.id)
-      if (!spec || (!all && this.printed[index] === spec.look)) return
+      if (!spec || (!all && this.printed[index] === tileSignature(spec))) return
       const { x, y } = place(index)
       drawNodeTile(ctx, spec, x, y, atlas.u)
-      this.printed[index] = spec.look
+      this.printed[index] = tileSignature(spec)
     })
     if (all) layout.lanes.forEach((lane, index) => {
       const { x, y } = place(layout.nodes.length + index)

@@ -264,6 +264,8 @@ export interface AcademyMapKeyContext {
   mapOpen: boolean
   /** A skill's sheet is open over the map: it takes Esc first. */
   readerOpen: boolean
+  /** The keychain is open (over the map or alone): it takes Esc, and K waits. */
+  keychainOpen: boolean
   /** An agent's panel is open: K is a letter there, or a key of its own. */
   agentOpen: boolean
   worldKeysFree: boolean
@@ -271,7 +273,7 @@ export interface AcademyMapKeyContext {
 
 /** K opens the skill map and closes it; Esc closes it (after the open sheet). */
 export function academyMapKeyAction(c: AcademyMapKeyContext): 'open' | 'close' | null {
-  if (c.ctrl || c.meta || c.alt || c.repeat) return null
+  if (c.ctrl || c.meta || c.alt || c.repeat || c.keychainOpen) return null
   if (c.mapOpen) {
     if (c.readerOpen) return null
     if (c.code === 'Escape') return 'close'

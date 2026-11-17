@@ -3,7 +3,7 @@
 // The picture on each main-menu tile, drawn in SVG (no image files). Each has its own palette,
 // its own surface pattern and one emblem.
 
-export type MenuTileId = 'mindcraft' | 'skills' | 'profile' | 'config' | 'help' | 'invite' | 'continue'
+export type MenuTileId = 'mindcraft' | 'skills' | 'keychain' | 'profile' | 'config' | 'help' | 'invite' | 'continue'
 
 export interface MenuTileDef {
   id: MenuTileId
@@ -15,6 +15,7 @@ export interface MenuTileDef {
 export const MENU_TILES: MenuTileDef[] = [
   { id: 'mindcraft', label: 'Mindcraft', sub: 'Your days, missions and XP', accent: '#5ef0a8' },
   { id: 'skills', label: 'Skills', sub: "Your agents' skill map (K)", accent: '#ff8ad8' },
+  { id: 'keychain', label: 'Keychain', sub: 'The keys your agents hold', accent: '#ffcf5c' },
   { id: 'profile', label: 'Profile', sub: 'Who you are here', accent: '#c59bff' },
   { id: 'config', label: 'Settings', sub: 'Graphics, sound, controls', accent: '#6fe3ff' },
   { id: 'help', label: 'Help', sub: 'Keys, guide, glossary', accent: '#8fb4ff' },
@@ -107,6 +108,27 @@ function Art({ id }: { id: MenuTileId }) {
             </g>
           ))}
           <path d="M100 13l1.6 3.4 3.7.5-2.7 2.6.7 3.7-3.3-1.8-3.3 1.8.7-3.7-2.7-2.6 3.7-.5z" fill="#ff8ad8" opacity="0.8" />
+        </>
+      )
+    case 'keychain':
+      return (
+        <>
+          <Surface id={id} from="#4a3508" to="#150e03" pattern={
+            <pattern id={`ogm-pat-${id}`} width="14" height="14" patternUnits="userSpaceOnUse">
+              <circle cx="7" cy="7" r="0.9" fill="#ffcf5c" fillOpacity="0.2" />
+            </pattern>
+          } />
+          {/* a ring with a gold key and a blue one: subscriptions gold, API keys blue */}
+          <circle cx="100" cy="30" r="15" fill="none" stroke="#ffcf5c" strokeOpacity="0.55" strokeWidth="2.5" />
+          <g transform="rotate(-28 66 84)">
+            <circle cx="66" cy="84" r="17" fill="none" stroke="#ffcf5c" strokeWidth="4.5" />
+            <circle cx="66" cy="84" r="5" fill="#ffcf5c" opacity="0.5" />
+            <path d="M83 84H146M128 84v13M141 84v10" stroke="#ffcf5c" strokeWidth="4.5" strokeLinecap="round" />
+          </g>
+          <g transform="rotate(22 134 100)">
+            <circle cx="134" cy="100" r="13" fill="none" stroke="#6ea8ff" strokeWidth="3.5" />
+            <path d="M147 100H178M168 100v9" stroke="#6ea8ff" strokeWidth="3.5" strokeLinecap="round" />
+          </g>
         </>
       )
     case 'profile':

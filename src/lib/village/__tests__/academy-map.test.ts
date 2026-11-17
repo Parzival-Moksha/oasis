@@ -133,7 +133,7 @@ describe('pointing, panning, zooming', () => {
 })
 
 describe('the map keys', () => {
-  const base: AcademyMapKeyContext = { code: 'KeyK', ctrl: false, meta: false, alt: false, repeat: false, typing: false, mapOpen: false, readerOpen: false, agentOpen: false, worldKeysFree: true }
+  const base: AcademyMapKeyContext = { code: 'KeyK', ctrl: false, meta: false, alt: false, repeat: false, typing: false, mapOpen: false, readerOpen: false, keychainOpen: false, agentOpen: false, worldKeysFree: true }
 
   it('K opens it while walking; not while typing, with an agent open or with a modifier', () => {
     expect(academyMapKeyAction(base)).toBe('open')
@@ -150,5 +150,8 @@ describe('the map keys', () => {
     expect(academyMapKeyAction({ ...base, mapOpen: true, typing: true })).toBeNull()
     expect(academyMapKeyAction({ ...base, mapOpen: true, code: 'Escape', readerOpen: true })).toBeNull()
     expect(academyMapKeyAction({ ...base, mapOpen: true, code: 'KeyE' })).toBeNull()
+    // The keychain takes Esc and K first, over the map or alone.
+    expect(academyMapKeyAction({ ...base, mapOpen: true, code: 'Escape', keychainOpen: true })).toBeNull()
+    expect(academyMapKeyAction({ ...base, keychainOpen: true })).toBeNull()
   })
 })

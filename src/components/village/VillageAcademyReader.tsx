@@ -6,7 +6,7 @@
 // buttons: "I did it" (claim) and "Ask Anorak to check" (he looks and marks it through /api/academy).
 // It also keeps the academy's data fresh and tells the tree which trainee you last picked.
 
-import { useEffect, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { useInputManager, useUILayer } from '../../lib/input-manager'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
@@ -41,6 +41,8 @@ import {
 } from './academy-store'
 import { KeyPrompt, PromptBanner } from './VillageHud'
 import { VillageAcademyMap } from './VillageAcademyMap'
+import { VillageAcademyKeychain } from './VillageAcademyKeychain'
+import { getKeychainState, openKeychain, refreshKeychain, subscribeKeychain } from './keychain-store'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, canTalkTo } from './village-status'
 
 const LOOK_WORD: Record<AcademyNodeLook, string> = { locked: 'locked', available: 'ready', claimed: 'claimed', verified: 'verified' }
@@ -88,6 +90,10 @@ function AcademySheet({ skill, content, trainee, trainees }: { skill: AcademySki
   const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }))
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Which of its keys you hold (the keychain looks once per skill opened; the server reuses a look for 45 s).
+  const keychainKeys = useSyncExternalStore(subscribeKeychain, () => getKeychainState().keys, () => getKeychainState().keys)
+  const held = useMemo(() => new Map(keychainKeys.map(item => [item.id, item.state])), [keychainKeys])
+  useEffect(() => { void refreshKeychain() }, [skill.id])
   useEffect(() => {
     const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight })
     window.addEventListener('resize', onResize)
@@ -210,12 +216,18 @@ function AcademySheet({ skill, content, trainee, trainees }: { skill: AcademySki
             <Label>{keys.length > 1 ? 'Keys: any one of these is enough' : 'Key'}</Label>
             <div className="mb-3 flex flex-col gap-1">
               {keys.map(key => (
-                <div key={key.id} className="flex items-start gap-2 rounded-md border border-white/10 bg-white/5 px-2 py-1">
-                  <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: ACADEMY_KEY_COLOR[key.kind], boxShadow: `0 0 8px ${ACADEMY_KEY_COLOR[key.kind]}` }} />
+                <div key={key.id} data-academy-key={key.id} data-key-state={held.get(key.id) || 'unknown'} className="flex items-start gap-2 rounded-md border border-white/10 bg-white/5 px-2 py-1">
+                  {/* Held: the gem is lit with a white rim; missing: an outline. */}
+                  <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={held.get(key.id) === 'have'
+                    ? { background: ACADEMY_KEY_COLOR[key.kind], boxShadow: `0 0 8px ${ACADEMY_KEY_COLOR[key.kind]}`, border: '1.5px solid #fff' }
+                    : held.get(key.id) === 'missing'
+                      ? { border: `1.5px solid ${ACADEMY_KEY_COLOR[key.kind]}88` }
+                      : { background: ACADEMY_KEY_COLOR[key.kind], boxShadow: `0 0 8px ${ACADEMY_KEY_COLOR[key.kind]}` }} />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-x-2">
                       <span className="font-bold text-white">{key.name}</span>
                       <span className="text-[9.5px] uppercase tracking-[0.14em]" style={{ color: ACADEMY_KEY_COLOR[key.kind] }}>{KIND_WORD[key.kind]}</span>
+                      {held.get(key.id) === 'have' && <span className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-emerald-300">you have it</span>}
                     </div>
                     {key.cost && <div className="text-[11.5px] text-white/65">{key.cost}</div>}
                   </div>
@@ -223,6 +235,7 @@ function AcademySheet({ skill, content, trainee, trainees }: { skill: AcademySki
                 </div>
               ))}
               {skill.way && <div className="text-[11.5px] text-white/60">Easiest way: {skill.way}</div>}
+              <button type="button" data-academy-open-keychain className="self-start text-[11px] font-bold text-amber-200 hover:underline" onClick={openKeychain}>open the keychain</button>
             </div>
           </>
         )}
@@ -363,6 +376,8 @@ export function VillageAcademyReader() {
     <>
       {/* The skill map: K, or the HUD's Skills button. */}
       <VillageAcademyMap />
+      {/* The keychain: which keys you hold (also from the menu and the map's bar). */}
+      <VillageAcademyKeychain />
       {shown && near && !open && !nearMini && (
         <PromptBanner accent={academyLaneColor(near.lane)} title={`${near.name} · ${LOOK_WORD[nodeLook(trainee, near)]}`}>
           <KeyPrompt k="E" label="Open skill" accent="#38bdf8" primary />

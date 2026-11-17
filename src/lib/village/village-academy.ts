@@ -63,6 +63,10 @@ export interface AcademyKey {
   kind: AcademyKeyKind
   cost: string
   link: string
+  /** What it is, in a line or two (shown in the keychain). */
+  note?: string
+  /** Environment variable names this key is kept under, beyond the ones the keychain knows. */
+  env?: string[]
 }
 
 export interface AcademyLevel {
@@ -208,7 +212,12 @@ export function normalizeAcademyContent(rawSkills: unknown, rawKeys: unknown, so
     if (!id || keys.some(key => key.id === id)) continue
     const kind = KEY_KINDS.includes(item.kind as AcademyKeyKind) ? item.kind as AcademyKeyKind : 'account'
     const link = str(item.link, 400)
-    keys.push({ id, name: str(item.name, 80) || id, short: str(item.short, 30) || str(item.name, 30) || id, kind, cost: str(item.cost, 300), link: /^https?:\/\//i.test(link) ? link : '' })
+    const env = ids(item.env).filter(name => /^[A-Z][A-Z0-9_]{1,63}$/.test(name))
+    keys.push({
+      id, name: str(item.name, 80) || id, short: str(item.short, 30) || str(item.name, 30) || id, kind, cost: str(item.cost, 300), link: /^https?:\/\//i.test(link) ? link : '',
+      ...(str(item.note, 600) ? { note: str(item.note, 600) } : {}),
+      ...(env.length ? { env } : {}),
+    })
   }
   const levels: AcademyLevel[] = []
   for (const raw of Array.isArray(file.levels) ? file.levels : []) {

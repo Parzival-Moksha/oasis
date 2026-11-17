@@ -13,6 +13,7 @@ import { useInputManager } from '@/lib/input-manager'
 import { useOasisStore } from '@/store/oasisStore'
 import { openMindcraft } from '@/components/village/MindcraftView'
 import { openAcademyMap } from '@/components/village/academy-store'
+import { openKeychain } from '@/components/village/keychain-store'
 import { showNotice } from '@/components/forge/GlobalNotice'
 import { isVillageProfileClient } from '@/lib/oasis-profile'
 import { cellsPath, textCells, textWidth } from '@/components/forge/splash/intro-overlay'
@@ -332,6 +333,11 @@ function GameMenuScreen({ closing }: { closing: boolean }) {
     if (id === 'skills') {
       if (isVillageProfileClient()) openAcademyMap()
       else showNotice('Skills live in the Agent Village: open the Oasis with ?profile=village.', 'info')
+    }
+    // The Academy's keychain: which keys the agents hold.
+    if (id === 'keychain') {
+      if (isVillageProfileClient()) openKeychain()
+      else showNotice('The keychain lives in the Agent Village: open the Oasis with ?profile=village.', 'info')
     }
     if (id === 'profile') window.dispatchEvent(new CustomEvent(OPEN_PROFILE_EVENT))
     if (id === 'config') window.dispatchEvent(new CustomEvent(OPEN_CONFIG_EVENT))
