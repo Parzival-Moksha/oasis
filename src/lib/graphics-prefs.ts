@@ -5,15 +5,32 @@
 
 export type GroundSharpness = 1 | 2 | 4
 export type ShadowMode = 'off' | 'avatars' | 'all'
+export type ShadowQuality = 'low' | 'medium' | 'high'
+/** 'auto': every frame while something in range moves, 60 times a second otherwise. */
+export type ShadowRefresh = 'auto' | 'frame' | '60' | '30'
 
 export interface GraphicsPrefs {
   /** Ground texel density against the original look: 1 (as before), 2 or 4 times sharper. */
   groundSharpness: GroundSharpness
   /** Sun shadows: none, the avatars only, or avatars and world objects. */
   shadows: ShadowMode
+  /** Shadow map resolution: 1024, 2048 or 4096 px over the same 64 m. */
+  shadowQuality: ShadowQuality
+  /** How blurred the shadow's edge is: 0 (crisp) to 1 (very soft). */
+  shadowSoftness: number
+  /** How dark a shadow is: 0 (only the sun's own light is blocked) to 1 (nearly black). */
+  shadowStrength: number
+  /** How often the shadow map is redrawn. */
+  shadowRefresh: ShadowRefresh
 }
 
-export const GRAPHICS_PREFS_DEFAULT: GraphicsPrefs = { groundSharpness: 2, shadows: 'avatars' }
+export const GRAPHICS_PREFS_DEFAULT: GraphicsPrefs = {
+  groundSharpness: 2, shadows: 'avatars', shadowQuality: 'high', shadowSoftness: 0.5, shadowStrength: 0.5, shadowRefresh: 'auto',
+}
+
+function unit(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : fallback
+}
 
 const STORAGE_KEY = 'oasis-graphics-prefs'
 
@@ -22,7 +39,13 @@ export function normalizeGraphicsPrefs(raw: unknown): GraphicsPrefs {
   const value = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof GraphicsPrefs, unknown>>
   const sharpness = value.groundSharpness
   const shadows = value.shadows
+  const quality = value.shadowQuality
+  const refresh = value.shadowRefresh
   return {
+    shadowQuality: quality === 'low' || quality === 'medium' || quality === 'high' ? quality : GRAPHICS_PREFS_DEFAULT.shadowQuality,
+    shadowSoftness: unit(value.shadowSoftness, GRAPHICS_PREFS_DEFAULT.shadowSoftness),
+    shadowStrength: unit(value.shadowStrength, GRAPHICS_PREFS_DEFAULT.shadowStrength),
+    shadowRefresh: refresh === 'auto' || refresh === 'frame' || refresh === '60' || refresh === '30' ? refresh : GRAPHICS_PREFS_DEFAULT.shadowRefresh,
     groundSharpness: sharpness === 1 || sharpness === 2 || sharpness === 4 ? sharpness : GRAPHICS_PREFS_DEFAULT.groundSharpness,
     shadows: shadows === 'off' || shadows === 'avatars' || shadows === 'all' ? shadows : GRAPHICS_PREFS_DEFAULT.shadows,
   }

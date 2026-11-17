@@ -8,7 +8,7 @@ import { useContext, useEffect, useState } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import type { SharedTabProps } from '../types'
 import { canRequestFullscreen, isFullscreenActive, setOasisFullscreen } from '@/lib/fullscreen-controls'
-import { setGraphicsPref, type GroundSharpness, type ShadowMode } from '@/lib/graphics-prefs'
+import { setGraphicsPref, type GroundSharpness, type ShadowMode, type ShadowQuality, type ShadowRefresh } from '@/lib/graphics-prefs'
 import { useGraphicsPrefs } from '@/lib/use-graphics-prefs'
 
 function Choice<T extends string | number>({ label, hint, value, options, name, onChange }: {
@@ -55,6 +55,23 @@ const SHARPNESS_HINT: Record<GroundSharpness, string> = {
 const SHADOW_OPTIONS: Array<{ value: ShadowMode; label: string }> = [
   { value: 'off', label: 'Off' }, { value: 'avatars', label: 'Avatars' }, { value: 'all', label: 'All' },
 ]
+const SHADOW_QUALITY_OPTIONS: Array<{ value: ShadowQuality; label: string }> = [
+  { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' },
+]
+const SHADOW_QUALITY_HINT: Record<ShadowQuality, string> = {
+  low: 'A 1024 px shadow map: 6 cm of ground per pixel. Blocky up close.',
+  medium: '2048 px: 3 cm per pixel.',
+  high: '4096 px: 1.6 cm per pixel. Clean edges; costs graphics memory, not frame time.',
+}
+const SHADOW_REFRESH_OPTIONS: Array<{ value: ShadowRefresh; label: string }> = [
+  { value: 'auto', label: 'Auto' }, { value: 'frame', label: 'Every frame' }, { value: '60', label: '60/s' }, { value: '30', label: '30/s' },
+]
+const SHADOW_REFRESH_HINT: Record<ShadowRefresh, string> = {
+  auto: 'Every frame while something moves, 60 times a second otherwise.',
+  frame: 'Redrawn on every frame. Smoothest, costs the most.',
+  '60': 'At most 60 times a second: a moving shadow steps a little on a fast screen.',
+  '30': 'At most 30 times a second: cheapest, visibly steps behind moving bodies.',
+}
 const SHADOW_HINT: Record<ShadowMode, string> = {
   off: 'No shadows.',
   avatars: 'You and the agents cast soft shadows from the world\'s sun. Cheap.',
@@ -229,6 +246,40 @@ export function GraphicsTab({ menuOpacity, onMenuOpacityChange }: SharedTabProps
           hint={`${SHADOW_HINT[graphics.shadows]} Needs a directional light in the world (the sun).`}
           onChange={value => setGraphicsPref('shadows', value)}
         />
+        {graphics.shadows !== 'off' && (
+          <>
+            <Choice
+              label="Shadow quality"
+              name="shadowQuality"
+              value={graphics.shadowQuality}
+              options={SHADOW_QUALITY_OPTIONS}
+              hint={SHADOW_QUALITY_HINT[graphics.shadowQuality]}
+              onChange={value => setGraphicsPref('shadowQuality', value)}
+            />
+            <Slider
+              label="Shadow softness"
+              value={Math.round(graphics.shadowSoftness * 100)}
+              min={0} max={100} step={5}
+              display={`${Math.round(graphics.shadowSoftness * 100)}%`}
+              onChange={v => setGraphicsPref('shadowSoftness', v / 100)}
+            />
+            <Slider
+              label="Shadow strength"
+              value={Math.round(graphics.shadowStrength * 100)}
+              min={0} max={100} step={5}
+              display={`${Math.round(graphics.shadowStrength * 100)}%`}
+              onChange={v => setGraphicsPref('shadowStrength', v / 100)}
+            />
+            <Choice
+              label="Shadow refresh"
+              name="shadowRefresh"
+              value={graphics.shadowRefresh}
+              options={SHADOW_REFRESH_OPTIONS}
+              hint={SHADOW_REFRESH_HINT[graphics.shadowRefresh]}
+              onChange={value => setGraphicsPref('shadowRefresh', value)}
+            />
+          </>
+        )}
       </section>
 
       <section className="border-t border-white/10 pt-3">

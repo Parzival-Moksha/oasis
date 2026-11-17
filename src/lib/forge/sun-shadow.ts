@@ -3,25 +3,45 @@
 // agree with the lighting; put it where the sky's sun is, see public/skies/README.md). One shadow
 // map covers a square around what the camera looks at. Costs are kept down three ways:
 //   - the map follows the view in whole texels of the map, so shadow edges do not swim;
-//   - it is redrawn only when needed: 60 times a second while avatars are the only casters (a
-//     handful of draws); with the whole world casting, 30 times a second; and whenever the map moves on.
-//     Moving or turning the camera alone never redraws it: the map lives in the world;
+//   - it is redrawn when needed (see shadowRefreshDue): on every frame while a caster in range
+//     moves, 60 times a second otherwise, or as often as the owner set. Moving or turning the
+//     camera alone never redraws it: the map lives in the world;
 //   - "avatars only" keeps world objects out of the shadow pass altogether.
 
 import { Matrix4, Vector3 } from 'three'
 
 /** Half the side of the square the shadow map covers, metres. */
 export const SUN_SHADOW_HALF_SIZE = 32
-/** Shadow map side, texels (2048: about 3 cm of ground per texel at the size above). */
-export const SUN_SHADOW_MAP_SIZE = 2048
+/** Shadow map side in texels per quality (over 64 m: 6.3, 3.1 and 1.6 cm of ground per texel). */
+export const SUN_SHADOW_MAP_SIZES = { low: 1024, medium: 2048, high: 4096 } as const
+/** The blur at a shadow's edge, metres, at softness 0 and 1. */
+export const SUN_SHADOW_BLUR_M = [0.015, 0.09] as const
+
+/** Metres of ground one texel of the map covers. */
+export function shadowTexelMetres(mapSize: number): number {
+  return (SUN_SHADOW_HALF_SIZE * 2) / mapSize
+}
+
+/**
+ * The filter radius in texels for a softness (0..1). The same softness blurs the same width on
+ * the ground at every quality; it is never under one texel (that is what looks pixelated) and
+ * capped at six, where the 17-tap filter starts to show its taps as bands.
+ */
+export function shadowRadiusTexels(softness: number, mapSize: number): number {
+  const s = Math.min(1, Math.max(0, Number.isFinite(softness) ? softness : 0.5))
+  const metres = SUN_SHADOW_BLUR_M[0] + (SUN_SHADOW_BLUR_M[1] - SUN_SHADOW_BLUR_M[0]) * s
+  return Math.min(6, Math.max(1, metres / shadowTexelMetres(mapSize)))
+}
+
+/** Strength (0..1) → the share of ambient and sky light a shadow takes away (0: three's plain shadow). */
+export function shadowAmbientDim(strength: number): number {
+  const s = Math.min(1, Math.max(0, Number.isFinite(strength) ? strength : 0.5))
+  return s * 0.9
+}
 /** How far from the covered area the light sits (it must clear the tallest caster). */
 export const SUN_SHADOW_DISTANCE = 90
 /** The map's centre sits this far ahead of the camera, on the ground. */
 export const SUN_SHADOW_LEAD = 14
-/** With the whole world casting, the map is redrawn at most this often (ms): 30 times a second. */
-export const SUN_SHADOW_WORLD_INTERVAL_MS = 33
-/** With only avatars casting: 60 times a second (on a 165 Hz screen, not on every frame). */
-export const SUN_SHADOW_AVATAR_INTERVAL_MS = 16
 /** The map's centre moves in steps of this many metres (then onto the texel grid), so it is not redrawn for every small turn of the camera. */
 export const SUN_SHADOW_CENTER_STEP = 4
 /** A sun lower than this (sine of its elevation) casts shadows too long to be worth a map: about 4 degrees. */
@@ -60,19 +80,34 @@ export function snapShadowCenter(wanted: Vector3, toSun: Vector3, texelMetres: n
 }
 
 export interface ShadowRefreshInput {
-  /** 'avatars': only bodies cast. 'all': the world casts too. */
-  mode: 'avatars' | 'all'
+  /** The owner's setting: 'auto', every 'frame', or at most '60' / '30' times a second. */
+  refresh: 'auto' | 'frame' | '60' | '30'
   /** Milliseconds since the map was last drawn. */
   msSinceDraw: number
   /** The map's centre moved this frame. */
   recentred: boolean
+  /** A caster in range changed place this frame or the last few (a body walking, an object being moved). */
+  moving: boolean
 }
 
-/** Whether to redraw the shadow map this frame. */
+/**
+ * Whether to redraw the shadow map this frame. A shadow that is redrawn less often than the
+ * screen shows frames visibly steps behind a moving body, so 'auto' redraws on every frame while
+ * something moves and drops to 60 a second when all that changes is a body breathing or typing.
+ */
 export function shadowRefreshDue(input: ShadowRefreshInput): boolean {
-  if (input.recentred) return true
-  return input.msSinceDraw >= (input.mode === 'avatars' ? SUN_SHADOW_AVATAR_INTERVAL_MS : SUN_SHADOW_WORLD_INTERVAL_MS)
+  if (input.recentred || input.refresh === 'frame') return true
+  // A little under the nominal interval: a 60 Hz frame that arrives 0.5 ms early must not be
+  // skipped, or the shadow would be redrawn in an uneven rhythm (which shows as stepping).
+  if (input.refresh === 'auto') return input.moving || input.msSinceDraw >= SIXTY_MS
+  return input.msSinceDraw >= (input.refresh === '60' ? SIXTY_MS : THIRTY_MS)
 }
+
+const SIXTY_MS = 15
+const THIRTY_MS = 31
+
+/** After the last movement, 'auto' keeps redrawing every frame this long (a body easing to a stop). */
+export const SUN_SHADOW_MOVING_HOLD_MS = 250
 
 /** The wanted centre of the map: a point ahead of the camera on the ground, in coarse steps. */
 export function wantedShadowCenter(camera: { x: number; z: number }, forward: { x: number; z: number }, out: Vector3): Vector3 {
@@ -87,28 +122,33 @@ export function wantedShadowCenter(camera: { x: number; z: number }, forward: { 
   )
 }
 
-/**
- * How much of the ambient and sky light a sun shadow also takes away (0: none, as three does it).
- * Oasis worlds are lit mostly by the sky image and an ambient light, so a shadow that only removed
- * the sun's own share was barely visible.
- */
-export const SUN_SHADOW_AMBIENT_DIM = 0.45
+/** Name of the uniform that carries the ambient dim (0: none) into every lit material. */
+export const SUN_SHADOW_DIM_UNIFORM = 'oasisSunShadowDim'
 
 /**
- * GLSL appended to three's `lights_fragment_end` chunk (standard, phong, lambert and toon
- * materials). It only does anything in a shader compiled with a directional shadow map, so with
- * shadows off every material renders exactly as before.
+ * GLSL for three's shader chunks, so that a sun shadow also takes away part of the ambient and
+ * sky light (Oasis worlds are lit mostly by those; a shadow that only blocks the sun's own share
+ * barely shows). `declare` goes after `shadowmap_pars_fragment`, `apply` after
+ * `lights_fragment_end`. Both only do anything in a shader compiled with a directional shadow
+ * map, and with the uniform at 0 (its value when nobody sets it) nothing changes.
  */
-export function sunShadowAmbientChunk(dim = SUN_SHADOW_AMBIENT_DIM): string {
-  return /* glsl */ `
+export function sunShadowAmbientChunks(): { declare: string; apply: string } {
+  return {
+    declare: /* glsl */ `
+#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
+  uniform float ${SUN_SHADOW_DIM_UNIFORM};
+#endif
+`,
+    apply: /* glsl */ `
 #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
   {
     DirectionalLightShadow oasisSunShadow = directionalLightShadows[ 0 ];
     float oasisSunLit = receiveShadow ? getShadow( directionalShadowMap[ 0 ], oasisSunShadow.shadowMapSize, oasisSunShadow.shadowBias, oasisSunShadow.shadowRadius, vDirectionalShadowCoord[ 0 ] ) : 1.0;
-    float oasisAmbientKept = mix( ${(1 - dim).toFixed(3)}, 1.0, oasisSunLit );
+    float oasisAmbientKept = mix( 1.0 - ${SUN_SHADOW_DIM_UNIFORM}, 1.0, oasisSunLit );
     reflectedLight.indirectDiffuse *= oasisAmbientKept;
     reflectedLight.indirectSpecular *= oasisAmbientKept;
   }
 #endif
-`
+`,
+  }
 }

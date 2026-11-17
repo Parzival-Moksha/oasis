@@ -32,6 +32,8 @@ import {
 import { useOasisStore } from '../../store/oasisStore'
 import { DragContext } from '../scene-lib/contexts'
 import { useGraphicsPrefs } from '../../lib/use-graphics-prefs'
+import { SUN_SHADOW_DIM_UNIFORM } from '../../lib/forge/sun-shadow'
+import { sunShadowDimUniform } from './SunShadows'
 import type { GroundSharpness } from '../../lib/graphics-prefs'
 import { GROUND_DETAIL_MAP_FRAGMENT, GROUND_DETAIL_STRENGTH, groundAnisotropy, groundDetailScale, paintedCellRepeat } from '../../lib/forge/ground-sharpness'
 
@@ -39,6 +41,8 @@ const GROUND_SIZE = 100
 const TILE_SIZE = 1
 const HALF_GROUND_SIZE = GROUND_SIZE / 2
 const TILE_RELIEF_OFFSET = 0.012
+/** Where the base ground is drawn (see BaseGround's comment at its mesh). */
+export const GROUND_PLANE_Y = -0.004
 // Max tiles per preset group — covers full 100×100 world (10,000 tiles)
 const MAX_TILES_PER_GROUP = 10000
 const DEFAULT_CUSTOM_FULL_GROUND_REPEAT = 24
@@ -218,6 +222,7 @@ function useGroundDetail(matRef: React.RefObject<THREE.MeshStandardMaterial>, sh
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uGroundDetail = uniforms.uGroundDetail
       shader.uniforms.uGroundDetailStrength = uniforms.uGroundDetailStrength
+      shader.uniforms[SUN_SHADOW_DIM_UNIFORM] = sunShadowDimUniform // Shadows → Strength
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform float uGroundDetail;\nuniform float uGroundDetailStrength;')
         .replace('#include <map_fragment>', GROUND_DETAIL_MAP_FRAGMENT)
@@ -314,7 +319,11 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
   }, [diffuse, preset.color])
 
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]} receiveShadow>
+    // 4 mm under zero, the height avatars, objects and the terrain stand at. It was 5 cm under since the first
+    // commit, so every foot hovered 5 cm over the ground wherever no tile or sculpted terrain covers it (the owner,
+    // 2026-11-17). Not exactly zero: tiles, rings and decals lie at +0.5 to +5 mm, and the polygon offset below
+    // keeps the plane behind anything flat that is laid at zero itself.
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, GROUND_PLANE_Y, 0]} receiveShadow>
       <planeGeometry args={[GROUND_SIZE, GROUND_SIZE]} />
       <meshStandardMaterial
         ref={matRef}

@@ -41,8 +41,11 @@ describe('ground sharpness', () => {
 describe('graphics prefs', () => {
   it('fills in defaults and drops values it does not know', () => {
     expect(normalizeGraphicsPrefs(null)).toEqual(GRAPHICS_PREFS_DEFAULT)
-    expect(normalizeGraphicsPrefs({ groundSharpness: 3, shadows: 'ultra' })).toEqual(GRAPHICS_PREFS_DEFAULT)
-    expect(normalizeGraphicsPrefs({ groundSharpness: 4, shadows: 'all' })).toEqual({ groundSharpness: 4, shadows: 'all' })
+    expect(normalizeGraphicsPrefs({ groundSharpness: 3, shadows: 'ultra', shadowQuality: 'max', shadowRefresh: 120, shadowSoftness: 'x' })).toEqual(GRAPHICS_PREFS_DEFAULT)
+    expect(normalizeGraphicsPrefs({ groundSharpness: 4, shadows: 'all' })).toEqual({ ...GRAPHICS_PREFS_DEFAULT, groundSharpness: 4, shadows: 'all' })
     expect(normalizeGraphicsPrefs({ shadows: 'off' })).toEqual({ ...GRAPHICS_PREFS_DEFAULT, shadows: 'off' })
+    expect(normalizeGraphicsPrefs({ shadowQuality: 'low', shadowRefresh: '30', shadowSoftness: 2, shadowStrength: -1 })).toEqual({ ...GRAPHICS_PREFS_DEFAULT, shadowQuality: 'low', shadowRefresh: '30', shadowSoftness: 1, shadowStrength: 0 })
+    // Settings saved before the shadow controls existed keep working.
+    expect(normalizeGraphicsPrefs({ groundSharpness: 2, shadows: 'avatars' })).toEqual(GRAPHICS_PREFS_DEFAULT)
   })
 })
