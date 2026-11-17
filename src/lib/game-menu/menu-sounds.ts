@@ -101,6 +101,12 @@ const RECIPES: Record<Exclude<MenuSoundId, 'classic' | 'off'>, Record<MenuSoundE
 }
 
 let lastHoverAt = 0
+let lastClickAt = 0
+/** Set while the Classic set plays its sample through the audio manager, so the manager does not route it back here. */
+let playingClassic = false
+export function isPlayingClassicSample(): boolean {
+  return playingClassic
+}
 
 export function playMenuSound(style: MenuSoundId, event: MenuSoundEvent): void {
   if (style === 'off') return
@@ -112,8 +118,19 @@ export function playMenuSound(style: MenuSoundId, event: MenuSoundEvent): void {
     if (now - lastHoverAt < 45) return
     lastHoverAt = now
   }
+  if (event === 'click') {
+    // One click, one sound, however many handlers asked for it.
+    const now = typeof performance !== 'undefined' ? performance.now() : 0
+    if (now - lastClickAt < 70) return
+    lastClickAt = now
+  }
   if (style === 'classic') {
-    manager.play(event === 'hover' ? 'buttonHover' : event === 'click' ? 'buttonClick' : event === 'open' ? 'panelOpen' : 'panelClose')
+    playingClassic = true
+    try {
+      manager.play(event === 'hover' ? 'buttonHover' : event === 'click' ? 'buttonClick' : event === 'open' ? 'panelOpen' : 'panelClose')
+    } finally {
+      playingClassic = false
+    }
     return
   }
   const ctx = audio()

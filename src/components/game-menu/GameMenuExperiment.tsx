@@ -56,7 +56,7 @@ export function GameMenuExperiment() {
         ))}
       </div>
 
-      <div className="mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">Sound</div>
+      <div className="mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">Sound · every menu, panel and button in the Oasis</div>
       <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
         {MENU_SOUNDS.map(sound => (
           <Choice

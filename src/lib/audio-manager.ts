@@ -362,6 +362,16 @@ function saveSettings(state: { volume: number; muted: boolean; selections: Recor
 // Footstep alternation — cycle through available footstep sounds
 let footstepIndex = 0
 
+/**
+ * The Oasis has one sound set for every menu, panel and button (src/lib/ui-sounds.ts). Code that asks this
+ * manager for a button hover or click is answered by that set, so old and new buttons sound alike. The router
+ * returns false to let the sample chosen in Settings > Sound play instead (the "Classic" set).
+ */
+let uiSoundRouter: ((event: 'buttonHover' | 'buttonClick') => boolean) | null = null
+export function setUiSoundRouter(router: ((event: 'buttonHover' | 'buttonClick') => boolean) | null): void {
+  uiSoundRouter = router
+}
+
 export const useAudioManager = create<AudioManagerState>((set, get) => {
   const initial = loadSettings()
 
@@ -371,6 +381,7 @@ export const useAudioManager = create<AudioManagerState>((set, get) => {
     play: (event) => {
       const { muted, volume, selections } = get()
       if (muted || volume === 0) return
+      if (uiSoundRouter && (event === 'buttonHover' || event === 'buttonClick') && uiSoundRouter(event)) return
       if (shouldSkipForCooldown(event)) return
 
       const optionId = selections[event]

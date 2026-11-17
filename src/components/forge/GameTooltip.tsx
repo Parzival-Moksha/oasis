@@ -8,6 +8,7 @@
 // the pointer is not over such an element, and nothing runs per frame.
 
 import { useEffect, useRef, useState } from 'react'
+import { startUiSounds } from '@/lib/ui-sounds'
 
 interface Tip { text: string; x: number; y: number; below: boolean }
 
@@ -24,6 +25,8 @@ function tipHost(target: EventTarget | null): HTMLElement | null {
 
 export function GameTooltip() {
   const [tip, setTip] = useState<Tip | null>(null)
+  // The other half of the Oasis's page-wide chrome: one hover tick and one click for every button (ui-sounds.ts).
+  useEffect(() => startUiSounds(), [])
   const hostRef = useRef<HTMLElement | null>(null)
   const timerRef = useRef<number | null>(null)
 
