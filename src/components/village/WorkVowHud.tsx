@@ -190,7 +190,14 @@ export function WorkVowHud() {
   }, [agentFocus, missionFocus])
 
   const snapshot = state.snapshot
-  if (!snapshot) return null
+  // No book yet: say so, in the counter's place. It never just vanishes (it asks again every 5 s).
+  if (!snapshot) {
+    return (
+      <div data-ui-panel="village-work-vow" data-work-vow="reading" className="fixed bottom-3 left-3 z-[170] rounded-xl border border-white/20 bg-slate-950/80 px-3 py-2 text-[11px] text-white/70 max-[700px]:bottom-auto max-[700px]:left-2 max-[700px]:top-[64px]" style={GAME_HUD_TEXT}>
+        work counter: reading the book…
+      </div>
+    )
+  }
   const liveSeconds = snapshot.today.seconds + state.pendingSeconds
   const done = liveSeconds >= snapshot.targetSeconds
   const color = done ? GREEN : AMBER

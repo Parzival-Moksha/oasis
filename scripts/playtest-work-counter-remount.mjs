@@ -43,7 +43,8 @@ try {
   check('says what is counted and the rate', /COUNTING: IN THE OASIS · 0\.7 XP\/MIN/i.test(first.text || ''), first.text)
 
   // The remount: the HUD's effect cleanup runs (it lets go), then it starts again; same page, same tab id.
-  await page.evaluate(() => { const c = window.__mod('components/village/work-vow-client.ts'); const stop = c.startWorkVow(); stop(); window.__stopAgain = c.startWorkVow() })
+  // (The counter runs while a HUD is mounted, so the test takes the mounted HUD's place: last user gone, then one again.)
+  await page.evaluate(() => { const c = window.__mod('components/village/work-vow-client.ts'); globalThis.__oasisWorkVow.users = 0; const stop = c.startWorkVow(); stop(); window.__stopAgain = c.startWorkVow() })
   const released = await page.evaluate(() => ({ holder: window.__book.holder, released: window.__book.released || null }))
   console.log('after letting go', JSON.stringify(released))
   await active(36)

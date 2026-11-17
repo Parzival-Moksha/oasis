@@ -21,18 +21,50 @@ export interface WorkVowState {
   unsaved: boolean
 }
 
-let state: WorkVowState = { snapshot: null, pendingSeconds: 0, running: false, otherTab: false, unsaved: false }
-const listeners = new Set<() => void>()
+/**
+ * What must outlive this module: a hot reload swaps the module under the HUD, and a fresh copy that
+ * started from nothing left the HUD hidden and the 3D clock at 0:00:00 (2026-11-17). The page keeps
+ * one of these; every copy of the module picks it up and carries on.
+ */
+interface WorkVowGlobal {
+  state: WorkVowState
+  listeners: Set<() => void>
+  tab: string
+  seq: number
+  pendingMs: number
+  lastInputAt: number | null
+  /** How many HUDs are mounted (the counter runs while there is one). */
+  users: number
+  /** Stops the copy that is running (its timer and listeners). */
+  halt: (() => void) | null
+}
+const holder = globalThis as unknown as { __oasisWorkVow?: WorkVowGlobal }
+const G: WorkVowGlobal = holder.__oasisWorkVow ||= {
+  state: { snapshot: null, pendingSeconds: 0, running: false, otherTab: false, unsaved: false },
+  listeners: new Set(),
+  tab: `tab-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`,
+  seq: 0,
+  pendingMs: 0,
+  lastInputAt: null,
+  users: 0,
+  halt: null,
+}
+
+let state: WorkVowState = G.state
+const listeners = G.listeners
 
 function set(patch: Partial<WorkVowState>): void {
+  state = G.state
   const next = { ...state, ...patch }
   if (next.snapshot === state.snapshot && next.pendingSeconds === state.pendingSeconds && next.running === state.running && next.otherTab === state.otherTab && next.unsaved === state.unsaved) return
   state = next
+  G.state = next
   listeners.forEach(listener => listener())
 }
 
 export function getWorkVowState(): WorkVowState {
-  return state
+  // The page's one state, not this copy's: a HUD still holding an older copy of this module reads the same number.
+  return G.state
 }
 
 export function subscribeWorkVow(listener: () => void): () => void {
@@ -42,11 +74,12 @@ export function subscribeWorkVow(listener: () => void): () => void {
 
 // ─── activity ───────────────────────────────────────────────────────────────
 
-let lastInputAt: number | null = null
+let lastInputAt: number | null = G.lastInputAt
 
 /** Something the owner did (also called while dictating, where no key is pressed). */
 export function markWorkActivity(): void {
   lastInputAt = Date.now()
+  G.lastInputAt = lastInputAt
 }
 
 // ─── focus: what the owner has open (an agent, a mission card), so each second lands in the right place ───
@@ -112,9 +145,10 @@ function onEngine(event: { kind: string; agentId: string; ts: number } & Record<
 
 // ─── the loop ───────────────────────────────────────────────────────────────
 
-const tab = `tab-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`
-let seq = 0
-let pendingMs = 0
+const tab = G.tab
+let seq = G.seq
+let pendingMs = G.pendingMs
+let lastReadAt = 0
 let lastTickAt = 0
 let lastBeatAt = 0
 let inFlight: Promise<void> | null = null
@@ -178,6 +212,10 @@ function tick(): void {
   // A tick that arrives late (a sleeping laptop, a throttled tab) is not three hours of work.
   pendingMs += Math.min(gained, 5000)
   lastTickAt = now
+  G.seq = seq
+  G.pendingMs = pendingMs
+  // No book yet (the first read failed, the server was compiling): keep asking, every 5 s, until there is one.
+  if (!state.snapshot && now - lastReadAt >= 5000) void refreshWorkVow()
   const due = now - lastBeatAt >= WORK_BEAT_MS
   // Report when there is something to report; a tab that only shows asks now and then who counts.
   if (due && (pendingMs >= 1000 || !state.snapshot || (state.otherTab && visible && gained === 0 && lastInputAt !== null && now - lastInputAt < 20_000))) void beat()
@@ -202,6 +240,7 @@ function letGo(): void {
 
 /** Re-read the book (after starting or stopping a mission, or from another tab's change). */
 export async function refreshWorkVow(): Promise<void> {
+  lastReadAt = Date.now()
   try {
     const response = await fetch('/api/village/work', { cache: 'no-store' })
     if (response.ok) set({ snapshot: await response.json() as WorkSnapshot })
@@ -228,26 +267,42 @@ function onVisibility(): void {
 
 const INPUTS = ['keydown', 'pointerdown', 'pointermove', 'wheel', 'touchstart'] as const
 
-export function startWorkVow(): () => void {
+/** This copy of the module takes the clock: timer, input listeners, engine events. */
+function run(): void {
+  G.halt?.() // a copy from before a hot reload stops; this one carries on with the same tab, numbers and book
   lastTickAt = Date.now()
   lastBeatAt = 0
-  // Nothing counts until the first real input: a reload with nobody there earns nothing.
-  lastInputAt = null
   for (const type of INPUTS) window.addEventListener(type, markWorkActivity, { capture: true, passive: true })
   const timer = window.setInterval(tick, 1000)
   window.addEventListener('pagehide', letGo)
   document.addEventListener('visibilitychange', onVisibility)
   const stopEngine = onEngineEvent(onEngine)
-  void refreshWorkVow()
-  return () => {
+  const halt = () => {
     window.clearInterval(timer)
     for (const type of INPUTS) window.removeEventListener(type, markWorkActivity, { capture: true })
     window.removeEventListener('pagehide', letGo)
     document.removeEventListener('visibilitychange', onVisibility)
     stopEngine()
+    if (G.halt === halt) G.halt = null
+  }
+  G.halt = halt
+  void refreshWorkVow()
+}
+
+/** A HUD is on screen: the counter runs while at least one is. */
+export function startWorkVow(): () => void {
+  G.users += 1
+  if (G.users === 1 || !G.halt) run()
+  return () => {
+    G.users = Math.max(0, G.users - 1)
+    if (G.users > 0) return
+    G.halt?.()
     letGo()
   }
 }
+
+// A hot reload made this copy while a HUD is on screen: take over from the old copy at once.
+if (typeof window !== 'undefined' && G.users > 0) run()
 
 // Dev-only console helper (playtests): window.__oasisWork.
 if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {

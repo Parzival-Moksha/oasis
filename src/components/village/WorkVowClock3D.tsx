@@ -24,7 +24,7 @@ function draw(ctx: CanvasRenderingContext2D): string {
   const target = snapshot?.targetSeconds || 3 * 3600
   const done = seconds >= target
   const color = done ? '#34d399' : '#fbbf24'
-  const status = !snapshot ? 'no book yet' : state.otherTab ? 'another tab is counting' : done ? 'the day is done' : state.running ? 'counting' : 'paused'
+  const status = !snapshot ? 'reading the book' : state.otherTab ? 'another tab is counting' : done ? 'the day is done' : state.running ? 'counting' : 'paused'
   const key = `${seconds}|${target}|${status}`
   const { width, height } = PX
   ctx.fillStyle = '#070b14'
@@ -40,7 +40,8 @@ function draw(ctx: CanvasRenderingContext2D): string {
   ctx.textAlign = 'left'
   ctx.fillStyle = done ? '#34d399' : '#f8fafc'
   ctx.font = `700 210px ${FONT}`
-  ctx.fillText(formatClock(seconds), 36, 196)
+  // No book yet is not zero hours: dashes, until the same number the counter shows is there.
+  ctx.fillText(snapshot ? formatClock(seconds) : '–:––:––', 36, 196)
   ctx.textAlign = 'right'
   ctx.fillStyle = 'rgba(226,232,240,0.6)'
   ctx.font = `700 72px ${FONT}`
