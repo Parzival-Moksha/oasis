@@ -6,7 +6,7 @@
 //   node scripts/cut-slim.mjs [--out <folder>] [--report-only] [--no-archive]
 //
 //   --out          where to write the cut (default: ../oasis-slim next to this repository). The folder is
-//                  emptied first, except its .git folder, so it can be a checkout of the slim repository.
+//                  emptied first, except its .git and node_modules folders, so it can be a checkout of the slim repository.
 //   --report-only  print the size table for what would be cut; write nothing
 //   --no-archive   skip measuring the .tar.gz (faster)
 //   --working-tree take tracked files as they are on disk, not as committed (to try a change before committing)
@@ -196,7 +196,7 @@ function printTable(rows, archiveBytes) {
 function emptyExceptGit(dir) {
   fs.mkdirSync(dir, { recursive: true })
   for (const entry of fs.readdirSync(dir)) {
-    if (entry === '.git') continue
+    if (entry === '.git' || entry === 'node_modules') continue // a checkout of the slim repository; installed packages
     fs.rmSync(path.join(dir, entry), { recursive: true, force: true })
   }
 }
