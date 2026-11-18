@@ -1,0 +1,16 @@
+node_modules/
+.next/
+logs/
+.env
+.env.local
+*.tsbuildinfo
+data/*.local.json
+data/*.local.jsonl
+data/characters/
+prisma/data/
+public/conjured/
+public/generated-images/
+public/generated-videos/
+public/generated-voices/
+public/generated-music/
+public/images/

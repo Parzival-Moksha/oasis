@@ -31,7 +31,7 @@ export const include = [
   'vitest.config.ts',
   'LICENSE',
   'scripts/oasis.mjs',
-  'scripts/slim/',
+  'scripts/slim/seed-first-world.mjs',
   'data/asset-catalog-extras.json',
   'data/ground-presets-extras.json',
 
@@ -65,6 +65,7 @@ export const exclude = [
   'packages/oasis-agent-engine/sandbox/',
   // The workshop's manifest for the world tools; the cut ships plugins/oasis/mcp/directory.mcp.json as .mcp.json
   'plugins/oasis/.mcp.json',
+  '**/*.url',
   'public/ui/hud/iterations/',
   'public/ui/spellbook/tiles/_alternates/',
 ]
@@ -92,4 +93,17 @@ export const assetLicences = [
   { match: 'public/icons/', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
   { match: 'public/audio/kenney', licence: 'CC0 1.0', source: 'Kenney (kenney.nl)' },
   { match: 'public/animations/ual/', licence: 'CC0 1.0', source: 'Quaternius, Universal Animation Library (Standard)' },
+  { match: 'public/fonts/emoji/', licence: 'SIL Open Font License 1.1 (OFL.txt beside the files)', source: 'Google, Noto Emoji' },
+  { match: 'public/fonts/gentilis_', licence: 'SIL Open Font License 1.1', source: 'SIL International, Gentilis (as a three.js typeface file)' },
+  { match: 'public/fonts/helvetiker_', licence: 'MgOpen licence (free to use, copy and distribute)', source: 'Magenta Ltd, MgOpen Moderna as "helvetiker" (three.js typeface files)' },
+  { match: 'public/fonts/inter-', licence: 'SIL Open Font License 1.1', source: 'Rasmus Andersson, Inter' },
+  { match: 'public/lipsync/wlipsync/', licence: 'MIT', source: 'mrxz, wLipSync (browser runtime and starter profile)' },
+  { match: 'public/headaudio.mjs', licence: 'MIT', source: 'met4citizen, HeadAudio' },
+  { match: 'public/headworklet.min.mjs', licence: 'MIT', source: 'met4citizen, HeadAudio' },
+  { match: 'public/model-en-mixed.bin', licence: 'MIT', source: 'met4citizen, HeadAudio (viseme model)' },
+  { match: 'public/parameters.mjs', licence: 'MIT', source: 'met4citizen, HeadAudio' },
+  { match: 'public/training.mjs', licence: 'MIT', source: 'met4citizen, HeadAudio' },
+  { match: 'public/favicon.svg', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
+  { match: 'public/oasislogo.jpg', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
+  { match: 'public/manifest.webmanifest', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
 ]

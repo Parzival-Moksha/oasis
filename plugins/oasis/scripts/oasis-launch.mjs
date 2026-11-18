@@ -82,7 +82,10 @@ async function install(from) {
   const target = path.join(root, 'app')
   const fresh = path.join(root, `app-${release.version}-${process.pid}`)
   fs.mkdirSync(fresh, { recursive: true })
-  const tar = spawnSync('tar', ['-xzf', archive, '-C', fresh], { stdio: 'ignore', windowsHide: true })
+  // On Windows: the system's own tar. A GNU tar from Git Bash on the PATH reads "C:" as a remote host.
+  const systemTar = path.join(process.env.SystemRoot || 'C:\Windows', 'System32', 'tar.exe')
+  const tarCommand = process.platform === 'win32' && fs.existsSync(systemTar) ? systemTar : 'tar'
+  const tar = spawnSync(tarCommand, ['-xzf', archive, '-C', fresh], { stdio: 'ignore', windowsHide: true })
   if (tar.status !== 0) {
     fs.rmSync(fresh, { recursive: true, force: true })
     throw new Error('Could not unpack the download (the `tar` command failed).')

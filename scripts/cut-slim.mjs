@@ -14,8 +14,8 @@
 // Exit codes: 0 fine, 1 the cut is over a limit or an asset has no licence that allows redistribution.
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
+import zlib from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { ARCHIVE_LIMIT_MIB, FILE_LIMIT, assetLicences, avatars, exclude, include } from './slim/cut.config.mjs'
 
@@ -100,7 +100,7 @@ function plan() {
   // Every asset under public/ must have a licence line, or it does not ship.
   for (const file of chosen) {
     if (!file.startsWith('public/') || file.startsWith('public/avatars/')) continue
-    if (!/\.(png|jpe?g|webp|gif|svg|hdr|glb|gltf|vrm|fbx|mp3|ogg|wav|woff2?|ttf|otf|json|bin|mjs|ico|webmanifest|md|txt)$/i.test(file)) problems.push(`unexpected kind of file under public/: ${file}`)
+    if (!/\.(png|jpe?g|webp|gif|svg|hdr|glb|gltf|vrm|fbx|mp3|ogg|wav|woff2?|ttf|otf|json|bin|mjs|js|webmanifest|md|txt)$/i.test(file)) problems.push(`unexpected kind of file under public/: ${file}`)
   }
   return { chosen: [...chosen].sort(), avatarRows, problems }
 }
@@ -140,7 +140,7 @@ function printTable(rows, archiveBytes) {
   const total = rows.reduce((a, r) => ({ files: a.files + r.files, bytes: a.bytes + r.bytes }), { files: 0, bytes: 0 })
   console.log('  ---------------------------------  -----  -------')
   console.log(`  ${'Total on disk'.padEnd(33)}  ${String(total.files).padStart(5)}  ${mb(total.bytes)}`)
-  if (archiveBytes !== undefined) console.log(`  ${'As a .tar.gz archive'.padEnd(33)}         ${mb(archiveBytes)}   (limit here ${ARCHIVE_LIMIT_MIB}, the directory's 50)`)
+  if (archiveBytes !== undefined) console.log(`  ${'As a .tar.gz archive (about)'.padEnd(33)}         ${mb(archiveBytes)}   (limit here ${ARCHIVE_LIMIT_MIB}, the directory's 50)`)
   return total
 }
 
@@ -197,20 +197,39 @@ function writeCut({ chosen, avatarRows }) {
   fs.copyFileSync(path.join(ROOT, 'plugins/oasis/mcp/directory.mcp.json'), path.join(OUT, 'plugins/oasis/.mcp.json'))
   // Files the cut has under other names than the workshop.
   const slim = path.join(ROOT, 'scripts', 'slim', 'root')
-  if (fs.existsSync(slim)) fs.cpSync(slim, OUT, { recursive: true })
+  if (fs.existsSync(slim)) {
+    for (const name of fs.readdirSync(slim)) fs.copyFileSync(path.join(slim, name), path.join(OUT, name))
+  }
+  // package.json: the same dependencies (the lockfile must still match), the slim Oasis's own name and scripts.
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
+  const plugin = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins/oasis/.claude-plugin/plugin.json'), 'utf8'))
+  pkg.name = 'oasis-village'
+  pkg.version = plugin.version
+  pkg.description = 'The Oasis: your Claude Code sessions as characters in a 3D village on your own machine.'
+  pkg.license = 'MIT'
+  pkg.scripts = {
+    oasis: 'node scripts/oasis.mjs start',
+    'oasis:setup': 'node scripts/oasis.mjs setup',
+    'oasis:status': 'node scripts/oasis.mjs status',
+    'oasis:stop': 'node scripts/oasis.mjs stop',
+    'oasis:engine': 'node packages/oasis-agent-engine/src/index.js',
+    dev: 'next dev -p 4516 -H 127.0.0.1',
+    'dev:engine': 'node packages/oasis-agent-engine/src/index.js',
+    build: 'next build',
+    start: 'next start -p 4516 -H 127.0.0.1',
+  }
+  fs.writeFileSync(path.join(OUT, 'package.json'), `${JSON.stringify(pkg, null, 2)}
+`)
   const doc = assetsDoc(chosen, avatarRows)
   fs.writeFileSync(path.join(OUT, 'ASSETS.md'), doc.text)
   return doc.unknown
 }
 
-function archiveSize(dir) {
-  const file = path.join(os.tmpdir(), `oasis-slim-${process.pid}.tar.gz`)
-  try {
-    execFileSync('tar', ['-czf', file, '--exclude=.git', '--exclude=node_modules', '--exclude=.next', '-C', dir, '.'], { stdio: 'ignore' })
-    return fs.statSync(file).size
-  } finally {
-    fs.rmSync(file, { force: true })
-  }
+/** About what the folder weighs as a .tar.gz: each file gzipped on its own, plus a tar header each (a little over the real figure). */
+function archiveSize(dir, files) {
+  let bytes = 0
+  for (const file of files) bytes += zlib.gzipSync(fs.readFileSync(path.join(dir, file)), { level: 6 }).length + 64
+  return bytes
 }
 
 function main() {
@@ -235,7 +254,7 @@ function main() {
     }
   }
   walk(OUT)
-  const archive = flag('--no-archive') ? undefined : archiveSize(OUT)
+  const archive = flag('--no-archive') ? undefined : archiveSize(OUT, files)
   const total = printTable(sizes(files, OUT), archive)
   console.log(`\n  Written to ${OUT}`)
   if (total.files > FILE_LIMIT) problems.push(`${total.files} files: over ${FILE_LIMIT}`)
