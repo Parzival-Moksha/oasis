@@ -18,6 +18,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WORLD_TOOLS_ALLOWED, WORLD_SERVER } from './worldtools.js';
+import { tokenHeaders } from './token.js';
 
 const PREFIX = `mcp__${WORLD_SERVER}__`;
 export const FREE_WORLD_TOOLS = new Set(WORLD_TOOLS_ALLOWED.filter((t) => t.startsWith(PREFIX)).map((t) => t.slice(PREFIX.length)));
@@ -44,7 +45,8 @@ function filtered(msg) {
 }
 
 async function post(msg) {
-  const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+  // The local key (token.js), when the Oasis runs with one: from OASIS_LOCAL_TOKEN (the engine passes it), else the file.
+  const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...tokenHeaders() };
   if (session) headers['mcp-session-id'] = session;
   if (protocol) headers['mcp-protocol-version'] = protocol;
   const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(msg) });
@@ -148,7 +150,7 @@ if (process.argv[1] && path.resolve(process.argv[1]).toLowerCase() === fileURLTo
     }
   });
   process.stdin.on('end', async () => {
-    if (session) await fetch(url, { method: 'DELETE', headers: { 'mcp-session-id': session } }).catch(() => {});
+    if (session) await fetch(url, { method: 'DELETE', headers: { 'mcp-session-id': session, ...tokenHeaders() } }).catch(() => {});
     process.exit(0);
   });
 }

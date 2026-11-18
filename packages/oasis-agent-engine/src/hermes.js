@@ -35,6 +35,7 @@ import { RESUME_TEXT, RESUMED_REASON } from './resume.js';
 import { normalizeSchedule } from './schedule.js';
 import { worldToolsUrl } from './worldtools.js';
 import { registerAttachment } from './files.js';
+import { requiredToken } from './token.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VOICE_SCRIPT = path.resolve(HERE, '..', 'scripts', 'voice.mjs').replace(/\\/g, '/');
@@ -286,7 +287,9 @@ export class HermesAgent {
   /** The Oasis world tools, as a stdio MCP server Hermes starts: worldproxy.js offers only the free tools. */
   worldToolsServers() {
     if (!this.worldTools || this.command) return []; // a Hermes on another machine cannot start a proxy on this one
-    return [{ name: 'oasis', command: process.execPath, args: [PROXY_SCRIPT, worldToolsUrl()], env: [] }];
+    // Hermes may not hand its own environment to the servers it starts: the local key (token.js) goes along by name.
+    const token = requiredToken();
+    return [{ name: 'oasis', command: process.execPath, args: [PROXY_SCRIPT, worldToolsUrl()], env: token ? [{ name: 'OASIS_LOCAL_TOKEN', value: token }] : [] }];
   }
 
   readSessionState(r) {

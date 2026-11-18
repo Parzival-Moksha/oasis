@@ -4,11 +4,13 @@
 //   node packages/oasis-agent-engine/scripts/hermes-smoke.mjs
 //
 // Needs Hermes Agent installed (OASIS_HERMES_BIN, else the Windows installer's venv) and a local model server:
-// Ollama on 127.0.0.1:11434 with HERMES_SMOKE_MODEL (default qwen35-9b-agent:latest). Two local turns, no money.
+// Ollama on 127.0.0.1:11434 with HERMES_SMOKE_MODEL (default qwen35-9b-agent:latest). About five local turns, no money.
 // The Oasis page server (127.0.0.1:4516) being up lets turn 1 use a world tool; without it that check is skipped.
 // 1. A Hermes agent at a desk: init, a message, text streamed, a world tool through worldproxy.js, a clean turn end.
 // 2. A refused tool: worldproxy.js answers a call to a tool it does not offer (no model turn).
 // 3. Restart: the agent comes back from the roster with session/load and remembers turn 1.
+// 4. A permission card nobody answers goes away after 60 s (Hermes denies by itself).
+// 5. A planned restart mid-turn: turnOpenAt and the journal survive; the agent is told to carry on and gets the message again.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -134,6 +136,54 @@ try {
   check('turn 2 ends cleanly', end2.outcome !== 'error');
   const key = oasisUp ? /zen|workshop|world/i : /4|four/i;
   check('it remembers turn 1', key.test(answer2), String(key));
+
+  // ---------------------------------------------------------------- 4. a permission card nobody answers
+  // Hermes asks before `rm -rf` (its dangerous-command list) and denies by itself after 60 s. The folder is empty
+  // scratch inside the test desk; if Hermes ran it without asking, only that folder would go.
+  fs.mkdirSync(path.join(CWD, 'scratch'), { recursive: true });
+  const before4 = c.events.length;
+  await c.cmd('send', { agentId: snap.id, text: 'Run exactly this terminal command and nothing else: rm -rf scratch' });
+  const ask4 = await c.until((e) => c.events.indexOf(e) >= before4 && e.agentId === snap.id && (e.kind === 'permission.request' || e.kind === 'turn.end'), 300000, 'a permission card');
+  check('a dangerous command arrives as a permission card', ask4.kind === 'permission.request', ask4.kind === 'permission.request' ? clipLine(ask4.summary) : 'no card: it ran or refused');
+  if (ask4.kind === 'permission.request') {
+    const s4 = (await c.cmd('listAgents')).find((a) => a.id === snap.id);
+    check('status needs-decision while the card is open', s4.status === 'needs-decision');
+    const gone = await c.until((e) => c.events.indexOf(e) >= before4 && e.agentId === snap.id && e.kind === 'permission.resolved' && e.requestId === ask4.requestId, 90000, 'the card to expire');
+    check('the card goes away by itself after 60 s', gone.behavior === 'expired');
+    // It may ask again; anything else it asks is denied from here.
+    const p_done = new Set();
+    const end4 = await new Promise((resolve, reject) => {
+      const t = setInterval(() => {
+        const fresh = c.events.slice(before4).filter((e) => e.agentId === snap.id);
+        for (const p of fresh.filter((e) => e.kind === 'permission.request' && e.requestId !== ask4.requestId && !p_done.has(e.requestId))) { p_done.add(p.requestId); c.cmd('respond', { agentId: snap.id, requestId: p.requestId, behavior: 'deny' }).catch(() => {}); }
+        const end = fresh.find((e) => e.kind === 'turn.end');
+        if (end) { clearInterval(t); resolve(end); }
+      }, 300);
+      setTimeout(() => { clearInterval(t); reject(new Error('turn 4 did not end')); }, 400000);
+    });
+    check('turn 4 ends', end4.outcome !== 'error', `${end4.outcome} ${end4.reason}`);
+    check('the scratch folder is still there', fs.existsSync(path.join(CWD, 'scratch')));
+  }
+
+  // ---------------------------------------------------------------- 5. a planned restart in the middle of a turn
+  const before5 = c.events.length;
+  const sent5 = await c.cmd('send', { agentId: snap.id, text: 'Count from 1 to 40, one number per line, then say DONE.' });
+  await c.until((e) => c.events.indexOf(e) >= before5 && e.agentId === snap.id && e.kind === 'text.delta', 300000, 'turn 5 to start streaming');
+  c.ws.close();
+  await stopEngine();
+  const entry5 = JSON.parse(fs.readFileSync(ROSTER, 'utf8')).agents.find((a) => a.id === snap.id);
+  check('a planned stop mid-turn keeps turnOpenAt in the roster', typeof entry5?.turnOpenAt === 'number');
+  const journal5 = JSON.parse(fs.readFileSync(path.join(tmp, fs.readdirSync(tmp).find((f) => /journal/.test(f))), 'utf8'));
+  check('the cut-off message is still in the journal', JSON.stringify(journal5).includes(sent5.uuid));
+  await startEngine();
+  c = await connect();
+  const resumed = await c.until((e) => e.agentId === snap.id && e.kind === 'user.sent' && e.auto === 'resume', 180000, 'the carry-on note');
+  check('told to carry on after the restart', !!resumed);
+  const again = await c.until((e) => e.agentId === snap.id && e.kind === 'user.sent' && e.uuid === sent5.uuid, 30000, 'the cut-off message again');
+  check('the cut-off message is delivered again, same uuid', !!again);
+  const end5 = await c.until((e) => e.agentId === snap.id && e.kind === 'turn.end' && !e.history, 600000, 'turn 5 end');
+  const answer5 = c.events.filter((e) => e.agentId === snap.id && e.kind === 'text' && !e.history).map((e) => e.text).join('\n');
+  check('turn 5 finishes after the restart', end5.outcome !== 'error' && /DONE/i.test(answer5), clipLine(answer5.slice(-80)));
   await c.cmd('kill', { agentId: snap.id }).catch(() => {});
   c.ws.close();
 } catch (e) {
