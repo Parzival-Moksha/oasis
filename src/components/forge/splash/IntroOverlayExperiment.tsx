@@ -36,7 +36,7 @@ export function IntroOverlayExperiment() {
         top of it, mostly see-through, and never takes a click or a key. Click one to use it and see
         it play.
       </p>
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
         {INTRO_VARIANTS.map(variant => {
           const active = choice === variant.id
           return (

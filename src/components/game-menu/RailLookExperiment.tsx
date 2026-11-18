@@ -22,7 +22,7 @@ export function RailLookExperiment() {
         The buttons that are always in front of you. Each look is a whole design: shape, border,
         letters and how it answers a hover. Click one to wear it.
       </p>
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
         {RAIL_LOOKS.map(option => {
           const active = look === option.id
           return (

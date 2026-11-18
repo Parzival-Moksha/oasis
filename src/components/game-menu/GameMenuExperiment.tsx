@@ -50,14 +50,14 @@ export function GameMenuExperiment() {
       </p>
 
       <div className="mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">Hover and click</div>
-      <div className="mt-1.5 grid grid-cols-2 gap-2">
+      <div className="mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2">
         {FEEL_STYLES.map(style => (
           <Choice key={style.id} tag={`feel-${style.id}`} active={prefs.feel === style.id} label={style.label} blurb={style.blurb} onClick={() => set({ feel: style.id })} />
         ))}
       </div>
 
       <div className="mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">Sound · every menu, panel and button in the Oasis</div>
-      <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2">
         {MENU_SOUNDS.map(sound => (
           <Choice
             key={sound.id}

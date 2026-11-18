@@ -27,13 +27,33 @@ export interface ConfigMenuProps {
   initialTab?: ConfigTabId
 }
 
+// Wide panel (the owner, 2026-11-18: "twice as wide would be fine"): once the panel is wide enough the tabs share
+// the top row and each tab's sections flow into two columns, like two of the old panels side by side. A container
+// query, so it follows the panel's own width (a narrow window or a phone keeps one column).
+const WIDE_CSS = `
+.oasis-settings { container-type: inline-size; }
+@container (min-width: 760px) {
+  .oasis-settings-tabs > button { flex: 1 1 0; justify-content: center; padding-top: 8px; padding-bottom: 8px; }
+  .oasis-settings-tabs > button > span:last-child { display: inline; font-size: 11px; white-space: nowrap; }
+  .oasis-settings-body[data-flow="columns"] > div { columns: 2; column-gap: 32px; column-rule: 1px solid rgba(255,255,255,0.06); }
+  .oasis-settings-body[data-flow="columns"] > div > section,
+  .oasis-settings-body[data-flow="columns"] > div > :not(section) > * { break-inside: avoid; }
+  .oasis-settings-body[data-flow="columns"] > div > * { margin-top: 0 !important; margin-bottom: 14px; }
+  .oasis-settings-body { padding: 16px 22px 24px; }
+}
+`
+
+/** Tabs whose content is wide by itself (grids of pictures) keep one column. */
+const ONE_COLUMN_TABS = new Set<ConfigTabId>(['experiments'])
+
 export function ConfigMenu({ menuOpacity, onMenuOpacityChange, consoleControl, initialTab = 'graphics' }: ConfigMenuProps) {
   const [activeTab, setActiveTab] = useState<ConfigTabId>(initialTab)
 
   const tabProps = { menuOpacity, onMenuOpacityChange, consoleControl }
 
   return (
-    <div className="flex min-h-0 w-full max-h-[inherit] flex-col max-[700px]:w-full">
+    <div className="oasis-settings flex min-h-0 w-full max-h-[inherit] flex-col max-[700px]:w-full">
+      <style>{WIDE_CSS}</style>
       {/* ─═̷─═̷─ HEADER ─═̷─═̷─ */}
       <div className="shrink-0 bg-black/[0.92] backdrop-blur-md border-b border-white/10 px-3 pt-3 pb-2 max-[700px]:px-2 max-[700px]:pt-2">
         <div className="flex items-center gap-3 mb-2">
@@ -49,7 +69,7 @@ export function ConfigMenu({ menuOpacity, onMenuOpacityChange, consoleControl, i
         </div>
 
         {/* ─═̷─═̷─ TAB ROW ─═̷─═̷─ */}
-        <div className="flex items-center gap-1 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
+        <div className="oasis-settings-tabs flex items-center gap-1 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
           {CONFIG_TABS.map(tab => {
             const active = activeTab === tab.id
             return (
@@ -73,7 +93,7 @@ export function ConfigMenu({ menuOpacity, onMenuOpacityChange, consoleControl, i
       </div>
 
       {/* ─═̷─═̷─ CONTENT ─═̷─═̷─ */}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 pb-5 max-[700px]:p-2 max-[700px]:pb-[calc(env(safe-area-inset-bottom)+1rem)]" style={{ scrollbarWidth: 'thin' }}>
+      <div data-flow={ONE_COLUMN_TABS.has(activeTab) ? 'one' : 'columns'} className="oasis-settings-body min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 pb-5 max-[700px]:p-2 max-[700px]:pb-[calc(env(safe-area-inset-bottom)+1rem)]" style={{ scrollbarWidth: 'thin' }}>
         {activeTab === 'graphics' && <GraphicsTab {...tabProps} />}
         {activeTab === 'fonts' && <FontsTab />}
         {activeTab === 'sound' && <SoundTab />}
