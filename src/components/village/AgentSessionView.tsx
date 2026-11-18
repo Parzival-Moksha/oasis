@@ -372,7 +372,13 @@ const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: Age
           {(text || (entry.images && entry.images.length > 0)) && (
             <div className="ml-6 rounded-lg border border-sky-300/20 bg-sky-400/10 px-2.5 py-1.5">
               <div className="mb-0.5 flex items-baseline justify-between gap-2 text-[9px] font-black uppercase tracking-[0.14em] text-sky-200/90">
-                <span>{entry.state === 'seen' ? 'prompt' : 'you'}{state ? ` · ${state}` : ''}{entry.priority === 'now' ? ' · urgent' : ''}</span>
+                {/* A wake-up from its schedule is the engine speaking, not the owner: a tag says so (engine schedule.js). */}
+                <span>
+                  {entry.scheduled
+                    ? <span data-thread-scheduled title={`Sent by the agent's schedule: ${entry.scheduled}`} className="rounded bg-amber-300/20 px-1 text-amber-100">scheduled</span>
+                    : entry.state === 'seen' ? 'prompt' : 'you'}
+                  {state ? ` · ${state}` : ''}{entry.priority === 'now' ? ' · urgent' : ''}
+                </span>
                 {!compact && <MessageTime ts={entry.ts} />}
               </div>
               {entry.voice && !compact && <VoiceClip fileId={entry.voice.fileId} durationMs={entry.voice.durationMs} />}

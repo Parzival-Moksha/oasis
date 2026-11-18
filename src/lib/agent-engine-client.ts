@@ -7,6 +7,8 @@
 // Oasis depends on it.
 
 import type {
+  EngineScheduleEvery,
+  EngineScheduleSettings,
   EnginePresence,
   EngineAgentSnapshot,
   EngineCommandMap,
@@ -404,6 +406,28 @@ export class AgentEngineClient {
 
   setCharacter(agentId: string, own: { role?: string; who?: string }) {
     return this.cmd('setCharacter', { agentId, ...own })
+  }
+
+  /** An agent's recurring wake-up and its standing prompt (engine schedule.js). Fields left out keep their value. */
+  setSchedule(agentId: string, schedule: { every?: EngineScheduleEvery; at?: string; day?: number; prompt?: string }) {
+    return this.cmd('setSchedule', { agentId, ...schedule })
+  }
+
+  addAppointment(agentId: string, appointment: { at: string | number; repeat?: 'daily' | 'weekly'; note?: string; prompt?: string }) {
+    return this.cmd('addAppointment', { agentId, by: 'the owner', ...appointment })
+  }
+
+  removeAppointment(agentId: string, id: string) {
+    return this.cmd('removeAppointment', { agentId, id })
+  }
+
+  wakeNow(agentId: string) {
+    return this.cmd('wakeNow', { agentId, by: 'the owner' })
+  }
+
+  /** Quiet hours and the daily cap, for all agents. With no argument: read them. */
+  scheduleSettings(patch: { quiet?: EngineScheduleSettings['quiet']; dailyCap?: number } = {}) {
+    return this.cmd('scheduleSettings', patch)
   }
 
   private answerEyes(requestId: string, agentId: string): void {

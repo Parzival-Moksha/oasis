@@ -21,6 +21,7 @@ import { Journal, journalFileFor } from './journal.js';
 import { restartLine, transcriptTurnOpen, wasMidTurn } from './resume.js';
 import { Characters, characterNote, cardStamp, charactersDirFor } from './character.js';
 import { Looks } from './looks.js';
+import { Scheduler, DEFAULT_PROMPT, EVERY, REPEATS, appointmentLabel, describeSchedule, localDate, normalizeAppointment, normalizeSchedule, parseWhen, scheduleSettingsFileFor } from './schedule.js';
 import os from 'node:os';
 import { readOlderHistory } from './history.js';
 import { loadRoster, saveRoster, saveRosterNow } from './roster.js';
@@ -59,6 +60,22 @@ const RESUME_ON = process.env.OASIS_RESUME !== '0';
 /** This start, for /health and the HUD's engine pill: when, how the last run ended, who was told to carry on. */
 const restart = { startedAt: Date.now(), stop: null, resumed: [], redelivered: 0, line: null };
 const PORT = Number(process.env.OASIS_PORT || 4530);
+// The clock schedules run on. A test engine (OASIS_FAKE_CLOCK=1, never on 4530) can move it with the `clock` command.
+const FAKE_CLOCK = process.env.OASIS_FAKE_CLOCK === '1' && PORT !== 4530;
+// OASIS_CLOCK_OFFSET_MS starts a test engine's clock ahead (a restart "hours later").
+const clock = { offset: FAKE_CLOCK ? Number(process.env.OASIS_CLOCK_OFFSET_MS) || 0 : 0 };
+const now = () => Date.now() + clock.offset;
+/** The command an agent runs to tell the owner on Telegram, once (scripts/tell.mjs). */
+const TELL_SCRIPT = path.resolve(HERE, '..', 'scripts', 'tell.mjs').replace(/\\/g, '/');
+const scheduler = new Scheduler({
+  agents: () => ownedAgents(),
+  now,
+  settingsFile: process.env.OASIS_SCHEDULE_SETTINGS || scheduleSettingsFileFor(ROSTER_FILE),
+  log: (...a) => hub.log(...a),
+  tell: TELL_SCRIPT,
+  onChange: () => scheduleSnapshot(),
+  tickMs: Number(process.env.OASIS_SCHEDULE_TICK_MS) || 15_000,
+});
 const HOST = process.env.OASIS_HOST || '127.0.0.1';
 const BACKLOG = 400;
 
@@ -94,11 +111,15 @@ const hub = {
     }
     broadcast({ type: 'event', event });
     telegram?.onEvent(event);
-    if (/^(status|init|meta|model|mode|effort|eyes|speak|voice|chrome|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
+    if (/^(status|init|meta|model|mode|effort|eyes|speak|voice|chrome|schedule|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
   },
   eyes: (agentId) => captureEyes(agentId),
   journal,
   stopping: () => shuttingDown,
+  /** Schedules (schedule.js): when an agent wakes next, how often it woke today, and a look when it turned idle. */
+  nextWake: (agent) => scheduler.nextWakeOf(agent),
+  wakesToday: (agent) => scheduler.countToday(agent),
+  scheduleCheck: (agent) => { try { scheduler.check(agent); } catch (e) { hub.log(`[${agent.name}] schedule check failed: ${e.message}`); } },
   /** The who-you-are note for an agent and what it was made from (agent.js sends it when due). */
   character: (agent) => characterFor(agent),
   /** Where this engine listens: agents get it as OASIS_ENGINE_URL. */
@@ -214,6 +235,23 @@ function saveViews(agent, view, pictures) {
     fs.writeFileSync(file, Buffer.from(p.data, 'base64'));
     return { path: file.replace(/\\/g, '/'), label: p.label || null, note: p.note || null };
   });
+}
+
+/** An owned agent by id, session or name, for the schedule commands. */
+function scheduleAgent(ref) {
+  const a = findAgent(ref);
+  if (!a) throw new Error(`unknown agent ${ref ?? ''}`);
+  if (a.kind !== 'owned') throw new Error(`${a.name} runs in another window: only agents the Oasis runs can wake up on a schedule`);
+  return a;
+}
+
+function scheduleView(a) {
+  const next = scheduler.nextWakeOf(a);
+  return {
+    agentId: a.id, name: a.name, schedule: a.schedule, label: describeSchedule(a.schedule),
+    appointments: a.appointments.map((x) => ({ ...x, label: appointmentLabel(x) })),
+    nextWake: next, wakesToday: scheduler.countToday(a), lastWakeAt: a.wake?.lastAt || null, today: localDate(now()),
+  };
 }
 
 function newId(prefix) { return `${prefix}-${randomUUID().slice(0, 8)}`; }
@@ -437,6 +475,92 @@ ${you.note}` : text);
     if (Array.isArray(pictures) && pictures.length) w.done(pictures);
     else if (--w.left <= 0) w.done(null);
     return { ok: true };
+  },
+  // ---- schedules (schedule.js): the HTTP API takes the same commands (POST /api/cmd), so Anorak can set them.
+  /**
+   * An agent's recurring wake-up: every off | hourly | 3h | 6h | daily | weekly, at "HH:MM" (daily, weekly; for the
+   * intervals the first slot of the day), day 0-6 or a name (weekly, 0 = Sunday), prompt (its standing prompt; ""
+   * goes back to the default). Fields left out keep their value.
+   */
+  setSchedule({ agentId, agent, every, at, day, prompt }) {
+    const a = scheduleAgent(agentId ?? agent);
+    const old = a.schedule || {};
+    if (every !== undefined && !EVERY.includes(every)) throw new Error(`every: one of ${EVERY.join(', ')}`);
+    const dayIndex = typeof day === 'string' ? ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(day.trim().toLowerCase().slice(0, 3)) : day;
+    const next = normalizeSchedule({
+      every: every ?? old.every ?? 'off',
+      at: at ?? old.at,
+      day: dayIndex ?? old.day,
+      prompt: prompt !== undefined ? prompt : old.prompt,
+      // A new rhythm starts now: slots before this moment never fire. Only the prompt changed: the rhythm goes on.
+      since: every !== undefined || at !== undefined || day !== undefined ? now() : old.since,
+    }, now());
+    a.schedule = next;
+    a.persist();
+    a.emit('schedule', { schedule: next });
+    scheduleSnapshot();
+    return { ok: true, data: scheduleView(a) };
+  },
+  /** A one-off or repeating appointment: at ("16:20", "wed 16:20", "2026-11-25 16:20", "in 30m", ms), repeat (daily, weekly), note, prompt, by. */
+  addAppointment({ agentId, agent, at, repeat, note, prompt, by }) {
+    const a = scheduleAgent(agentId ?? agent);
+    if (repeat != null && repeat !== '' && !REPEATS.includes(repeat)) throw new Error(`repeat: ${REPEATS.join(' or ')} (or leave it out)`);
+    const appt = normalizeAppointment({ at, repeat, note, prompt, by }, now());
+    if (appt.at < now() - 60_000) throw new Error(`that time has passed (${new Date(appt.at).toString().slice(0, 21)})`);
+    if (a.appointments.length >= 50) throw new Error('50 appointments at most per agent');
+    a.appointments = [...a.appointments, appt].sort((x, y) => x.at - y.at);
+    a.persist();
+    a.emit('schedule', { appointment: appt });
+    hub.log(`[${a.name}] schedule: ${appointmentLabel(appt)}${by ? ` (set by ${by})` : ''}`);
+    scheduleSnapshot();
+    return { ok: true, data: { appointment: { ...appt, label: appointmentLabel(appt) }, ...scheduleView(a) } };
+  },
+  removeAppointment({ agentId, agent, id }) {
+    const a = scheduleAgent(agentId ?? agent);
+    const before = a.appointments.length;
+    a.appointments = a.appointments.filter((x) => x.id !== id);
+    if (a.appointments.length === before) throw new Error(`no appointment ${id} for ${a.name}`);
+    a.persist();
+    a.emit('schedule', { removed: id });
+    scheduleSnapshot();
+    return { ok: true, data: scheduleView(a) };
+  },
+  /** Wake an agent now, the schedule's way (a one-off appointment at this minute): when it is idle, or after its turn. */
+  wakeNow({ agentId, agent, prompt, note, by }) {
+    const a = scheduleAgent(agentId ?? agent);
+    const appt = normalizeAppointment({ at: now(), note: note || 'woken now', prompt: prompt || a.schedule?.prompt || DEFAULT_PROMPT, by }, now());
+    a.appointments = [...a.appointments, appt];
+    a.persist();
+    const result = scheduler.check(a);
+    return { ok: true, data: { result: result || 'waiting', ...scheduleView(a) } };
+  },
+  /** Every owned agent's schedule, appointments and next wake-up, with the settings. */
+  listSchedules() {
+    return { ok: true, data: { settings: scheduler.settings, defaultPrompt: DEFAULT_PROMPT, now: now(), agents: ownedAgents().map(scheduleView) } };
+  },
+  /** Quiet hours ({ from, to } or null for none) and the daily cap of recurring wake-ups per agent. */
+  scheduleSettings({ quiet, dailyCap } = {}) {
+    const patch = {};
+    if (quiet !== undefined) patch.quiet = quiet;
+    if (dailyCap !== undefined) patch.dailyCap = dailyCap;
+    const settings = Object.keys(patch).length ? scheduler.setSettings(patch) : scheduler.settings;
+    return { ok: true, data: { settings, defaultPrompt: DEFAULT_PROMPT } };
+  },
+  /** An agent writes to the owner on Telegram (scripts/tell.mjs), once in a while. */
+  tellOwner({ agentId, agent, text }) {
+    const a = findAgent(agentId ?? agent);
+    if (!a) throw new Error(`unknown agent ${agentId ?? agent ?? ''}`);
+    if (!telegram) throw new Error('the Telegram line is not running in this engine');
+    return { ok: true, data: telegram.tell(a.id, a.name, text) };
+  },
+  /** Test engines only (OASIS_FAKE_CLOCK=1): move the schedules' clock. advanceMs adds; at sets it to that time. */
+  clock({ advanceMs, at } = {}) {
+    if (!FAKE_CLOCK) throw new Error('the clock can only be moved in a test engine (OASIS_FAKE_CLOCK=1)');
+    if (typeof advanceMs === 'number') clock.offset += advanceMs;
+    if (at !== undefined) { const t = parseWhen(at, now()); if (t === null) throw new Error('at: a time'); clock.offset = t - Date.now(); }
+    scheduler.tick();
+    scheduleSnapshot();
+    return { ok: true, data: { now: now(), iso: new Date(now()).toString() } };
   },
   /** This start: when, how the last run ended, who was told to carry on, the line the HUD shows. */
   restartInfo: () => restartInfo(),
@@ -817,6 +941,9 @@ async function restoreRoster() {
   if (restart.line) hub.log(restart.line + (stop?.reason ? ` (last stop: ${stop.reason})` : ''));
   scheduleSnapshot();
   await Promise.all(jobs);
+  // Schedules start once everyone is back, a little later, so a carry-on note goes before any wake-up. A wake-up that
+  // came due while the engine was off goes out then, once.
+  scheduler.start({ delayMs: Number(process.env.OASIS_SCHEDULE_START_MS ?? 20_000) });
 }
 
 let shuttingDown = false;
@@ -830,6 +957,7 @@ function shutdown(sig) {
   saveRosterNow(ROSTER_FILE, ownedAgents().map((a) => a.rosterEntry()));
   journal.setBridge(dumpInboxes());
   journal.stop({ planned: true, reason: sig });
+  scheduler.stop();
   stopEars();
   stopClipWatchdog();
   telegram?.stop();

@@ -14,6 +14,7 @@ import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { formatElapsed, subagentLook, visibleSubagents, type SubagentLook } from '../../lib/village/village-subagents'
 import { focusVillageAgent, focusVillageSubagent, getSessionPanelGeometry, getVillageScreen, subscribeVillageScreen } from './village-actions'
 import { VILLAGE_HELPERS_COLOR, VILLAGE_OBSERVED_COLOR, cwdLabel, statusColor, villageAgentLook } from './village-status'
+import { wakeLine } from '../../lib/village/village-schedule'
 import { CUT_NAME_LENGTH, fullAgentName, sessionTitles } from './village-agent-labels'
 import { SUBAGENT_LOOK_COLOR } from './VillageSubagentMinis'
 
@@ -55,18 +56,20 @@ interface Row {
   observed: boolean
   repo: string
   helpers: HelperRow[]
+  /** "wakes 14:00" (engine schedule.js), or '' when nothing wakes it. */
+  wake: string
 }
 
 function rowKey(agent: EngineAgentState, titles: Map<string, string>, now: number): string {
   const look = villageAgentLook(agent, now)
   const helpers = visibleSubagents(agent, now).map(sub => [sub.key, subagentLook(sub), sub.description, sub.startedAt].join('\u0003')).join('\u0004')
-  return [agent.id, fullAgentName(agent, titles), look.status, look.label, agent.owned ? '' : '1', cwdLabel(agent.cwd), helpers].join('\u0001')
+  return [agent.id, fullAgentName(agent, titles), look.status, look.label, agent.owned ? '' : '1', cwdLabel(agent.cwd), helpers, wakeLine(agent.nextWake, now) || ''].join('\u0001')
 }
 
 function parseRow(item: string): Row {
-  const [id, name, status, label, observed, repo, helpers] = item.split('\u0001')
+  const [id, name, status, label, observed, repo, helpers, wake] = item.split('\u0001')
   return {
-    id, name, status, label, repo, observed: observed === '1',
+    id, name, status, label, repo, observed: observed === '1', wake: wake || '',
     color: statusColor(status),
     helpers: helpers ? helpers.split('\u0004').map(part => {
       const [key, subLook, description, startedAt] = part.split('\u0003')
@@ -315,6 +318,7 @@ export function VillageAgentsMenu() {
                     <span style={{ color: row.color }}>{row.label}</span>
                     {row.repo && <span className="text-cyan-100/60">· {row.repo}</span>}
                     {row.observed && <span className="text-cyan-200/60">· watched</span>}
+                    {row.wake && <span className="text-amber-100/70" data-agent-wake-line title="It wakes up on its own then (its settings menu: Schedule)">· {row.wake}</span>}
                   </span>
                 </button>
                 </div>

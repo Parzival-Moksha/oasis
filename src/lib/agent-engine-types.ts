@@ -83,6 +83,15 @@ export interface EngineAgentSnapshot {
   lastOutcome?: { outcome: string; reason?: string | null; at?: number | null } | null
   /** Told to carry on after an engine restart cut its turn; set until that turn ends. */
   resumedAt?: number | null
+  /** When it wakes up on its own (engine schedule.js); null: off. Missing on engines older than schedules. */
+  schedule?: EngineSchedule | null
+  appointments?: EngineAppointment[]
+  /** What wakes it next: its next recurring slot or appointment. */
+  nextWake?: { at: number; label: string } | null
+  /** Scheduled turns today (recurring and appointments). */
+  wakesToday?: number
+  /** The running turn was started by its schedule. */
+  scheduledRun?: boolean
   status: EngineAgentStatus
   statusReason?: string | null
   alive?: boolean
@@ -153,9 +162,9 @@ export interface EngineVoiceClip { fileId: string; mime?: string; durationMs?: n
 export interface EngineSendPicture { data: string; mediaType: string; name?: string }
 /** A picture the owner sent, as the thread shows it (GET /file/<fileId>). */
 export interface EngineUserPicture { fileId: string; name?: string; mediaType?: string }
-export type EngineUserSentEvent = EngineEventEnvelope<'user.sent'> & { uuid: string; text: string; midTurn?: boolean; priority?: string; voice?: EngineVoiceClip; images?: EngineUserPicture[] }
+export type EngineUserSentEvent = EngineEventEnvelope<'user.sent'> & { uuid: string; text: string; midTurn?: boolean; priority?: string; voice?: EngineVoiceClip; images?: EngineUserPicture[]; auto?: 'resume' | 'schedule'; scheduled?: string }
 export type EngineUserConsumedEvent = EngineEventEnvelope<'user.consumed'> & { uuid: string; folded?: boolean; waitedMs?: number }
-export type EngineUserEvent = EngineEventEnvelope<'user'> & { text: string; uuid?: string | null; replay?: boolean }
+export type EngineUserEvent = EngineEventEnvelope<'user'> & { text: string; uuid?: string | null; replay?: boolean; scheduled?: string }
 export type EngineTextDeltaEvent = EngineEventEnvelope<'text.delta'> & {
   messageId?: string | null
   index?: number
@@ -226,6 +235,8 @@ export type EnginePermissionDeniedEvent = EngineEventEnvelope<'permission.denied
   message?: string
 }
 export type EngineTurnEndEvent = EngineEventEnvelope<'turn.end'> & {
+  /** A turn its schedule started (nobody else joined it): not "finished, unseen", no walk to the owner. */
+  scheduled?: boolean
   subtype?: string
   isError?: boolean
   outcome: 'done-waiting' | 'needs-decision' | 'error' | string
@@ -321,6 +332,44 @@ export interface EngineSessionMeta {
   live: EngineLiveRegistryEntry | null
   ownedBy: string | null
   observedBy: string | null
+}
+
+/** An agent's recurring wake-up (engine schedule.js). */
+export const ENGINE_SCHEDULE_EVERY = ['off', 'hourly', '3h', '6h', 'daily', 'weekly'] as const
+export type EngineScheduleEvery = (typeof ENGINE_SCHEDULE_EVERY)[number]
+export interface EngineSchedule {
+  every: EngineScheduleEvery
+  /** "HH:MM": daily and weekly; for the intervals the first slot of the day. */
+  at?: string
+  /** Weekly: 0 = Sunday. */
+  day?: number
+  /** Its own standing prompt; null: the default. */
+  prompt?: string | null
+  since?: number
+}
+export interface EngineAppointment {
+  id: string
+  at: number
+  repeat: 'daily' | 'weekly' | null
+  note: string
+  prompt: string | null
+  by: string | null
+  label?: string
+}
+export interface EngineScheduleSettings {
+  /** No recurring wake-ups between these times; null: none. */
+  quiet: { from: string; to: string } | null
+  /** Recurring wake-ups per agent per day at most (appointments always fire). */
+  dailyCap: number
+}
+export interface EngineScheduleView {
+  agentId: string
+  name: string
+  schedule: EngineSchedule | null
+  label: string
+  appointments: EngineAppointment[]
+  nextWake: { at: number; label: string } | null
+  wakesToday: number
 }
 
 /** One agent as the page sees it, reported to the engine for its card. */
@@ -457,6 +506,13 @@ export interface EngineCommandMap {
   getCharacter: { args: { agentId: string }; result: { ok: boolean; data: EngineCharacter } }
   /** The owner's (or the agent's) own words on the card. */
   setCharacter: { args: { agentId: string; role?: string; who?: string }; result: { ok: boolean; data: EngineCharacter } }
+  /** Schedules (engine schedule.js). */
+  setSchedule: { args: { agentId: string; every?: EngineScheduleEvery; at?: string; day?: number; prompt?: string }; result: { ok: boolean; data: EngineScheduleView } }
+  addAppointment: { args: { agentId: string; at: string | number; repeat?: 'daily' | 'weekly'; note?: string; prompt?: string; by?: string }; result: { ok: boolean; data: EngineScheduleView & { appointment: EngineAppointment } } }
+  removeAppointment: { args: { agentId: string; id: string }; result: { ok: boolean; data: EngineScheduleView } }
+  wakeNow: { args: { agentId: string; by?: string }; result: { ok: boolean; data: EngineScheduleView & { result: string } } }
+  listSchedules: { args: Record<string, never>; result: { ok: boolean; data: { settings: EngineScheduleSettings; defaultPrompt: string; now: number; agents: EngineScheduleView[] } } }
+  scheduleSettings: { args: { quiet?: EngineScheduleSettings['quiet']; dailyCap?: number }; result: { ok: boolean; data: { settings: EngineScheduleSettings; defaultPrompt: string } } }
   /** The answer to an eyes.request: the picture, or no data when this page has no view of that agent. */
   eyesFrame: { args: { requestId: string; data?: string; mediaType?: string }; result: { ok: boolean } }
   respond: { args: RespondArgs; result: { ok: boolean } }

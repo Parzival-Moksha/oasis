@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AgentSelectionSection } from './AgentSelectionSection'
 import { CharacterSection } from './CharacterSection'
+import { ScheduleSection } from './ScheduleSection'
 
 import { AGENT_AVATAR_CATALOG } from '../../lib/agent-avatar-catalog'
 import { villageAgentKey } from '../../lib/village/village-layout'
@@ -160,7 +161,7 @@ function WalkingSection({ agentId, agentKey, name }: { agentId: string; agentKey
   )
 }
 
-export function AgentSettingsButton({ agent, large = false }: { agent: Pick<EngineAgentState, 'id' | 'name' | 'sessionId' | 'owned' | 'speak' | 'voiceChoice' | 'title' | 'cwd' | 'kind'>; large?: boolean }) {
+export function AgentSettingsButton({ agent, large = false }: { agent: Pick<EngineAgentState, 'id' | 'name' | 'sessionId' | 'owned' | 'speak' | 'voiceChoice' | 'title' | 'cwd' | 'kind' | 'schedule' | 'appointments' | 'nextWake' | 'wakesToday'>; large?: boolean }) {
   const [open, setOpen] = useState(false)
   const [gallery, setGallery] = useState(false)
   const [thumbFailed, setThumbFailed] = useState(false)
@@ -205,6 +206,8 @@ export function AgentSettingsButton({ agent, large = false }: { agent: Pick<Engi
         <div data-agent-settings-menu className="absolute right-0 top-9 z-50 max-h-[min(78vh,760px)] w-[280px] overflow-y-auto rounded-lg border border-white/15 bg-slate-950/95 p-3 text-left text-[11px] font-normal normal-case tracking-normal text-white shadow-[0_18px_50px_rgba(0,0,0,0.6)]">
           {/* Who it is: role and who-you-are, kept by the engine as a card per agent (CharacterSection). */}
           <CharacterSection agentId={agent.id} name={name} />
+          {/* When it wakes up on its own (engine schedule.js). Only agents the Oasis runs can be woken. */}
+          {agent.owned && <ScheduleSection agent={agent} name={name} />}
           {agent.owned && <VoiceSection agent={agent} agentKey={agentKey} />}
           <WalkingSection agentId={agent.id} agentKey={agentKey} name={agent.name} />
           <AgentSelectionSection agentId={agent.id} agentKey={agentKey} name={agent.name} />

@@ -605,3 +605,38 @@ describe('telegram: across an engine restart', () => {
     expect(journal.owedIds).toEqual(['a-tyler']) // still owed: the next start resumes it and the answer comes here
   })
 })
+
+// Schedules (engine schedule.js): a wake-up is not the owner writing, so its turn is not answered on Telegram; an
+// agent may tell the owner once in a while on its own (tell).
+describe('telegram: scheduled turns and agents telling the owner', () => {
+  let current: Line | null = null
+  afterEach(async () => {
+    await (current as unknown as { outbox?: Promise<unknown> } | null)?.outbox
+    current?.stop(); current = null; calls.length = 0; updates = []
+  })
+
+  it('a scheduled wake-up of an agent that owes a reply is not taken for the owner\'s message', async () => {
+    const journal = { owed: () => ['a-tyler'], agentsWithSource: () => [], telegramLeft: () => [], telegramTook: () => {}, telegramHandled: () => {}, hasSource: () => false, setOwed: () => {} }
+    const agents = village.map(a => ({ ...a }))
+    const { line } = makeLine(agents, { journal })
+    current = line
+    line.onEvent({ agentId: 'a-tyler', kind: 'user.sent', uuid: 'wake', text: 'You woke up on your schedule.', auto: 'schedule' })
+    line.onEvent({ agentId: 'a-tyler', kind: 'user.consumed', uuid: 'wake', folded: false })
+    line.onEvent({ agentId: 'a-tyler', kind: 'text', text: 'Checked the build: green.', parentToolUseId: null })
+    line.onEvent({ agentId: 'a-tyler', kind: 'turn.end', outcome: 'done-waiting', reason: 'end_turn', result: 'Checked the build: green.', scheduled: true })
+    await sleep(150)
+    expect(texts().join('\n')).not.toContain('build: green')
+  })
+
+  it('an agent tells the owner once, its name first; a second time within 30 minutes is refused', async () => {
+    const agents = village.map(a => ({ ...a }))
+    const { line } = makeLine(agents)
+    current = line
+    const tell = (line as unknown as { tell: (id: string, name: string, text: string) => { ok: boolean } }).tell.bind(line)
+    expect(tell('a-tyler', 'Tyler', 'The deploy needs your key.').ok).toBe(true)
+    await until(() => texts().some(t => t.includes('deploy needs your key')))
+    expect(sent().find(c => String(c.body.text).includes('deploy'))?.body.text).toMatch(/^<b>Tyler<\/b>\nThe deploy needs your key\.\n\n\(Answer with &quot;Tyler: …&quot;\)$/) // HTML mode: the quotes are escaped
+    expect(() => tell('a-tyler', 'Tyler', 'And again.')).toThrow(/once is enough/)
+    expect(() => tell('a-tyler', 'Tyler', '   ')).toThrow(/empty/)
+  })
+})

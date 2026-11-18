@@ -6,6 +6,8 @@
 // src/lib/agent-engine-client.ts and src/components/village/.
 
 import type {
+  EngineAppointment,
+  EngineSchedule,
   EngineAgentKind,
   EngineAgentSnapshot,
   EngineAttachment,
@@ -67,6 +69,8 @@ export type AgentLogEntry =
       voice?: { fileId: string; mime?: string; durationMs?: number }
       /** Pictures pasted or dropped with the message. */
       images?: Array<{ fileId: string; name?: string; mediaType?: string }>
+      /** A wake-up from the agent's schedule, not the owner: what woke it ("hourly wake-up"). */
+      scheduled?: string
     })
   | (LogBase & { type: 'text'; text: string; parentToolUseId: string | null })
   | (LogBase & {
@@ -190,6 +194,13 @@ export interface EngineAgentState {
   lastOutcomeAt: number | null
   /** The engine restarted mid-turn and told it to carry on: set while that turn runs (its sign says "resumed"). */
   resumedAt: number | null
+  /** When it wakes up on its own (engine schedule.js). undefined fields stay null on engines older than schedules. */
+  schedule: EngineSchedule | null
+  appointments: EngineAppointment[]
+  nextWake: { at: number; label: string } | null
+  wakesToday: number
+  /** The running turn was started by its schedule. */
+  scheduledRun: boolean
   status: EngineAgentStatus
   statusReason: string | null
   statusSince: number
@@ -346,6 +357,11 @@ export function createAgentState(
     voiceChoice: null,
     lastOutcomeAt: null,
     resumedAt: null,
+    schedule: null,
+    appointments: [],
+    nextWake: null,
+    wakesToday: 0,
+    scheduledRun: false,
     status: 'idle',
     statusReason: null,
     statusSince: at,
@@ -412,6 +428,11 @@ export function applySnapshot(agent: EngineAgentState, snap: EngineAgentSnapshot
     voiceChoice: snap.voiceChoice !== undefined ? snap.voiceChoice || null : agent.voiceChoice,
     lastOutcomeAt: typeof snap.lastOutcome?.at === 'number' ? snap.lastOutcome.at : agent.lastOutcomeAt,
     resumedAt: snap.resumedAt !== undefined ? snap.resumedAt ?? null : agent.resumedAt,
+    schedule: snap.schedule !== undefined ? snap.schedule ?? null : agent.schedule,
+    appointments: Array.isArray(snap.appointments) ? snap.appointments : agent.appointments,
+    nextWake: snap.nextWake !== undefined ? snap.nextWake ?? null : agent.nextWake,
+    wakesToday: typeof snap.wakesToday === 'number' ? snap.wakesToday : agent.wakesToday,
+    scheduledRun: typeof snap.scheduledRun === 'boolean' ? snap.scheduledRun : agent.scheduledRun,
     status,
     statusReason: snap.statusReason ?? (status === agent.status ? agent.statusReason : null),
     statusSince: status === agent.status ? agent.statusSince : at,
@@ -622,6 +643,7 @@ function foldAgentEventInner(agent: EngineAgentState, event: EngineEvent, ctx: F
         priority: e.priority,
         ...(e.voice?.fileId ? { voice: e.voice } : {}),
         ...(e.images?.length ? { images: e.images } : {}),
+        ...(e.auto === 'schedule' ? { scheduled: e.scheduled || 'scheduled' } : {}),
       })
     }
 
@@ -634,7 +656,7 @@ function foldAgentEventInner(agent: EngineAgentState, event: EngineEvent, ctx: F
       if (e.uuid && hasLog(a, `u:${e.uuid}`)) return a // our own message, echoed back
       if (e.uuid) key = `u:${e.uuid}`
       else [key, a] = nextKey(a, 'u')
-      return pushLog(a, { type: 'user', key, ts, text: e.text || '', state: 'seen', history })
+      return pushLog(a, { type: 'user', key, ts, text: e.text || '', state: 'seen', history, ...(e.scheduled ? { scheduled: e.scheduled } : {}) })
     }
 
     case 'text.delta': {
@@ -804,7 +826,9 @@ function foldAgentEventInner(agent: EngineAgentState, event: EngineEvent, ctx: F
           a = { ...a, context: normalizeContext({ usedTokens: summary.contextTokens, maxTokens: summary.contextWindow, model: summary.model }) }
         }
         const replayBurst = a.kind !== 'owned' && ts - a.firstSeenAt < OBSERVER_REPLAY_GRACE_MS
-        if (ctx.live && !ctx.focused && !replayBurst) a = { ...a, unseen: true }
+        // A turn its schedule started is not news for the owner: no "finished" sign, no walk up to him. It still
+        // counts when it ended needing him (its status says so) or erred.
+        if (ctx.live && !ctx.focused && !replayBurst && !e.scheduled) a = { ...a, unseen: true }
       }
       ;[key, a] = nextKey(a, 'e')
       a = pushLog(a, {

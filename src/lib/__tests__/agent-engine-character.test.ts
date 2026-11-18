@@ -23,7 +23,7 @@ const { Characters, parseCard, serializeCard, characterNote, cardStamp, characte
   }
   parseCard: (text: string) => Card
   serializeCard: (card: Card) => string
-  characterNote: (card: Card, o?: { file?: string; tools?: string }) => string
+  characterNote: (card: Card, o?: { file?: string; tools?: string; showFiles?: boolean }) => string
   cardStamp: (card: Card) => string
   charactersDirFor: (rosterFile: string) => string
 }

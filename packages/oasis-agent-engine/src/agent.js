@@ -28,6 +28,7 @@ import { chromeArgs } from './chrome.js';
 import { VOICE_DEFAULT, VOICE_NOTE, VOICE_OFF_NOTE, isVoiceKey, voicePickNote } from './voice.js';
 import { outcomeForRoster, restoreOutcome, statusForOutcome } from './outcome.js';
 import { RESUME_TEXT, RESUMED_REASON } from './resume.js';
+import { normalizeSchedule } from './schedule.js';
 import { registerAttachment } from './files.js';
 
 const SANDBOX_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'sandbox');
@@ -68,6 +69,15 @@ export class Agent {
     this.kind = 'owned';
     this.id = spec.id;
     this.name = spec.name;
+    // Its schedule (schedule.js): recurring wake-ups and appointments, kept in the roster. Off by default.
+    this.schedule = normalizeSchedule(spec.schedule);
+    this.appointments = Array.isArray(spec.appointments) ? spec.appointments.filter((a) => a && typeof a.id === 'string' && typeof a.at === 'number') : [];
+    this.wake = spec.wake && typeof spec.wake === 'object' ? { lastAt: typeof spec.wake.lastAt === 'number' ? spec.wake.lastAt : null, day: typeof spec.wake.day === 'string' ? spec.wake.day : null, count: Number(spec.wake.count) || 0 } : { lastAt: null, day: null, count: 0 };
+    /** The scheduled message on its way (its uuid) until the CLI takes it in: never two queued at once. */
+    this.scheduledPending = null;
+    /** The running turn was started by the schedule (and nobody else joined it): the page does not treat it as the owner's. */
+    this.scheduledRun = false;
+    this.scheduledMixed = false;
     this.cwd = spec.cwd;
     this.sessionId = spec.sessionId || null;
     this.model = spec.model || null;
@@ -143,11 +153,25 @@ export class Agent {
       context: this.lastContext, models: this.meta.models || null,
       lastOutcome: this.lastOutcome ? outcomeForRoster(this.lastOutcome) : null,
       resumedAt: this.resumedAt,
+      schedule: this.schedule, appointments: this.appointments,
+      nextWake: this.hub.nextWake ? this.hub.nextWake(this) : null,
+      wakesToday: this.hub.wakesToday ? this.hub.wakesToday(this) : 0,
+      scheduledRun: this.scheduledRun && !this.scheduledMixed,
     };
   }
 
   rosterEntry() {
-    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, speak: this.speak, ...(this.speakSet ? { speakSet: true } : {}), ...(this.voiceChoice ? { voiceChoice: this.voiceChoice } : {}), ...(this.voiceOffered ? { voiceOffered: true } : {}), ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}), ...(this.proc?.pid ? { pid: this.proc.pid } : {}) };
+    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, speak: this.speak, ...(this.speakSet ? { speakSet: true } : {}), ...(this.voiceChoice ? { voiceChoice: this.voiceChoice } : {}), ...(this.voiceOffered ? { voiceOffered: true } : {}), ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}), ...(this.proc?.pid ? { pid: this.proc.pid } : {}), ...(this.schedule ? { schedule: this.schedule } : {}), ...(this.appointments.length ? { appointments: this.appointments } : {}), ...(this.wake.lastAt || this.wake.count ? { wake: this.wake } : {}) };
+  }
+
+  /** Nothing running, nothing queued, no decision open: a scheduled wake-up may go out now. */
+  isIdle() {
+    return !this.turnRunning && !this.pendingUser.size && !this.permissions.size && !this.inFlight.size && !this.killing && !this.restartPending;
+  }
+
+  /** A wake-up from the schedule (schedule.js wakeMessage: { note, text, label }). */
+  wakeUp(message) {
+    return this.send(message.text, { scheduled: { note: message.note, label: message.label } });
   }
 
   // ------------------------------------------------------------------ process
@@ -273,6 +297,8 @@ export class Agent {
     this.permissions.clear();
     this.pendingUser.clear();
     this.turnRunning = false;
+    this.scheduledPending = null;
+    this.scheduledRun = false;
     // Background subagents live inside this process: they stopped with it.
     this.norm.endOpenSubagents('stopped', 'the agent process stopped');
     this.emit('exit', { code, signal, stderr: wasKilling ? undefined : this.stderrTail.slice(-5) });
@@ -373,6 +399,7 @@ export class Agent {
       const p = this.pendingUser.get(key);
       this.pendingUser.delete(key);
       this.hub.journal?.done(this.id, key); // it is in the transcript now
+      if (key === this.scheduledPending) { this.scheduledPending = null; this.scheduledRun = true; }
       // folded = taken into the turn that was already running when we sent it (not a new turn).
       const folded = p.turnWasRunning && p.turnIndex === this.turnIndex;
       this.emit('user.consumed', { uuid: key, folded, waitedMs: Date.now() - p.sentAt });
@@ -385,6 +412,7 @@ export class Agent {
     if (!p) return;
     this.pendingUser.delete(key);
     this.hub.journal?.done(this.id, key);
+    if (key === this.scheduledPending) this.scheduledPending = null;
     this.emit('user.consumed', { uuid: key, folded: false, waitedMs: Date.now() - p.sentAt, dropped: reason });
   }
 
@@ -392,6 +420,8 @@ export class Agent {
     this.turnRunning = false;
     this.turnOpenAt = null;
     this.resumedAt = null;
+    this.scheduledRun = false;
+    this.scheduledMixed = false;
     if (this.lastOutcome && typeof this.lastOutcome.at !== 'number') this.lastOutcome = { ...this.lastOutcome, at: Date.now() };
     this.persist();
     for (const key of expiredAtResult(this.pendingUser, this.turnIndex || 0)) this.dropPending(key, 'expired');
@@ -402,6 +432,8 @@ export class Agent {
     this.recomputeStatus();
     // Chrome was switched during the turn: restart now that it is over (unless more messages wait).
     if (this.restartPending && !this.pendingUser.size) this.kill();
+    // A wake-up that came due while it worked goes out now (schedule.js).
+    else if (this.hub.scheduleCheck) setTimeout(() => this.hub.scheduleCheck(this), 1500).unref?.();
   }
 
   onEvent(kind, payload) {
@@ -410,6 +442,8 @@ export class Agent {
     // A resumed session whose last turn was cut off makes the CLI close that turn by itself at start
     // (init + turn.end, no API call): that must not hide "stopped mid-turn" before anyone wrote to it.
     if (kind === 'turn.end' && (this.sentSinceStart || !this.lastOutcome)) this.lastOutcome = payload;
+    // A turn the schedule started: the page does not mark it "finished, unseen" or walk the agent up to the owner.
+    if (kind === 'turn.end' && this.scheduledRun && !this.scheduledMixed) payload = { ...payload, scheduled: true };
     this.emit(kind, payload);
   }
 
@@ -454,14 +488,18 @@ export class Agent {
    * From here until the CLI takes it in, the message is in the journal (journal.js): an engine restart, a crash or
    * this agent's process dying in between delivers it again at the next start, under the same uuid.
    */
-  send(text, { priority, voice, images, source } = {}) {
+  /** scheduled: { note, label } for a wake-up from the schedule (wakeUp): not the owner speaking. */
+  send(text, { priority, voice, images, source, scheduled } = {}) {
     const pictures = Array.isArray(images) ? images : [];
     if ((!text || !text.trim()) && !pictures.length) return Promise.reject(new Error('empty message'));
     const uuid = randomUUID();
     const kept = pictures.filter((p) => p.path).map((p) => ({ path: p.path, mediaType: p.mediaType, name: p.name }));
-    this.hub.journal?.queue(this.id, { uuid, text: text || '', ...(priority ? { priority } : {}), ...(source ? { source } : {}), ...(kept.length ? { images: kept } : {}) });
+    this.hub.journal?.queue(this.id, { uuid, text: text || '', ...(priority ? { priority } : {}), ...(source ? { source } : {}), ...(kept.length ? { images: kept } : {}), ...(scheduled ? { scheduled } : {}) });
     this.inFlight.add(uuid);
-    const run = this.sendChain.then(() => this.sendNow(text || '', { uuid, priority, voice, images: pictures }));
+    if (scheduled) this.scheduledPending = uuid;
+    // The owner (or Telegram, or another agent) joins a scheduled turn: from then on it is not the schedule's alone.
+    else if (this.scheduledRun || this.scheduledPending) this.scheduledMixed = true;
+    const run = this.sendChain.then(() => this.sendNow(text || '', { uuid, priority, voice, images: pictures, scheduled }));
     this.sendChain = run.then(() => { this.inFlight.delete(uuid); }, () => {
       this.inFlight.delete(uuid);
       // The sender was told it failed: it is theirs to send again, not ours. Unless the engine is closing: then
@@ -510,7 +548,8 @@ export class Agent {
         // The second one waits until the first has started its turn: written to an idle CLI together, the later
         // ones would count as "sent before this turn" and be given up on when that turn ends (pending.js).
         if (wrote === 1) await this.untilTurnRuns();
-        await this.deliver(e.text, { uuid: e.uuid, priority: e.priority, images: loadPictures(e.images), resume: e.resume === true });
+        if (e.scheduled) this.scheduledPending = e.uuid;
+        await this.deliver(e.text, { uuid: e.uuid, priority: e.priority, images: loadPictures(e.images), resume: e.resume === true, scheduled: e.scheduled || null });
         wrote += 1;
         if (e.resume) resumed = true; else delivered += 1;
       } catch (err) {
@@ -544,10 +583,11 @@ export class Agent {
     } catch { return ''; }
   }
 
-  async deliver(text, { uuid = randomUUID(), priority, voice, images = [], resume = false } = {}) {
+  async deliver(text, { uuid = randomUUID(), priority, voice, images = [], resume = false, scheduled = null } = {}) {
     if (!this.proc) throw new Error(this.statusReason || 'agent process not running');
     let picture = null;
-    if (this.eyes && this.hub.eyes && !resume) {
+    // No eyes picture for the engine's own messages: the owner is not speaking, maybe not even there.
+    if (this.eyes && this.hub.eyes && !resume && !scheduled) {
       try { picture = await this.hub.eyes(this.id); } catch { picture = null; }
       if (!this.proc) throw new Error(this.statusReason || 'agent process not running');
     }
@@ -564,6 +604,8 @@ export class Agent {
       ] : []),
     ];
     let content = blocks.length === 1 && blocks[0].type === 'text' ? text : blocks;
+    // A wake-up says first that it comes from the schedule (schedule.js); the thread hides the note and shows a tag.
+    if (scheduled?.note) content = [{ type: 'text', text: scheduled.note }, ...(Array.isArray(content) ? content : [{ type: 'text', text }])];
     // Voice on: the note that asks for a <spoken> line rides along (voice.js); the thread never shows it.
     // Not on a slash command (/compact, /clear): the CLI only takes those as plain text.
     const command = /^\s*\/[a-z]/i.test(text);
@@ -591,14 +633,14 @@ export class Agent {
     try { this.write(msg); } catch (e) { this.pendingUser.delete(uuid); throw e; }
     this.norm.openTurn();
     const shown = images.map((p) => ({ fileId: p.fileId, name: p.name, mediaType: p.mediaType }));
-    this.emit('user.sent', { uuid, text, midTurn: turnWasRunning, priority: msg.priority || 'next', ...(picture?.data ? { eyes: true } : {}), ...(voice ? { voice } : {}), ...(shown.length ? { images: shown } : {}), ...(resume ? { auto: 'resume' } : {}) });
+    this.emit('user.sent', { uuid, text, midTurn: turnWasRunning, priority: msg.priority || 'next', ...(picture?.data ? { eyes: true } : {}), ...(voice ? { voice } : {}), ...(shown.length ? { images: shown } : {}), ...(resume ? { auto: 'resume' } : {}), ...(scheduled ? { auto: 'schedule', scheduled: scheduled.label || 'scheduled' } : {}) });
     if (resume) {
       this.resumedAt = Date.now();
       this.emit('notice', { subtype: 'resumed', text: 'The engine restarted while this agent was working: it was told to carry on.' });
     }
     // An open permission / question / plan still blocks the CLI: talking to it doesn't resolve that.
     if (this.permissions.size) this.recomputeStatus();
-    else this.setStatus(STATUS.WORKING, resume || this.resumedAt ? RESUMED_REASON : turnWasRunning ? 'message queued mid-turn' : 'message sent');
+    else this.setStatus(STATUS.WORKING, resume || this.resumedAt ? RESUMED_REASON : scheduled ? 'woke up on its schedule' : turnWasRunning ? 'message queued mid-turn' : 'message sent');
     return { uuid, midTurn: turnWasRunning };
   }
 

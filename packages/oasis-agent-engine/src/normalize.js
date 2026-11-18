@@ -8,6 +8,7 @@
 
 import { attachmentsFromResult, attachmentForReadImage } from './files.js';
 import { ENGINE_NOTE } from './voice.js';
+import { SCHEDULE_NOTE } from './schedule.js';
 
 export const STATUS = Object.freeze({
   WORKING: 'working',
@@ -368,7 +369,9 @@ export class Normalizer {
     if (text.startsWith('<local-command-stdout>')) return this.emit('notice', { subtype: 'local-command', text: text.replace(/<\/?local-command-stdout>/g, '') });
     if (msg.isMeta || text.startsWith('<command-') || text.startsWith('<system-reminder>')) return;
     this.openTurn();
-    this.emit('user', { text: clip(text, 4000), uuid: msg.uuid || null, replay: !!msg.isReplay });
+    // A wake-up from the agent's schedule (schedule.js): the note is hidden, the thread tags the message instead.
+    const scheduled = Array.isArray(content) ? content.map((b) => (b?.type === 'text' ? SCHEDULE_NOTE.exec(b.text || '') : null)).find(Boolean)?.[1] : null;
+    this.emit('user', { text: clip(text, 4000), uuid: msg.uuid || null, replay: !!msg.isReplay, ...(scheduled ? { scheduled: scheduled.split(/, (?:due |\d\d:\d\d)/)[0] } : {}) });
   }
 
   onToolResult(b, toolUseResult, parentToolUseId) {

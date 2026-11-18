@@ -32,6 +32,8 @@ const PHOTO_MAX = 10 * 1024 * 1024;
 const DOC_MAX = 50 * 1024 * 1024;
 const VOICE_MAX = 20 * 1024 * 1024; // the Bot API's getFile limit
 const TYPING_MAX_MS = 30 * 60_000;
+/** An agent may write to the owner on its own once in this long (tell()). */
+export const TELL_GAP_MS = 30 * 60_000;
 /** After a restart, an agent that owed a reply here still owes it for this long (journal.js `owed`). */
 const REARM_MS = 15 * 60_000;
 const SCRIBE_API = 'https://api.elevenlabs.io/v1/speech-to-text';
@@ -252,6 +254,7 @@ export class TelegramLine {
     this.scribeKey = o.scribeKey || (() => readScribeKey());
     this.rawLog = o.log || ((...a) => console.log(...a));
     this.journal = o.journal || null;
+    this.told = new Map(); // agentId -> when it last wrote to the owner on its own (tell)
     this.leftDone = false;
     this.tokens = new Set(); // every token seen, for redact()
     this.cfg = null;
@@ -763,8 +766,11 @@ export class TelegramLine {
     switch (e.kind) {
       case 'user.sent':
         if (t.expect.delete(e.text)) t.uuids.add(e.uuid);
+        // A wake-up from the agent's schedule is not the owner writing: its turn is not answered here.
+        if (e.auto === 'schedule') (t.scheduled ||= new Set()).add(e.uuid);
         return;
       case 'user.consumed':
+        if (t.scheduled?.delete(e.uuid)) return;
         // Back from a restart, owing a reply here: the first message it takes in (the carry-on note, or the
         // owner's message going out again) starts the turn that answers on Telegram.
         if (t.rearm) {
@@ -869,6 +875,25 @@ export class TelegramLine {
     this.stats.pinged++;
     this.log(`ping: ${why}`);
     this.say(text);
+  }
+
+  // ---------------------------------------------------------------- an agent tells the owner
+  /**
+   * An agent writes to the owner on its own (scripts/tell.mjs, the engine's tellOwner command): for what truly needs
+   * him now, from a scheduled wake-up above all. Its name goes first, so he can answer "Name: …". At most one per
+   * agent every TELL_GAP_MS: the rest is refused, with when it may write again.
+   */
+  tell(agentId, name, text) {
+    const body = String(text || '').trim();
+    if (!body) throw new Error('empty message');
+    if (!this.cfg.ok) throw new Error('the Telegram line is off (no bot config)');
+    const now = Date.now();
+    const last = this.told.get(agentId) || 0;
+    if (now - last < TELL_GAP_MS) throw new Error(`already told the owner at ${hhmm(last)}: once is enough (again from ${hhmm(last + TELL_GAP_MS)})`);
+    this.told.set(agentId, now);
+    this.sayMarkdown(`${body.slice(0, 3500)}\n\n(Answer with "${name}: …")`, name);
+    this.log(`${name} told the owner (${body.length} chars)`);
+    return { ok: true, at: now };
   }
 
   // ---------------------------------------------------------------- engine command

@@ -12,6 +12,7 @@ import { DESK_SCREEN_LIMIT, isDeskScreensMode, type DeskScreensMode } from '@/li
 import { isVillageSoundOn, setVillageSoundOn, subscribeVillageSound } from '@/components/village/village-sound'
 import { TAG_SIZE, TAG_STYLES, getTagSettings, getTagSettingsVersion, setTagSettings, subscribeTagSettings } from '@/lib/village/tag-style'
 import { isVillageVoiceOn, setVillageVoiceOn, subscribeVillageVoice } from '@/components/village/village-companion'
+import { WakeUpSettings } from './WakeUpSettings'
 
 /** An on/off row: a switch, a title and a line on what it does now. */
 function SwitchRow({ on, onToggle, title, hint, data }: { on: boolean; onToggle: () => void; title: string; hint: string; data: string }) {
@@ -254,6 +255,8 @@ export function AgentsTab() {
           />
         </div>
       </section>
+      {/* Quiet hours and the daily cap of agents' scheduled wake-ups (the engine keeps them). */}
+      <WakeUpSettings />
     </div>
   )
 }
