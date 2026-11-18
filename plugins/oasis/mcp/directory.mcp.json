@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "oasis": { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/oasis-mcp.mjs"] }
+  }
+}

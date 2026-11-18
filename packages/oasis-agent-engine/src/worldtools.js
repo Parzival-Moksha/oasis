@@ -47,7 +47,7 @@ function readJson(file) {
  * Does the installed Oasis plugin bring the world tools to a session started in `cwd`?
  * True when a plugin named "oasis" is installed (~/.claude/plugins/installed_plugins.json), not switched off
  * (enabledPlugins in the user's settings, or the folder's .claude/settings*.json), and its installed copy has
- * an .mcp.json with this same server URL. Read at each spawn: an install or update needs no engine restart.
+ * an .mcp.json with this same server URL, or with the plugin's own local server. Read at each spawn: an install or update needs no engine restart.
  * @param {string} [cwd]
  * @param {string} [configDir] the Claude config folder (tests)
  */
@@ -62,6 +62,9 @@ export function pluginShipsWorldTools(cwd, configDir = process.env.CLAUDE_CONFIG
     for (const install of Array.isArray(installs) ? installs : []) {
       const server = install?.installPath && readJson(path.join(install.installPath, '.mcp.json'))?.mcpServers?.[WORLD_SERVER];
       if (server?.url && String(server.url).replace(/\/+$/, '') === worldToolsUrl()) return true;
+      // The published plugin ships the tools as a local server of its own (plugins/oasis/mcp/oasis-mcp.mjs),
+      // which passes them on to this same Oasis.
+      if (server?.command && (server.args || []).some((a) => /(^|[\\/])oasis-mcp\.mjs$/.test(String(a)))) return true;
     }
   }
   return false;
