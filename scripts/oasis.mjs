@@ -182,7 +182,7 @@ function engineEnvFromFile() {
   const env = SLIM ? { OASIS_EDITION: 'slim' } : {}
   const text = readEnvFile()
   for (const key of ['OASIS_EARS_INSTALL', 'OASIS_LOOKS', 'OASIS_KEEP_API_KEY', 'OASIS_EDITION']) {
-    const match = new RegExp(`^\s*${key}\s*=\s*"?([^"\r\n]*)"?`, 'm').exec(text)
+    const match = new RegExp(`^\\s*${key}\\s*=\\s*"?([^"\\r\\n]*)"?`, 'm').exec(text)
     if (match && process.env[key] === undefined) env[key] = match[1].trim()
   }
   return env
