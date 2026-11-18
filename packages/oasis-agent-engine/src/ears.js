@@ -69,6 +69,11 @@ let setupPromise = null;
 async function ensurePython(status) {
   const found = earsPaths().python;
   if (found) return found;
+  // The slim Oasis installs nothing by itself: the helper is a Python folder of about 50 MB plus a speech model
+  // fetched on first use, so the person switches it on (OASIS_EARS_INSTALL=1). The workshop sets itself up as before.
+  if (process.env.OASIS_EARS_INSTALL === '0' || (process.env.OASIS_EDITION === 'slim' && process.env.OASIS_EARS_INSTALL !== '1')) {
+    throw new Error('Voice typing is off: it needs a local helper (Python 3, about 50 MB, and a speech model downloaded once). To turn it on, add OASIS_EARS_INSTALL=1 to the .env file in the Oasis folder and start the Oasis again.');
+  }
   setupPromise ||= (async () => {
     const py = findSystemPython();
     if (!py) throw new Error('No Python 3 found: install it from python.org (tick "Add to PATH"), then press the mic again');

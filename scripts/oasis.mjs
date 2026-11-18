@@ -177,6 +177,17 @@ function webEnv() {
   return env
 }
 
+/** The engine does not load .env by itself: the few switches a person sets there are handed to it. */
+function engineEnvFromFile() {
+  const env = SLIM ? { OASIS_EDITION: 'slim' } : {}
+  const text = readEnvFile()
+  for (const key of ['OASIS_EARS_INSTALL', 'OASIS_LOOKS', 'OASIS_KEEP_API_KEY', 'OASIS_EDITION']) {
+    const match = new RegExp(`^\s*${key}\s*=\s*"?([^"\r\n]*)"?`, 'm').exec(text)
+    if (match && process.env[key] === undefined) env[key] = match[1].trim()
+  }
+  return env
+}
+
 function readRun() {
   try { return JSON.parse(fs.readFileSync(RUN_FILE, 'utf8')) } catch { return {} }
 }
@@ -237,6 +248,7 @@ async function start() {
     run.engine = startServer('engine', path.join(HOME, 'packages', 'oasis-agent-engine', 'src', 'index.js'), [], {
       OASIS_PORT: String(ENGINE_PORT),
       OASIS_WEB_URL: `http://127.0.0.1:${WEB_PORT}`,
+      ...engineEnvFromFile(),
       ...tokenEnv(),
     })
     started.push('engine')
