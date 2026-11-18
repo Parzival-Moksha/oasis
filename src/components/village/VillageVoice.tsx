@@ -27,7 +27,7 @@ import {
   stopVillageSpeech,
   warmVillageSpeech,
 } from './village-companion'
-import { getCouncilStatus, isCouncilMember, isCouncilOn, offerCouncilLine, runCouncilRequest, type CouncilRequest } from './village-council'
+import { getCouncilStatus, isCouncilMember, isCouncilOn, noteVillageEngineConnected, offerCouncilLine, runCouncilRequest, type CouncilRequest } from './village-council'
 
 /** A reply older than this that lands while the agent is open is the past (a backlog after a reconnect). */
 const FRESH_MS = 20_000
@@ -72,6 +72,14 @@ export function VillageVoice() {
     }
     // The Council's stage: the engine sends this page the moderator's steps (village-council.ts).
     const unstage = getAgentEngineClient().setStageHandler(request => runCouncilRequest(request as CouncilRequest))
+    // A Council started under an engine that has since restarted has nobody left to end it (village-council.ts).
+    let connectedAt = useOasisStore.getState().agentEngine.connection.connectedAt
+    const unwatchEngine = useOasisStore.subscribe(state => {
+      const at = state.agentEngine.connection.connectedAt
+      if (at === connectedAt) return
+      connectedAt = at
+      if (state.agentEngine.connection.status === 'open') noteVillageEngineConnected()
+    })
     if (process.env.NODE_ENV !== 'production') {
       // Dev: window.__oasisCouncil.run({ action: 'start', agentIds: ['a0', 'a1'] }) without an engine; .status()
       ;(window as unknown as Record<string, unknown>).__oasisCouncil = { run: (request: CouncilRequest) => runCouncilRequest(request), status: () => getCouncilStatus() }
@@ -120,6 +128,7 @@ export function VillageVoice() {
     return () => {
       unsubscribe()
       unstage()
+      unwatchEngine()
       stopVillageSpeech()
     }
   }, [])

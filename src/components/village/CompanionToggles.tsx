@@ -14,6 +14,7 @@ import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { showNotice } from '../forge/GlobalNotice'
 import { SpokenPlayer } from './SpokenPlayer'
+import { pressVillageFollow, useVillageFollowView } from './follow-view'
 import {
   getVillageFollowVersion,
   getAgentVoiceSettings,
@@ -26,32 +27,47 @@ import {
   subscribeVillageSpeech,
 } from './village-companion'
 
+/**
+ * Space and Enter press a switch, so the world must not take them as well; every other key goes on (Esc closes
+ * the panel, T talks, F full screen). A switch used to swallow them all, so Esc after a click did nothing, and an
+ * agent whose panel stayed open stood still (2026-11-18: "you stopped following me").
+ */
+function keepButtonKeys(event: { key: string; stopPropagation: () => void }): void {
+  if (event.key === ' ' || event.key === 'Enter') event.stopPropagation()
+}
+
 const SWITCH_CLASS = 'flex h-[22px] items-center gap-1 rounded border px-1.5 text-[10.5px] disabled:opacity-50'
 const OFF_CLASS = 'border-white/15 bg-black/50 text-white/45 hover:text-white/80'
 
 export function FollowToggle({ agent }: { agent: Pick<EngineAgentState, 'id' | 'name' | 'sessionId'> }) {
-  useSyncExternalStore(subscribeVillageFollow, getVillageFollowVersion, () => 0)
   const key = agent.sessionId || agent.id
-  const on = isVillageFollowOn(key, agent.name)
-  const label = on
-    ? 'Follow me on: this agent walks beside you (it comes along when you are more than 7 m away and steps aside when you get close). Click to send it back to its desk (it goes once this panel is closed).'
-    : 'Follow me off: it stays at its desk. Click to have this agent walk beside you.'
+  // What Follow really does now: on, off, or on but held where it is by an order or the Council (follow-view.ts).
+  const view = useVillageFollowView(agent.id, key, agent.name)
+  const on = view !== 'off'
+  const label = view === 'parked'
+    ? 'Follow me is on, but this agent was sent to a spot (a right-click while it was selected) and waits there. Click to have it follow you again.'
+    : view === 'council'
+      ? "Follow me is on; it stands in the Council's circle until the Council ends, then it follows you again."
+      : on
+        ? 'Follow me on: this agent walks beside you (it comes along when you are more than 7 m away and steps aside when you get close). Click to send it back to its desk (it goes once this panel is closed).'
+        : 'Follow me off: it stays at its desk. Click to have this agent walk beside you.'
+  const held = view === 'parked' || view === 'council'
   return (
     <button
       type="button"
       title={label}
       aria-label={label}
       aria-pressed={on}
-      data-village-follow={on ? 'on' : 'off'}
-      onClick={() => setVillageFollow(key, agent.name, !on)}
-      onKeyDown={event => event.stopPropagation()}
-      className={`${SWITCH_CLASS} ${on ? 'border-amber-300/60 bg-amber-400/20 text-amber-100' : OFF_CLASS}`}
+      data-village-follow={view}
+      onClick={event => { pressVillageFollow(agent.id, key, agent.name); event.currentTarget.blur() }}
+      onKeyDown={keepButtonKeys}
+      className={`${SWITCH_CLASS} ${held ? 'border-amber-300/60 border-dashed bg-transparent text-amber-200/90' : on ? 'border-amber-300/60 bg-amber-400/20 text-amber-100' : OFF_CLASS}`}
     >
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <circle cx="13" cy="4.5" r="2" fill={on ? 'currentColor' : 'none'} />
         <path d="M13 8l-3 4 3 3v6M10 12l-4 1M13 10l4 2M10 15l-3 6" />
       </svg>
-      follow
+      {view === 'parked' ? 'parked' : view === 'council' ? 'council' : 'follow'}
     </button>
   )
 }
@@ -88,7 +104,9 @@ export function VoiceToggle({ agent }: { agent: EngineAgentState }) {
           })
           .finally(() => setBusy(false))
       }}
-      onKeyDown={event => event.stopPropagation()}
+      onKeyUp={event => event.currentTarget.blur()}
+      onMouseUp={event => event.currentTarget.blur()}
+      onKeyDown={keepButtonKeys}
       className={`${SWITCH_CLASS} ${on ? 'border-fuchsia-300/60 bg-fuchsia-400/20 text-fuchsia-100' : OFF_CLASS} ${known ? '' : 'opacity-60'}`}
     >
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

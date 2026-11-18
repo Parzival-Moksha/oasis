@@ -72,6 +72,44 @@ let chain: Promise<unknown> = Promise.resolve()
 let last: { action: string; at: number; ok: boolean; note?: string } | null = null
 
 const MOVE_TIMEOUT_MS = 40_000
+/** A Council nobody moves on for this long is over (its director forgot `end`, or is gone): everyone goes back. */
+const IDLE_END_MS = 20 * 60_000
+/** When the last step came, and the engine process the Council started under (hello's server.restart.startedAt). */
+let lastStepAt = 0
+let engineAtStart: number | null = null
+let idleTimer: number | null = null
+
+function armIdleEnd(): void {
+  if (idleTimer !== null) window.clearInterval(idleTimer)
+  idleTimer = window.setInterval(() => {
+    if (!council) return
+    if (Date.now() - lastStepAt > IDLE_END_MS) endVillageCouncil('no step for 20 minutes')
+  }, 60_000)
+}
+
+function engineStartedAt(): number | null {
+  const at = (useOasisStore.getState().agentEngine.connection.server as { restart?: { startedAt?: unknown } } | null | undefined)?.restart?.startedAt
+  return typeof at === 'number' ? at : null
+}
+
+/**
+ * The engine (re)connected. If it is not the engine the Council started under (it restarted, or it does not say),
+ * the scene's director went with it and nobody will send `end`: the Council is over, everyone goes back to what
+ * they were doing (an agent with Follow on follows again). The same engine after a blip keeps the scene.
+ */
+export function noteVillageEngineConnected(): void {
+  if (!council) return
+  const now = engineStartedAt()
+  if (now !== null && engineAtStart !== null && now === engineAtStart) return
+  endVillageCouncil('the agent engine restarted')
+}
+
+/** Ends the Council from the page itself (not asked by the engine), saying why in its status. */
+export function endVillageCouncil(why: string): void {
+  if (!council) return
+  end()
+  last = { action: 'end', at: Date.now(), ok: true, note: why }
+}
 
 function notify(): void {
   version += 1
@@ -191,6 +229,9 @@ async function start(req: CouncilRequest): Promise<Record<string, unknown>> {
   ids.forEach((id, index) => places.set(id, spots[index]))
   for (const id of council ? council.members : []) if (!places.has(id)) goals.delete(id)
   council = { center, radius, step: req.step && req.step > 0 ? req.step : COUNCIL.step, members: [...ids], places, front: null }
+  engineAtStart = engineStartedAt()
+  lastStepAt = Date.now()
+  armIdleEnd()
   // From now on only the Council's own lines play (village-companion.ts).
   setVillageSpeechCouncilOnly(true)
   lines.clear()
@@ -325,6 +366,10 @@ function end(): Record<string, unknown> {
   const was = council
   stop()
   council = null
+  if (idleTimer !== null) {
+    window.clearInterval(idleTimer)
+    idleTimer = null
+  }
   setVillageSpeechCouncilOnly(false)
   for (const waiter of settledWaiters.values()) {
     window.clearTimeout(waiter.timer)
@@ -360,6 +405,7 @@ export function runCouncilRequest(req: CouncilRequest): Promise<Record<string, u
   if (action === 'stop') return Promise.resolve(stop())
   if (action === 'end') return Promise.resolve(end())
   const queuedIn = run
+  lastStepAt = Date.now()
   const job = chain.then(async () => {
     // A stop (or the end) came while this step waited its turn: it is not done any more.
     if (queuedIn !== run) return { stopped: true }
@@ -373,6 +419,7 @@ export function runCouncilRequest(req: CouncilRequest): Promise<Record<string, u
       else if (action === 'turn') result = await turn(req)
       else throw new CouncilError(`unknown action "${action}"`)
       last = { action, at: Date.now(), ok: true }
+      lastStepAt = Date.now()
       return result
     } catch (error) {
       last = { action, at: Date.now(), ok: false, note: error instanceof Error ? error.message : String(error) }

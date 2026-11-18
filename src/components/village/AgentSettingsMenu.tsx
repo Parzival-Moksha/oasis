@@ -32,6 +32,7 @@ import { ACCENT_SWATCHES } from '../../lib/village/village-tags'
 import { SPEECH_SPEED, VILLAGE_VOICES, villageVoice } from '../../lib/village/village-voices'
 import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { AvatarGallery } from '../forge/AvatarGallery'
+import { pressVillageFollow, setVillageFollowFor, useVillageFollowView } from './follow-view'
 import { showNotice } from '../forge/GlobalNotice'
 import {
   agentVoiceChosenBy,
@@ -133,10 +134,11 @@ function VoiceSection({ agent, agentKey }: { agent: Pick<EngineAgentState, 'id' 
 }
 
 /** When this agent leaves its desk. */
-function WalkingSection({ agentKey, name }: { agentKey: string; name: string }) {
+function WalkingSection({ agentId, agentKey, name }: { agentId: string; agentKey: string; name: string }) {
   useSyncExternalStore(subscribeVillageFollow, getVillageFollowVersion, () => 0)
   const come = isVillageComeOn(agentKey)
-  const follow = isVillageFollowOn(agentKey, name)
+  const view = useVillageFollowView(agentId, agentKey, name)
+  const follow = view !== 'off'
   return (
     <div className="mb-3">
       <div className={HEADING}>Walking · {name}</div>
@@ -145,9 +147,15 @@ function WalkingSection({ agentKey, name }: { agentKey: string; name: string }) 
         <span>Come to me when you need me</span>
       </label>
       <label className="flex cursor-pointer items-start gap-2" title="It walks beside you all the time (the same switch as “follow” in the panel).">
-        <input type="checkbox" checked={follow} data-agent-follow={follow ? 'on' : 'off'} onChange={event => setVillageFollow(agentKey, name, event.target.checked)} className="mt-[2px] accent-amber-300" />
+        <input type="checkbox" checked={follow} data-agent-follow={view} onChange={event => setVillageFollowFor(agentId, agentKey, name, event.target.checked)} className="mt-[2px] accent-amber-300" />
         <span>Follow me</span>
       </label>
+      {view === 'parked' && (
+        <button type="button" data-agent-follow-again onClick={() => pressVillageFollow(agentId, agentKey, name)} className="ml-5 mt-0.5 text-[10.5px] text-amber-200/90 underline-offset-2 hover:underline">
+          parked where you sent it · follow me again
+        </button>
+      )}
+      {view === 'council' && <div className="ml-5 mt-0.5 text-[10.5px] text-white/50">in the Council's circle until it ends</div>}
     </div>
   )
 }
@@ -198,7 +206,7 @@ export function AgentSettingsButton({ agent, large = false }: { agent: Pick<Engi
           {/* Who it is: role and who-you-are, kept by the engine as a card per agent (CharacterSection). */}
           <CharacterSection agentId={agent.id} name={name} />
           {agent.owned && <VoiceSection agent={agent} agentKey={agentKey} />}
-          <WalkingSection agentKey={agentKey} name={agent.name} />
+          <WalkingSection agentId={agent.id} agentKey={agentKey} name={agent.name} />
           <AgentSelectionSection agentId={agent.id} agentKey={agentKey} name={agent.name} />
 
           <div className={HEADING}>Avatar · {name}</div>
