@@ -21,6 +21,7 @@ import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import { COUNCIL, councilAngle, councilFront, councilPlaces, councilRadius, type CouncilPlace, type CouncilPoint } from '../../lib/village/village-council'
 import { useOasisStore } from '../../store/oasisStore'
 import { getVillageDesk } from './village-actions'
+import { STAGE, isStageWorldName, stageArrival } from '../../lib/village/village-stage'
 import { ensureVillageAudio, getAgentVoiceSettings, prepareVillageSpeech, setVillageSpeechCouncilOnly, speakVillageAgent, stopVillageSpeech, whenVillageSpeechEnds, type AgentVoiceSettings } from './village-companion'
 
 export interface CouncilRequest {
@@ -72,6 +73,43 @@ let chain: Promise<unknown> = Promise.resolve()
 let last: { action: string; at: number; ok: boolean; note?: string } | null = null
 
 const MOVE_TIMEOUT_MS = 40_000
+
+// ─── a stage world (lib/village/village-stage.ts): only the cast is there ─────────────────────────
+
+/** Where each cast member of a stage world appears and goes back to (its home there). Empty outside a Council. */
+const stageCast = new Map<string, { x: number; z: number; yaw: number }>()
+let castLeaving: number | null = null
+
+/** Is the world the owner is in a stage ("The Council")? */
+export function isStageWorldNow(): boolean {
+  const state = useOasisStore.getState()
+  const id = state.viewingWorldId || state.activeWorldId
+  return isStageWorldName(state.worldRegistry.find(world => world.id === id)?.name)
+}
+
+/** The cast VillageWorld shows in a stage world (bumps the Council's version when it changes). */
+export function getStageCast(): ReadonlyMap<string, { x: number; z: number; yaw: number }> {
+  return stageCast
+}
+
+function clearStageCast(): void {
+  if (castLeaving !== null) {
+    window.clearTimeout(castLeaving)
+    castLeaving = null
+  }
+  if (!stageCast.size) return
+  stageCast.clear()
+  notify()
+}
+
+/**
+ * The owner went to another world: a Council there is over (its circle belongs to the world it was set in), and
+ * a stage's cast is gone. The home world shows everyone at their place, as before.
+ */
+export function noteVillageWorldChanged(): void {
+  if (council) endVillageCouncil('the owner went to another world')
+  clearStageCast()
+}
 /** A Council nobody moves on for this long is over (its director forgot `end`, or is gone): everyone goes back. */
 const IDLE_END_MS = 20 * 60_000
 /** When the last step came, and the engine process the Council started under (hello's server.restart.startedAt). */
@@ -204,9 +242,11 @@ function member(req: CouncilRequest): { id: string; place: CouncilPlace; council
 async function start(req: CouncilRequest): Promise<Record<string, unknown>> {
   const ids = req.agentIds || []
   if (!ids.length) throw new CouncilError('no agents given')
+  // A stage world has nobody in it until now: the cast is brought in below.
+  const stage = isStageWorldNow()
   for (const id of ids) {
     if (!agentOf(id)) throw new CouncilError(`this page does not know agent ${id}`)
-    if (!getVillageDesk(id)) throw new CouncilError(`${agentOf(id)?.name || id} has no body in this world yet`)
+    if (!stage && !getVillageDesk(id)) throw new CouncilError(`${agentOf(id)?.name || id} has no body in this world yet`)
   }
   stopVillageSpeech()
   const me = owner()
@@ -227,6 +267,23 @@ async function start(req: CouncilRequest): Promise<Record<string, unknown>> {
   const spots = councilPlaces(ids.length, center, radius, ownerAngle)
   const places = new Map<string, CouncilPlace>()
   ids.forEach((id, index) => places.set(id, spots[index]))
+  if (stage) {
+    // Only the cast: each one appears out of the dark behind its place (VillageWorld shows them), then walks in.
+    if (castLeaving !== null) {
+      window.clearTimeout(castLeaving)
+      castLeaving = null
+    }
+    stageCast.clear()
+    ids.forEach((id, index) => stageCast.set(id, stageArrival(spots[index], center)))
+    notify()
+    const asked = Date.now()
+    while (ids.some(id => !getVillageDesk(id)) && Date.now() - asked < 8000) await new Promise(resolve => window.setTimeout(resolve, 100))
+    const missing = ids.filter(id => !getVillageDesk(id)).map(id => agentOf(id)?.name || id)
+    if (missing.length) {
+      clearStageCast()
+      throw new CouncilError(`could not bring ${missing.join(', ')} to this stage`)
+    }
+  }
   for (const id of council ? council.members : []) if (!places.has(id)) goals.delete(id)
   council = { center, radius, step: req.step && req.step > 0 ? req.step : COUNCIL.step, members: [...ids], places, front: null }
   engineAtStart = engineStartedAt()
@@ -366,6 +423,15 @@ function end(): Record<string, unknown> {
   const was = council
   stop()
   council = null
+  // A stage's cast walks back out into the dark, then it is gone.
+  if (stageCast.size) {
+    if (castLeaving !== null) window.clearTimeout(castLeaving)
+    castLeaving = window.setTimeout(() => {
+      castLeaving = null
+      stageCast.clear()
+      notify()
+    }, STAGE.leaveMs)
+  }
   if (idleTimer !== null) {
     window.clearInterval(idleTimer)
     idleTimer = null

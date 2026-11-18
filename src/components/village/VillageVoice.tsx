@@ -27,7 +27,7 @@ import {
   stopVillageSpeech,
   warmVillageSpeech,
 } from './village-companion'
-import { getCouncilStatus, isCouncilMember, isCouncilOn, noteVillageEngineConnected, offerCouncilLine, runCouncilRequest, type CouncilRequest } from './village-council'
+import { getCouncilStatus, isCouncilMember, isCouncilOn, noteVillageEngineConnected, noteVillageWorldChanged, offerCouncilLine, runCouncilRequest, type CouncilRequest } from './village-council'
 
 /** A reply older than this that lands while the agent is open is the past (a backlog after a reconnect). */
 const FRESH_MS = 20_000
@@ -80,6 +80,14 @@ export function VillageVoice() {
       connectedAt = at
       if (state.agentEngine.connection.status === 'open') noteVillageEngineConnected()
     })
+    // The owner went through a portal (or picked another world): a Council is tied to the world it was set in.
+    let worldId = useOasisStore.getState().viewingWorldId || useOasisStore.getState().activeWorldId
+    const unwatchWorld = useOasisStore.subscribe(state => {
+      const now = state.viewingWorldId || state.activeWorldId
+      if (now === worldId) return
+      worldId = now
+      noteVillageWorldChanged()
+    })
     if (process.env.NODE_ENV !== 'production') {
       // Dev: window.__oasisCouncil.run({ action: 'start', agentIds: ['a0', 'a1'] }) without an engine; .status()
       ;(window as unknown as Record<string, unknown>).__oasisCouncil = { run: (request: CouncilRequest) => runCouncilRequest(request), status: () => getCouncilStatus() }
@@ -129,6 +137,7 @@ export function VillageVoice() {
       unsubscribe()
       unstage()
       unwatchEngine()
+      unwatchWorld()
       stopVillageSpeech()
     }
   }, [])

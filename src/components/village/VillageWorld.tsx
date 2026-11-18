@@ -68,6 +68,7 @@ import { VillageAcademyTree } from './VillageAcademyTree'
 import { AcademyLevelTag, AcademyVillageBody, useAcademyStone, useAcademyTrainee } from './VillageAcademyTrainee'
 import { VillageVoice } from './VillageVoice'
 import { VillageTag, VillageTagDriver } from './VillageTags'
+import { isStageWorldName, stationAtAnchor } from '../../lib/village/village-stage'
 import { readableAccent, tagMarker } from '../../lib/village/village-tags'
 import { getAgentAccent, getPanelLookVersion, subscribePanelLook } from '../../lib/village/panel-look'
 import { getVillageCombatVersion, getVillageVitals, subscribeVillageCombat } from '../../lib/village/village-combat'
@@ -75,7 +76,7 @@ import { useFrameWhen } from '../../lib/use-frame-when'
 import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import { SPACE, createFollowState, pickVisitSpot, stepApart, stepFollow, stepStage, stepVisit, type FollowState, type FollowTarget, type VisitSpot } from '../../lib/village/village-follow'
 import { COUNCIL } from '../../lib/village/village-council'
-import { getCouncilGoal, getCouncilVersion, isCouncilMember, isCouncilOn, reportCouncilSettled, subscribeCouncil } from './village-council'
+import { getCouncilGoal, getCouncilVersion, getStageCast, isCouncilMember, isCouncilOn, reportCouncilSettled, subscribeCouncil } from './village-council'
 import { clickVillageAgent, getSentGoal, getSentGoalSeq, subscribeAgentSelection } from '@/lib/village/agent-selection'
 import {
   getVillageFaceHeight,
@@ -585,7 +586,9 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
   return { mover, away, walking }
 }
 
-function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLabelsVisible, overlayZ }: {
+function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLabelsVisible, overlayZ, bare = false }: {
+  /** On a stage (the Council's world): the agent alone, no desk, no screen, no helpers. */
+  bare?: boolean
   agentId: string
   placement: VillageStationPlacement
   avatarUrl: string
@@ -687,7 +690,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
   return (
     <>
       {/* The desk: it and its screen stay where they are, also while the agent walks with you. */}
-      <group position={placement.position} rotation-y={placement.rotationY}>
+      {!bare && <group position={placement.position} rotation-y={placement.rotationY}>
         <VillageDesk color={color} working={status === 'working'} observed={observed} />
         {/* Click target enclosing the desk and the avatar's place at it (in front of the VRM's own proxy box). */}
         <mesh position={STATION.hitCenter} {...hitHandlers}>
@@ -706,7 +709,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
             <DeskWindow agentId={agentId} nearby={nearby && !focused} mode="desk" />
           </Html>
         )}
-      </group>
+      </group>}
       {/* The agent: on its station at home, beside you when it follows (useVillageFollower moves this group). */}
       <group ref={follower.mover}>
         {/* In the F view it turns to look into the camera (its face is left of where the camera looks). */}
@@ -732,9 +735,9 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
           <group ref={head} position={[0, HEAD_HEIGHT, 0]} />
         </group>
         {/* Its helpers (subagents): half-size copies of it, in a semicircle behind it. */}
-        <VillageSubagentMinis agentId={agentId} placement={placement} avatarUrl={avatarUrl} labelsVisible={helperLabelsVisible} overlayZ={overlayZ} />
-        {/* Away from the desk, the body is its own click target. */}
-        {follower.away && (
+        {!bare && <VillageSubagentMinis agentId={agentId} placement={placement} avatarUrl={avatarUrl} labelsVisible={helperLabelsVisible} overlayZ={overlayZ} />}
+        {/* Away from the desk (or without one, on a stage), the body is its own click target. */}
+        {(follower.away || bare) && (
           <mesh position={[STATION.avatar[0], 0.9, STATION.avatar[2]]} {...hitHandlers}>
             <boxGeometry args={[0.8, 1.8, 0.8]} />
             <meshBasicMaterial transparent opacity={0} depthWrite={false} visible={false} />
@@ -948,6 +951,11 @@ export function VillageWorld() {
   const worldBodiesKey = useOasisStore(s => s.placedAgentAvatars.map(avatar => avatar.avatar3dUrl || '').join('|'))
   const pool = useBodyPool()
   const origin = useVillageOrigin()
+  // A stage world ("The Council", lib/village/village-stage.ts): nobody but a Council's cast, and no desks,
+  // plaza, mission wall, skill tree or helpers. The cast comes and goes with the Council (village-council.ts).
+  const stage = useOasisStore(s => isStageWorldName(s.worldRegistry.find(world => world.id === (s.viewingWorldId || s.activeWorldId))?.name))
+  useSyncExternalStore(subscribeCouncil, getCouncilVersion, () => 0)
+  const castKey = stage ? [...getStageCast()].map(([id, at]) => `${id}\u0001${at.x.toFixed(2)}\u0001${at.z.toFixed(2)}\u0001${at.yaw.toFixed(4)}`).join('\u0002') : ''
 
   const roster = useMemo<VillageRosterAgent[]>(() => (rosterKey ? rosterKey.split('\u0002').map(item => {
     const [id, name, sessionId] = item.split('\u0001')
@@ -975,6 +983,15 @@ export function VillageWorld() {
 
   const placements = useMemo(() => {
     const map = new Map<string, VillageStationPlacement>()
+    if (stage) {
+      // Its place on the stage: out of the dark behind its spot on the circle, facing the fire.
+      for (const entry of castKey ? castKey.split('\u0002') : []) {
+        const [id, x, z, yaw] = entry.split('\u0001')
+        const ground = sampleTerrainHeightAt(terrainHeights, Number(x), Number(z))
+        map.set(id, stationAtAnchor([Number(x), ground, Number(z)], Number(yaw)))
+      }
+      return map
+    }
     for (const entry of seatsKey ? seatsKey.split('|') : []) {
       const split = entry.lastIndexOf(':')
       const slot = villageSeatStation(Number(entry.slice(split + 1)), { origin })
@@ -984,7 +1001,7 @@ export function VillageWorld() {
       map.set(entry.slice(0, split), { ...station, anchor })
     }
     return map
-  }, [seatsKey, terrainHeights, origin])
+  }, [stage, castKey, seatsKey, terrainHeights, origin])
 
   // The desks, and out of the registry again when they change or the village goes. One effect for both: a
   // separate cleanup-only effect used to run after this one on a hot reload (React re-runs every effect then)
@@ -1004,7 +1021,7 @@ export function VillageWorld() {
 
   return (
     <group name="oasis-village">
-      <VillagePlaza empty={roster.length === 0} origin={origin} />
+      {!stage && <VillagePlaza empty={roster.length === 0} origin={origin} />}
       {/* Blood when the player's bolts hit an agent (VillageGore, village-combat.ts). */}
       <VillageGore />
       {roster.map(agent => {
@@ -1019,13 +1036,14 @@ export function VillageWorld() {
             windowVisible={visible.windows.has(agent.id)}
             helperLabelsVisible={visible.near.has(agent.id)}
             overlayZ={overlayZ}
+            bare={stage}
           />
         )
       })}
       {/* The owner's missions as framed panels behind Anorak's desk (VillageMissionWall). */}
-      <VillageMissionWall roster={roster} placements={placements} origin={origin} />
+      {!stage && <VillageMissionWall roster={roster} placements={placements} origin={origin} />}
       {/* The Academy's skill tree, across the plaza from the desks (VillageAcademyTree). */}
-      <VillageAcademyTree origin={origin} />
+      {!stage && <VillageAcademyTree origin={origin} />}
       <VillageCameraRig />
       <VillageTagDriver />
       <VillageEyes />

@@ -17,6 +17,7 @@ import { VILLAGE_HELPERS_COLOR, VILLAGE_OBSERVED_COLOR, cwdLabel, statusColor, v
 import { wakeLine } from '../../lib/village/village-schedule'
 import { CUT_NAME_LENGTH, fullAgentName, sessionTitles } from './village-agent-labels'
 import { SUBAGENT_LOOK_COLOR } from './VillageSubagentMinis'
+import { getCouncilVersion, getStageCast, isStageWorldNow, subscribeCouncil } from './village-council'
 
 const COLLAPSED_KEY = 'oasis.village.agentsMenu.collapsed'
 const MARGIN = 16
@@ -196,13 +197,18 @@ export function VillageAgentsMenu() {
   useSessionTitlesWhenNamesAreCut()
   const hasHelpers = useOasisStore(s => s.agentEngine.order.some(id => (s.agentEngine.agents[id]?.subagents.length || 0) > 0))
   const now = useClock(hasHelpers)
+  // On a stage (the Council's world) only the agents who are there: its cast (village-council.ts).
+  const castVersion = useSyncExternalStore(subscribeCouncil, getCouncilVersion, () => 0)
   const rowsKey = useOasisStore(s => {
     const titles = sessionTitles(s.agentEngine.sessions.items)
+    const stage = isStageWorldNow()
     return s.agentEngine.order.map(id => {
       const agent = s.agentEngine.agents[id]
+      if (stage && !getStageCast().has(id)) return ''
       return agent ? rowKey(agent, titles, now) : ''
     }).filter(Boolean).join('\u0002')
   })
+  void castVersion
   const attentionKey = useOasisStore(s => selectAttentionQueue(s.agentEngine).join(','))
   const focusedId = useOasisStore(s => s.agentEngine.focusedAgentId)
   const focusedHelper = useOasisStore(s => (s.agentEngine.focusedSubagent ? `${s.agentEngine.focusedSubagent.agentId}\u0001${s.agentEngine.focusedSubagent.key}` : ''))

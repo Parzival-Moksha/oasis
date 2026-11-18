@@ -8,6 +8,7 @@ import * as THREE from 'three'
 import { useOasisStore } from '../../store/oasisStore'
 import { useInputManager, type InputState } from '../../lib/input-manager'
 import { selectNextAgentForN } from '../../store/slices/agentEngineSlice'
+import { isStageWorldName } from '../../lib/village/village-stage'
 import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { getPlayerAvatarPose, markThirdPersonCameraRestored, requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
 import { showNotice } from '../forge/GlobalNotice'
@@ -637,6 +638,12 @@ export function isTypingTarget(target: EventTarget | null): boolean {
  * (N cycles world agent windows, E is noclip "down", T the rotate gizmo). Returns true when the
  * key was consumed. What each key means lives in village-keys.ts.
  */
+function worldNameNow(): string | null {
+  const state = useOasisStore.getState()
+  const id = state.viewingWorldId || state.activeWorldId
+  return state.worldRegistry.find(world => world.id === id)?.name ?? null
+}
+
 export function handleVillageKeyDown(event: KeyboardEvent): boolean {
   // The image viewer has the keyboard (Esc, arrows) while it is open.
   if (viewer) return false
@@ -699,7 +706,9 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
       openVillagePicker(true)
       return true
     case 'next': {
-      const next = selectNextAgentForN(village)
+      // On a stage (the Council's world) only the agents who are there have a place: N goes round them alone.
+      const stage = isStageWorldName(worldNameNow())
+      const next = selectNextAgentForN(stage ? { ...village, order: village.order.filter(id => places.stations.has(id)) } : village)
       if (next) focusVillageAgent(next)
       return true
     }
