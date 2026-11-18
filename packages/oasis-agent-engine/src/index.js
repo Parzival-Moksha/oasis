@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Agent } from './agent.js';
+import { HermesAgent } from './hermes.js';
 import { Observer } from './observe.js';
 import { HookObserver } from './hooks.js';
 import { listSessions, isTranscriptPath, readLiveRegistry, readLiveEntries, pidAlive, findSessionFile } from './sessions.js';
@@ -280,7 +281,9 @@ const commands = {
     return sessions.map((s) => ({ ...s, ownedBy: owned.get(s.sessionId) || null, observedBy: observed.get(String(s.path).toLowerCase()) || null }));
   },
 
-  async spawnAgent({ name, cwd, sessionId, model, permissionMode, effort, fork, force, move, createCwd, worldTools, chrome } = {}) {
+  // runtime: 'claude' (default) or 'hermes' (hermes.js: a Hermes Agent over ACP; command / hermesHome say which one and where).
+  async spawnAgent({ name, cwd, sessionId, model, permissionMode, effort, fork, force, move, createCwd, worldTools, chrome, runtime, command, hermesHome } = {}) {
+    if (runtime && runtime !== 'claude' && runtime !== 'hermes') throw new Error(`unknown runtime ${runtime} (claude or hermes)`);
     if (!cwd) throw new Error('cwd is required');
     cwd = path.resolve(cwd);
     if (!fs.existsSync(cwd)) {
@@ -299,7 +302,9 @@ const commands = {
         await stopOtherHolders(sessionId, ours);
       }
     }
-    const agent = new Agent({ id: newId('agent'), name: name || path.basename(cwd), cwd, sessionId, model, permissionMode, effort, fork, worldTools, chrome: chrome === true }, hub);
+    const agent = runtime === 'hermes'
+      ? new HermesAgent({ id: newId('agent'), name: name || path.basename(cwd), cwd, sessionId, model, permissionMode, worldTools, command, hermesHome }, hub)
+      : new Agent({ id: newId('agent'), name: name || path.basename(cwd), cwd, sessionId, model, permissionMode, effort, fork, worldTools, chrome: chrome === true }, hub);
     addAgent(agent);
     agent.start();
     hub.persist();
@@ -916,7 +921,8 @@ async function restoreRoster() {
     const midTurn = wasMidTurn(e, open ? transcriptTurnOpen(open) : null, stop);
     const { pid: _pid, turnOpenAt, ...spec } = e;
     // Mid-turn shows as "stopped mid-turn" (outcome.js) until the carry-on note is out, and stays so if it cannot go.
-    const agent = new Agent(midTurn ? { ...spec, turnOpenAt: typeof turnOpenAt === 'number' ? turnOpenAt : (stop?.at || Date.now()) } : spec, hub);
+    const Runtime = spec.runtime === 'hermes' ? HermesAgent : Agent;
+    const agent = new Runtime(midTurn ? { ...spec, turnOpenAt: typeof turnOpenAt === 'number' ? turnOpenAt : (stop?.at || Date.now()) } : spec, hub);
     agents.set(agent.id, agent);
     const resume = midTurn && RESUME_ON;
     if (resume) restart.resumed.push({ id: agent.id, name: agent.name });
