@@ -22,7 +22,7 @@ describe('who gets a note left on a mission card', () => {
     expect(isNamedIn('C++ (dev)', 'C++')).toBe(true)
   })
   it('the message says which mission, where its file is, and what to do', () => {
-    const text = formatMissionNote({ file: 'work-vow.md', title: 'The work vow', who: 'Morrow', text: '  make the timer bigger ', dir: 'C:\7c_oasis\docs\missions\', villageAgents: ['Anorak', 'Debugger'] })
+    const text = formatMissionNote({ file: 'work-vow.md', title: 'The work vow', who: 'Morrow', text: '  make the timer bigger ', dir: 'C:\\7c_oasis\\docs\\missions\\',villageAgents: ['Anorak', 'Debugger'] })
     // The folder is the machine's own: a forward-slash one keeps its slashes, none leaves the file's name.
     expect(formatMissionNote({ file: 'a.md', title: 'A', who: '', text: 'x', dir: '/home/me/missions' })).toContain('"A" (/home/me/missions/a.md)')
     expect(formatMissionNote({ file: 'a.md', title: 'A', who: '', text: 'x' })).toContain('"A" (a.md)')
