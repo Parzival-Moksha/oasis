@@ -1,8 +1,20 @@
 {
   "name": "oasis",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "The Oasis: your Claude Code sessions as avatars in a 3D village on your machine. /oasis opens it on this session; what you say there arrives here, and the session gets the Oasis world tools.",
   "author": {
     "name": "Parzival-Moksha"
-  }
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/Parzival-Moksha/oasis",
+  "repository": "https://github.com/Parzival-Moksha/oasis",
+  "privacyPolicyUrl": "https://github.com/Parzival-Moksha/oasis/blob/main/plugins/oasis/PRIVACY.md",
+  "keywords": [
+    "3d",
+    "village",
+    "avatars",
+    "sessions",
+    "voice",
+    "visualizer"
+  ]
 }
