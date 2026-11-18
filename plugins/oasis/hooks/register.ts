@@ -11,8 +11,8 @@
 // When the Oasis isn't running the polls fail quietly. OASIS_ENGINE_URL overrides the engine address.
 //
 // /oasis (a slash command this mod registers) opens the Oasis on this session: it starts the two servers when they
-// aren't running (scripts/oasis-launch.ps1, Windows), opens the village in the browser, and has the camera walk to
-// this session's avatar. With the Oasis already open in a tab, it only walks the camera. /oasis status reports.
+// aren't running (scripts/oasis-launch.mjs: Windows, macOS, Linux; on the first run it installs the slim Oasis),
+// opens the village in the browser, and has the camera walk to this session's avatar. With the Oasis already open in a tab, it only walks the camera. /oasis status reports.
 //
 // The session also learns where it is: when the engine answers, one short section is added to the system
 // prompt (prompt.compose). The world tools themselves come from this plugin's .mcp.json (the Oasis MCP server).
@@ -56,7 +56,8 @@ async function oasisSection($: EngineInterface, fallback: string, canSendFiles: 
 }
 
 const WORLD_URL = 'http://localhost:4516/?profile=village'
-const LAUNCH_TIMEOUT_MS = 150_000
+// A first run downloads the slim Oasis, installs its packages and builds it: minutes, once.
+const LAUNCH_TIMEOUT_MS = 15 * 60_000
 
 /** /oasis status: what is running, in two lines. */
 async function oasisStatus($: EngineInterface, engine: string): Promise<string> {
@@ -84,23 +85,22 @@ async function openOasis($: EngineInterface, engine: string, sessionId: string, 
   } catch {
     // The engine is down, or an older one without /bridge/open: the launcher below handles both.
   }
-  if ((await $.env.get('OS')) !== 'Windows_NT') {
-    return `The /oasis launcher is Windows-only for now. Start the Oasis by hand (pnpm dev:engine and pnpm dev in its folder), then open ${WORLD_URL}&session=${sessionId}`
-  }
+  // One launcher for Windows, macOS and Linux (scripts/oasis-launch.mjs): it finds the Oasis on this machine,
+  // installs the slim one on the first run, starts what is not running and opens the browser.
   const home = (await $.env.get('OASIS_HOME')) || ''
-  const script = `${$.plugin.root}\\scripts\\oasis-launch.ps1`
-  const argv = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Url', `${WORLD_URL}&session=${sessionId}`]
-  if (home) argv.push('-OasisHome', home)
+  const argv = ['node', `${$.plugin.root}/scripts/oasis-launch.mjs`, '--session', sessionId]
+  if (home) argv.push('--home', home)
   try {
     const ran = await $.process.run(argv, { timeoutMs: LAUNCH_TIMEOUT_MS })
-    const said = ran.stdout.trim().split(/\r?\n/).filter(Boolean).join(' ')
+    const said = ran.stdout.trim().split(/\r?\n/).filter(Boolean)
     if (ran.exitCode === 0) {
-      const started = said.includes('started in its own window')
-      return `${started ? 'Started the Oasis (its ENGINE and WORLD windows) and opened it' : 'Opened the Oasis'} in your browser. This session will be in front of you there.`
+      const installed = said.some(line => line.startsWith('Installed the Oasis'))
+      const started = said.some(line => /^Started the |started in its own window/.test(line))
+      return `${installed ? 'Installed the Oasis, started it and opened it' : started ? 'Started the Oasis and opened it' : 'Opened the Oasis'} in your browser. This session will be in front of you there.`
     }
-    return said || `The Oasis launcher failed (exit ${ran.exitCode}).`
+    return said.slice(-2).join(' ') || `The Oasis launcher failed (exit ${ran.exitCode}).`
   } catch {
-    return 'The Oasis launcher could not run. Start the Oasis with its desktop shortcut, then /oasis again.'
+    return 'The Oasis launcher could not run. It needs Node.js 20 or later on the PATH (node --version).'
   }
 }
 
