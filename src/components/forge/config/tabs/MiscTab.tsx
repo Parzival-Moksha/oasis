@@ -7,6 +7,7 @@
 import { useContext, useMemo } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import type { SharedTabProps } from '../types'
+import { AppWindowSection } from '../AppWindowSection'
 
 export function MiscTab({ consoleControl }: SharedTabProps) {
   const { settings, effectiveRp1Mode, rp1Locked, updateSetting } = useContext(SettingsContext)
@@ -19,6 +20,7 @@ export function MiscTab({ consoleControl }: SharedTabProps) {
 
   return (
     <div className="space-y-3">
+      <AppWindowSection />
       {consoleControl && (
         <section>
           <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Console</div>
