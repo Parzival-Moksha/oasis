@@ -48,7 +48,7 @@ const LABEL = { width: 2.5, height: 0.7, gap: 0.1 }
 const TILE = { width: LABEL.width, height: FACE + LABEL.gap + LABEL.height }
 /** From the node's centre (the face's centre) to the tile's centre. */
 const TILE_OFFSET_Y = FACE / 2 - TILE.height / 2
-const FONT = 'Bahnschrift, "Barlow Condensed", "Segoe UI", system-ui, sans-serif'
+const FONT = 'Bahnschrift, "Barlow Condensed", "Segoe UI", system-ui, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'
 const LOCKED_SCALE = 0.84
 const HOVER_SCALE = 1.16
 const FOV = 30

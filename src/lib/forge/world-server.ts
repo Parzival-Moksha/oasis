@@ -9,6 +9,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { createHash } from 'crypto'
+import { cleanWorldIcon } from '../text-encoding'
 
 import { prisma } from '../db'
 import { normalizeWorldStateAgentAvatarTransforms } from '../agent-avatar-world-state'
@@ -814,6 +815,8 @@ export async function createWorld(
   options: { visibility?: string; pvpEnabled?: boolean } = {},
 ): Promise<WorldMeta> {
   const ctx = accessContext(userId)
+  // An icon that arrived as "??" (its emoji lost in a shell on the way) is stored as the default instead.
+  icon = cleanWorldIcon(icon)
   const id = `world-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   const now = new Date()
   const requestedVisibility = toStorageVisibility(options.visibility) || 'private'

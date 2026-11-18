@@ -1249,7 +1249,7 @@ function SettingsDropdown({ settings, onChange, voiceOutput, onVoiceOutputChange
     <div
       data-ui-panel
       className="absolute right-0 top-full mt-1 z-50 border border-white/10 rounded-lg p-3 shadow-xl w-56"
-      style={{ background: 'rgba(10, 8, 5, 0.96)', color: 'rgba(255,245,220,0.96)', fontFamily: 'Consolas, \"Segoe UI\", sans-serif' }}
+      style={{ background: 'rgba(10, 8, 5, 0.96)', color: 'rgba(255,245,220,0.96)', fontFamily: 'Consolas, \"Segoe UI\", "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif' }}
     >
       <div className="text-[10px] text-amber-200/80 uppercase tracking-widest mb-2">Panel Settings</div>
 
@@ -2865,7 +2865,7 @@ function HermesLocalPanel({
         ...(embedded ? EMBEDDED_SCROLL_SURFACE_STYLE : {}),
         ...backgroundStyle,
         color: 'rgba(255, 245, 220, 0.96)',
-        fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
+        fontFamily: '"Segoe UI", "Helvetica Neue", Arial, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
         border: `1px solid ${isStreaming ? 'rgba(245,158,11,0.58)' : 'rgba(245,158,11,0.24)'}`,
         boxShadow: isStreaming
           ? '0 0 40px rgba(245,158,11,0.16), inset 0 0 60px rgba(245,158,11,0.04)'

@@ -104,7 +104,7 @@ function ProfileAvatarThumb({ src, displayName }: { src: string; displayName: st
           color: '#e0f2fe',
           fontSize: 10,
           fontWeight: 900,
-          fontFamily: 'system-ui, sans-serif',
+          fontFamily: 'system-ui, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
           background: 'linear-gradient(135deg, rgba(14,165,233,0.5), rgba(168,85,247,0.48))',
         }}
       >

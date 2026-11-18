@@ -384,7 +384,7 @@ export function ConsolePanel({ isOpen, onClose }: { isOpen: boolean; onClose: ()
         className="flex-1 overflow-y-auto overflow-x-hidden px-1 py-1"
         style={{
           fontSize: 11,
-          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", monospace',
           lineHeight: '18px',
           userSelect: 'text',
           cursor: 'text',

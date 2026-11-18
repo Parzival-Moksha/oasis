@@ -1198,7 +1198,7 @@ export function HermesHostedRelayPanel({
         maxHeight: embedded ? undefined : 'calc(100vh - 16px)',
         backgroundColor: panelSettings.bgColor,
         opacity: panelSettings.opacity,
-        fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
+        fontFamily: '"Segoe UI", "Helvetica Neue", Arial, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
         userSelect: draggingPanel || resizingPanel ? 'none' : 'auto',
       }}
       onMouseDown={event => {

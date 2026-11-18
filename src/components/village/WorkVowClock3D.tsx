@@ -14,7 +14,7 @@ import { getWorkVowState, subscribeWorkVow } from './work-vow-client'
 
 const SIZE = { width: 5.2, height: 1.9, depth: 0.09, border: 0.09 }
 const PX = { width: 1040, height: 380 }
-const FONT = 'Bahnschrift, "Barlow Condensed", "Segoe UI", system-ui, sans-serif'
+const FONT = 'Bahnschrift, "Barlow Condensed", "Segoe UI", system-ui, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'
 const NO_RAYCAST = () => {}
 
 function draw(ctx: CanvasRenderingContext2D): string {

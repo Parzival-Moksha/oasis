@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Cinzel, Cormorant_Garamond, JetBrains_Mono, Space_Grotesk } from 'next/font/google'
 import { Providers } from '@/components/Providers'
 import './globals.css'
+import './oasis-emoji.css'
 import { isHostedOasis } from '@/lib/oasis-profile'
 import { LocalServiceWorkerGuard } from '@/components/LocalServiceWorkerGuard'
 

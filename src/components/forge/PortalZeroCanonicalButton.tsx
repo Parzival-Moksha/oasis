@@ -219,7 +219,7 @@ export function PortalZeroCanonicalButton() {
             border: `1px solid ${buttonColor}`,
             background: 'rgba(7, 10, 18, 0.86)',
             color: '#f8fafc',
-            fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+            fontFamily: 'Inter, ui-sans-serif, system-ui, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
             fontSize: 13,
             lineHeight: 1.2,
             textAlign: 'center',

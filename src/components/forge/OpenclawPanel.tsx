@@ -3322,7 +3322,7 @@ export function OpenclawPanel({
           ? '0 0 44px rgba(16,185,129,0.12), inset 0 0 60px rgba(8,145,178,0.05)'
           : '0 0 38px rgba(8,145,178,0.14), inset 0 0 50px rgba(14,165,233,0.04)',
         color: 'rgba(232,249,252,0.96)',
-        fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
+        fontFamily: '"Segoe UI", "Helvetica Neue", Arial, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
       }}
       onMouseDown={event => {
         event.stopPropagation()

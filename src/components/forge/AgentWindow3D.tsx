@@ -455,7 +455,7 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
                     color: '#fda4af',
                     border: '1px solid rgba(244, 114, 182, 0.4)',
                     boxShadow: '0 0 12px rgba(244, 114, 182, 0.25)',
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", monospace',
                     fontSize: 11,
                     fontWeight: 600,
                     letterSpacing: '0.04em',

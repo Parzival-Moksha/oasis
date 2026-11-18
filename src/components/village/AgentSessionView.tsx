@@ -315,7 +315,7 @@ function SentFilesCard({ entry, compact }: { entry: Extract<AgentLogEntry, { typ
         {caption && (
           <div
             className="mt-2.5 text-center text-[13px] italic leading-snug text-pink-100/90"
-            style={{ fontFamily: '"Segoe Print", "Bradley Hand", "Comic Sans MS", cursive' }}
+            style={{ fontFamily: '"Segoe Print", "Bradley Hand", "Comic Sans MS", "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", cursive' }}
           >
             {compact && caption.length > 160 ? `${caption.slice(0, 160)}…` : caption}
           </div>

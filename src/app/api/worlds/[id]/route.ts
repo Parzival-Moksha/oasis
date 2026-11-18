@@ -11,6 +11,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
+import { LOST_EMOJI_HINT, looksLikeLostEmoji } from '@/lib/text-encoding'
 import { getOasisUserId, getRequiredOasisUserId } from '@/lib/session'
 import {
   loadWorld, saveWorld, deleteWorld, getRegistry, updateWorldMetadata,
@@ -140,6 +141,10 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const updates: Record<string, string> = {}
     if (body.name?.trim()) updates.name = body.name.trim().slice(0, 50)
+    // "??": the emoji was lost before it got here (lib/text-encoding.ts): refuse to store it.
+    if (body.icon && looksLikeLostEmoji(body.icon)) {
+      return NextResponse.json({ error: LOST_EMOJI_HINT }, { status: 400 })
+    }
     if (body.icon) updates.icon = body.icon
 
     if (Object.keys(updates).length === 0) {

@@ -66,7 +66,7 @@ function panelMatrix(panel: WallPanel, target = new THREE.Matrix4()): THREE.Matr
 
 // ─── the faces: every card and caption printed into one texture ─────────────
 
-const FONT_DISPLAY = 'Bahnschrift, "Barlow Condensed", "Segoe UI", system-ui, sans-serif'
+const FONT_DISPLAY = 'Bahnschrift, "Barlow Condensed", "Segoe UI", system-ui, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'
 
 function bodyFont(): string {
   let grotesk = ''
@@ -74,7 +74,7 @@ function bodyFont(): string {
     grotesk = getComputedStyle(document.body).getPropertyValue('--font-space-grotesk').trim()
       || getComputedStyle(document.documentElement).getPropertyValue('--font-space-grotesk').trim()
   } catch { /* no styles yet */ }
-  return `${grotesk ? `${grotesk}, ` : ''}"Segoe UI", system-ui, sans-serif`
+  return `${grotesk ? `${grotesk}, ` : ''}"Segoe UI", system-ui, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`
 }
 
 function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {

@@ -62,7 +62,7 @@ export function VillageHpBar({ agentId }: { agentId: string }) {
   const color = pct > 0.5 ? '#4ade80' : pct > 0.25 ? '#fbbf24' : '#f87171'
   const upIn = down ? Math.max(0, Math.ceil((VILLAGE_DOWN_MS - (now - (vitals.downAt as number))) / 1000)) : 0
   return (
-    <div className="relative flex flex-col items-center" style={{ fontFamily: '"Arial Black", Impact, system-ui, sans-serif' }}>
+    <div className="relative flex flex-col items-center" style={{ fontFamily: '"Arial Black", Impact, system-ui, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif' }}>
       <style>{'@keyframes villageDamageFloat{0%{transform:translate(-50%,0) scale(1.25);opacity:1}100%{transform:translate(-50%,-34px) scale(1);opacity:0}}'}</style>
       {vitals.hits.filter(hit => now - hit.at < 1200).map((hit, index) => (
         <span

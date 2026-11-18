@@ -48,7 +48,7 @@ const TILE_W = PLATE_W + TILE_PAD * 2
 const TILE_H = FACE_PX + PLATE_H + TILE_PAD * 3
 const LOCKED_SCALE = 0.8
 const FLASH_MS = 1600
-const FONT_DISPLAY = 'Bahnschrift, "Barlow Condensed", "Segoe UI", system-ui, sans-serif'
+const FONT_DISPLAY = 'Bahnschrift, "Barlow Condensed", "Segoe UI", system-ui, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'
 const GREY = '#4b5563'
 
 const NO_RAYCAST = () => {}

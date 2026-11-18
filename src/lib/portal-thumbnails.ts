@@ -178,8 +178,8 @@ export function buildPortalThumbnailSvg(def: PortalGateVariantDef): string {
   <circle cx="54" cy="46" r="82" fill="${def.accent}" opacity="0.12"/>
   <circle cx="205" cy="203" r="92" fill="${via}" opacity="0.1"/>
   ${body}
-  <text x="128" y="232" text-anchor="middle" fill="#dbeafe" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="700" letter-spacing="0">${safeLabel}</text>
-  <text x="128" y="247" text-anchor="middle" fill="#64748b" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="8" letter-spacing="0">${safeId}</text>
+  <text x="128" y="232" text-anchor="middle" fill="#dbeafe" font-family="ui-monospace, SFMono-Regular, Menlo, 'Apple Color Emoji', 'Oasis Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', monospace" font-size="13" font-weight="700" letter-spacing="0">${safeLabel}</text>
+  <text x="128" y="247" text-anchor="middle" fill="#64748b" font-family="ui-monospace, SFMono-Regular, Menlo, 'Apple Color Emoji', 'Oasis Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', monospace" font-size="8" letter-spacing="0">${safeId}</text>
 </svg>`
 }
 

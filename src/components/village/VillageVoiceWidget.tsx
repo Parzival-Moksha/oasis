@@ -25,7 +25,7 @@ import { clearComposerPictures, getComposerPictures } from './ComposerPictures'
 import { discardUnsent, formatClip, resendRecording, stopRecording, subscribeVoiceMessages, voiceMessageList, voiceMessagesVersion } from './VoiceMessage'
 import { showNotice } from '../forge/GlobalNotice'
 
-const TITLE_FONT = '"Arial Black", Impact, "Segoe UI Black", "Trebuchet MS", system-ui, sans-serif'
+const TITLE_FONT = '"Arial Black", Impact, "Segoe UI Black", "Trebuchet MS", system-ui, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'
 
 /** Send what the agent's box holds (and its waiting pictures), from anywhere. */
 export async function sendDraftFromWidget(agentId: string, name: string): Promise<void> {

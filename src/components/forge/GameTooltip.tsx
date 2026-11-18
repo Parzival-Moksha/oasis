@@ -103,7 +103,7 @@ export function GameTooltip() {
         background: 'linear-gradient(180deg, rgba(40,33,23,0.98) 0%, rgba(16,13,9,0.98) 100%)',
         boxShadow: 'inset 0 1px 0 rgba(255,225,160,0.18), inset 0 0 0 1px rgba(0,0,0,0.6), 0 8px 22px rgba(0,0,0,0.6)',
         color: '#efe6d2',
-        fontFamily: "var(--font-cormorant), 'Palatino Linotype', Palatino, Georgia, serif",
+        fontFamily: "var(--font-cormorant), 'Palatino Linotype', Palatino, Georgia, 'Apple Color Emoji', 'Oasis Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', serif",
         fontSize: 15,
         lineHeight: 1.25,
         textAlign: 'left',

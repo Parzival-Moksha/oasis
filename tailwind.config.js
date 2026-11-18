@@ -4,12 +4,24 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 /** @type {import('tailwindcss').Config} */
+const defaultTheme = require('tailwindcss/defaultTheme')
+// Emoji (src/app/globals.css --oasis-emoji): the self-hosted Noto goes in before the system emoji fonts.
+const withEmoji = (stack) => {
+  const generic = stack.findIndex(font => /emoji/i.test(font))
+  return generic === -1 ? [...stack, 'var(--oasis-emoji)'] : [...stack.slice(0, generic), 'var(--oasis-emoji)', ...stack.slice(generic)]
+}
+
 module.exports = {
   content: [
     './src/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: withEmoji(defaultTheme.fontFamily.sans),
+        serif: withEmoji(defaultTheme.fontFamily.serif),
+        mono: withEmoji(defaultTheme.fontFamily.mono),
+      },
       colors: {
         // Lobe colors (from Parzival's connectome)
         prefrontal: '#8B5CF6', // purple

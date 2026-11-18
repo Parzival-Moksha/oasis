@@ -8,8 +8,8 @@
 // lettering. Typefaces are the two the Oasis already ships: Cinzel for names and numbers,
 // Cormorant Garamond for sentences. No 3D, nothing animated at rest.
 
-export const MC_DISPLAY = "var(--font-cinzel), 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif"
-export const MC_BODY = "var(--font-cormorant), 'Palatino Linotype', Palatino, Georgia, serif"
+export const MC_DISPLAY = "var(--font-cinzel), 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, 'Apple Color Emoji', 'Oasis Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', serif"
+export const MC_BODY = "var(--font-cormorant), 'Palatino Linotype', Palatino, Georgia, 'Apple Color Emoji', 'Oasis Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', serif"
 
 const CSS = `
 .mc-scope { font-family: ${MC_BODY}; font-size: 15.5px; line-height: 1.3; color: #efe6d2; font-variant-numeric: lining-nums tabular-nums; }

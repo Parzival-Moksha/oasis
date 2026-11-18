@@ -42,7 +42,7 @@ function showXpFloat(amount: number, leveledUp: boolean, newLevel?: number) {
     transform: 'translateX(-50%)',
     color: '#A855F7',
     fontSize: '14px',
-    fontFamily: "'Courier New', monospace",
+    fontFamily: "'Courier New', 'Apple Color Emoji', 'Oasis Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', monospace",
     fontWeight: 'bold',
     textShadow: '0 0 12px rgba(168,85,247,0.6)',
     pointerEvents: 'none',

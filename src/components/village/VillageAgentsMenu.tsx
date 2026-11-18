@@ -36,9 +36,9 @@ const LIST_CHROME = 14
 /** Pulses opacity only (compositor-cheap); reduced motion gets a steady glow. */
 const ATTENTION_GLOW_CSS = `@keyframes oasisAttnGlow{0%,100%{opacity:.3}50%{opacity:1}}.oasis-attn-glow{animation:oasisAttnGlow 1.4s ease-in-out infinite}@media (prefers-reduced-motion: reduce){.oasis-attn-glow{animation:none;opacity:.8}}`
 /** The rail's own face (GameMenuButton). */
-const GAME_MENU_FONT = '"Arial Black", Impact, "Segoe UI Black", "Trebuchet MS", system-ui, sans-serif'
+const GAME_MENU_FONT = '"Arial Black", Impact, "Segoe UI Black", "Trebuchet MS", system-ui, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'
 /** Helper descriptions are sentences: a plain readable sans, not the wide mono of the status lines. */
-const HELPER_FONT = '"Segoe UI", system-ui, sans-serif'
+const HELPER_FONT = '"Segoe UI", system-ui, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'
 const LOOK_WORD: Record<SubagentLook, string> = { running: '', done: 'done', failed: 'failed', stopped: 'stopped' }
 
 interface HelperRow {

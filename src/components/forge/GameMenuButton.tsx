@@ -8,7 +8,7 @@ import { holdUIFocusForMenuTransition } from '@/lib/input-manager'
 import { railIconFor, railPlateFor, useRailLook, type RailIcon, type RailLookId } from '@/lib/rail-look'
 import { cellsPath, textCells, textWidth } from '@/components/forge/splash/intro-overlay'
 
-export const GAME_MENU_FONT ='"Arial Black", Impact, "Segoe UI Black", "Trebuchet MS", system-ui, sans-serif'
+export const GAME_MENU_FONT ='"Arial Black", Impact, "Segoe UI Black", "Trebuchet MS", system-ui, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'
 
 interface GameMenuButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string

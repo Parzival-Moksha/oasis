@@ -75,7 +75,7 @@ export default function RelayTestPage() {
 
   return (
     <main style={{
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, "Apple Color Emoji", "Oasis Emoji", "Segoe UI Emoji", "Noto Color Emoji", monospace',
       maxWidth: 720,
       margin: '40px auto',
       padding: 24,
