@@ -6,7 +6,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useMindcraftLook } from './mindcraft-look'
-import { formatClock, WORK_VALOR, type WorkDayView, type WorkSnapshot } from '../../lib/village/work-vow'
+import { formatClock, WORK_VALOR, type WorkDayView, type WorkSnapshot, timeToGo } from '../../lib/village/work-vow'
 import { GAME_HUD_TEXT } from '../forge/GameKeycap'
 import { useOasisStore } from '../../store/oasisStore'
 import { getMissionState, subscribeMissions } from './village-mission-store'
@@ -242,7 +242,10 @@ export function WorkVowHud() {
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="flex items-baseline gap-1.5">
             <span className="mc-clock text-[17px] font-bold leading-none tabular-nums" style={{ color: done ? GREEN : '#f1dca8' }}>{formatClock(liveSeconds)}</span>
-            <span className="text-[10px] text-white/50">/ {formatClock(snapshot.targetSeconds)}</span>
+            {/* What is left, in words (the owner: "okay, 27 minutes away from the three hours"). */}
+            <span className="whitespace-nowrap text-[11px] font-bold" style={{ color: done ? GREEN : '#fde68a' }} title={`The goal is ${formatClock(snapshot.targetSeconds)} a day`}>
+              {timeToGo(liveSeconds, snapshot.targetSeconds)}
+            </span>
           </span>
           <span className="mc-status flex max-w-[min(420px,calc(100vw-120px))] items-start gap-1.5 text-[9.5px] leading-snug" style={{ ...GAME_HUD_TEXT, color: statusColor }} title={state.running ? `Every minute like this earns ${rate} XP. With nothing open it is ${free}; with an agent or a mission open it is 1.` : 'Nothing is being counted right now'}>
             {state.running && <span className="mt-[3px] h-1.5 w-1.5 shrink-0 animate-pulse rounded-full" style={{ background: statusColor, boxShadow: `0 0 6px ${statusColor}` }} />}

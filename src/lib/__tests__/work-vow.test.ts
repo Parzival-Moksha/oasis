@@ -517,3 +517,16 @@ describe('test browsers never count; each second keeps the page it came from', (
     expect(parseWorkFile(JSON.parse(JSON.stringify(book))).days['2026-11-16'].tabs?.mine.client).toBe('Edge 131')
   })
 })
+
+describe('what is left, in words', () => {
+  it('says the minutes to go, rounding up, and when the goal is reached', async () => {
+    const { timeToGo } = await import('../village/work-vow')
+    expect(timeToGo(10_800 - 27 * 60, 10_800)).toBe('27 min to go')
+    expect(timeToGo(10_800 - 27 * 60 + 10, 10_800)).toBe('27 min to go')
+    expect(timeToGo(10_800 - 1, 10_800)).toBe('1 min to go')
+    expect(timeToGo(0, 10_800)).toBe('3 h to go')
+    expect(timeToGo(10_800 - (2 * 3600 + 14 * 60), 10_800)).toBe('2 h 14 min to go')
+    expect(timeToGo(10_800, 10_800)).toBe('goal reached')
+    expect(timeToGo(12_899, 10_800)).toBe('goal reached')
+  })
+})

@@ -879,6 +879,19 @@ export function workSnapshot(file: WorkFile, now: number, offsetMinutes = localO
   }
 }
 
+/**
+ * What is left of the day's goal, in words: "27 min to go", "2 h 14 min to go", "goal reached".
+ * Minutes round up, so it never says "0 min to go" while the day is not done.
+ */
+export function timeToGo(seconds: number, targetSeconds: number): string {
+  const left = Math.max(0, Math.ceil(targetSeconds - seconds))
+  if (left <= 0) return 'goal reached'
+  const minutes = Math.ceil(left / 60)
+  if (minutes < 60) return `${minutes} min to go`
+  const rest = minutes % 60
+  return `${Math.floor(minutes / 60)} h${rest ? ` ${rest} min` : ''} to go`
+}
+
 /** `1:23:45`. */
 export function formatClock(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds))

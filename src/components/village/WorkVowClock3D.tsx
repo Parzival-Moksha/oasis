@@ -8,7 +8,7 @@
 import { useEffect, useMemo } from 'react'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { formatClock } from '../../lib/village/work-vow'
+import { formatClock, timeToGo } from '../../lib/village/work-vow'
 import type { Vec3 } from '../../lib/village/village-layout'
 import { getWorkVowState, subscribeWorkVow } from './work-vow-client'
 
@@ -33,7 +33,7 @@ function draw(ctx: CanvasRenderingContext2D): string {
   ctx.textAlign = 'left'
   ctx.fillStyle = 'rgba(226,232,240,0.7)'
   ctx.font = `700 40px ${FONT}`
-  ctx.fillText('TODAY IN THE OASIS', 44, 52)
+  ctx.fillText(snapshot ? `TODAY IN THE OASIS · ${timeToGo(seconds, target).toUpperCase()}` : 'TODAY IN THE OASIS', 44, 52)
   ctx.textAlign = 'right'
   ctx.fillStyle = state.running ? color : 'rgba(226,232,240,0.5)'
   ctx.fillText(status.toUpperCase(), width - 44, 52)
