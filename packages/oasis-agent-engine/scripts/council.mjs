@@ -11,6 +11,7 @@
 //   node council.mjs stop | end | status
 //
 // OASIS_ENGINE_URL (default http://127.0.0.1:4530). Prints the engine's answer as JSON; exit code 1 on failure.
+import { tokenHeaders } from '../src/token.js';
 const args = process.argv.slice(2);
 const flag = (name, takesValue = true) => {
   const i = args.indexOf(name);
@@ -42,7 +43,7 @@ if (!action) {
   console.log('usage: node council.mjs start <agents…> | prepare|speak|turn <agent> "<text>"|--next | forward|back <agent> | stop | end | status');
 } else {
   try {
-    const response = await fetch(`${base}/api/cmd`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const response = await fetch(`${base}/api/cmd`, { method: 'POST', headers: { 'content-type': 'application/json', ...tokenHeaders() }, body: JSON.stringify(body) });
     const json = await response.json().catch(() => ({}));
     console.log(JSON.stringify(json.ok === false || !response.ok ? { ok: false, error: json.error || `engine answered ${response.status}` } : (json.data?.data ?? json.data ?? {}), null, 1));
     if (json.ok === false || !response.ok) process.exitCode = 1;

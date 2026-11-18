@@ -5,6 +5,7 @@
 // and a "final" line once you pause. One dictation at a time.
 // Ported from Tyler (C:/7f_Tyler/Tyler/public/js/ears.js).
 
+import { withLocalToken } from '../local-token'
 import { resolveAgentEngineUrl } from '../agent-engine-client'
 import { getVoiceTypingEngine, type VoiceTypingEngine } from './voice-typing-engine'
 
@@ -40,7 +41,7 @@ export function dictationUrl(lang = 'en', typing: VoiceTypingEngine = getVoiceTy
   const url = new URL(engine.replace(/^ws/i, 'http'))
   url.pathname = '/listen'
   url.search = `?lang=${encodeURIComponent(lang)}&engine=${typing}`
-  return url.toString().replace(/^http/i, 'ws')
+  return withLocalToken(url.toString().replace(/^http/i, 'ws'))
 }
 
 /** Joins the lines of one dictation into text, in line order. */

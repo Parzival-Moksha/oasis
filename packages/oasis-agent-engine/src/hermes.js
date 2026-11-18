@@ -34,12 +34,17 @@ import { outcomeForRoster, restoreOutcome, statusForOutcome } from './outcome.js
 import { RESUME_TEXT, RESUMED_REASON } from './resume.js';
 import { normalizeSchedule } from './schedule.js';
 import { worldToolsUrl } from './worldtools.js';
+import { registerAttachment } from './files.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VOICE_SCRIPT = path.resolve(HERE, '..', 'scripts', 'voice.mjs').replace(/\\/g, '/');
 const PROXY_SCRIPT = path.resolve(HERE, 'worldproxy.js');
 /** ACP permission modes Hermes offers, and the Claude Code names the page may send for them. */
 const MODES = { default: 'default', manual: 'default', accept_edits: 'accept_edits', acceptEdits: 'accept_edits', dont_ask: 'dont_ask', dontAsk: 'dont_ask' };
+/** How long Hermes waits for an answer to a permission request before it denies by itself (approvals.timeout, 60). */
+const PERMISSION_MS = 60_000;
+/** A slash command (/compact, /reset, /model …) is a prompt of its own: Hermes reads what follows it as its arguments. */
+const isCommand = (text) => /^\s*\/[a-z]/i.test(text || '');
 
 /** The argv that starts `hermes acp` on this machine (see the header). */
 export function hermesCommand(spec = {}) {
@@ -114,6 +119,8 @@ export class HermesAgent {
     this.permissions = new Map(); // requestId -> {rpcId, toolCall, options, ...}
     this.pendingUser = new Map(); // uuid -> {text, sentAt, turnWasRunning, turnIndex}
     this.queue = []; // [{uuid, text, images, picture, scheduled, resume}] waiting for the next turn
+    this.turnItems = []; // uuids of the running turn's messages: crossed off the journal when it ends
+    this.failReason = null; // why the last start could not open a session (shown after the process is stopped)
     this.sendChain = Promise.resolve();
     this.inFlight = new Set();
     this.turnRunning = false;
@@ -218,9 +225,13 @@ export class HermesAgent {
     proc.on('exit', (code, signal) => { if (this.proc === proc) this.onExit(code, signal); });
     this.recomputeStatus();
     this.ready = this.open(proc).then(() => true, (err) => {
+      if (this.proc !== proc || this.killing) return false; // stopped while it opened: not an error
       this.hub.log(`[${this.name}] could not open a Hermes session: ${err.message}`);
       this.emit('error', { message: `Hermes did not open a session: ${err.message}` });
-      this.setStatus(STATUS.ERROR, `no session: ${clip(err.message, 160)}`);
+      // A process without a session can never take a message: stop it, keep the reason on the sign (onExit), and
+      // the next message starts it again. What was on its way stays in the journal.
+      this.failReason = `no session: ${clip(err.message, 160)}`;
+      this.kill({ now: true });
       return false;
     });
   }
@@ -291,19 +302,25 @@ export class HermesAgent {
     const wasKilling = this.killing;
     this.proc = null;
     this.isReady = false;
+    // The open prompt's promise handlers see a different process (pump) and leave the turn alone: a turn cut off by
+    // the process ending keeps turnOpenAt, so the next engine start tells the agent to carry on (resume.js).
     for (const [, c] of this.calls) { clearTimeout(c.timer); c.reject(new Error('process exited')); }
     this.calls.clear();
-    for (const id of this.permissions.keys()) this.emit('permission.resolved', { requestId: id, behavior: 'cancelled' });
+    for (const [id, p] of this.permissions) { clearTimeout(p.timer); this.emit('permission.resolved', { requestId: id, behavior: 'cancelled' }); }
     this.permissions.clear();
-    // What was never handed to Hermes stays in the journal and goes out at the next start.
+    // What Hermes never saved (the queue, and the cut-off turn's messages) stays in the journal for the next start.
     this.queue = [];
     this.pendingUser.clear();
+    this.turnItems = [];
     if (this.turnRunning) this.flushText();
     this.turnRunning = false;
     this.scheduledPending = null;
     this.scheduledRun = false;
     this.emit('exit', { code, signal, stderr: wasKilling ? undefined : this.stderrTail.slice(-5) });
-    if (wasKilling || code === 0) this.setStatus(STATUS.IDLE, wasKilling ? 'stopped' : 'exited');
+    const failed = this.failReason;
+    this.failReason = null;
+    if (failed) this.setStatus(STATUS.ERROR, failed);
+    else if (wasKilling || code === 0) this.setStatus(STATUS.IDLE, wasKilling ? 'stopped' : 'exited');
     else this.setStatus(STATUS.ERROR, why ? `hermes did not start: ${why}` : `hermes exited (code ${code}${signal ? ', ' + signal : ''})`);
   }
 
@@ -418,6 +435,15 @@ export class HermesAgent {
     const tc = params.toolCall || {};
     const requestId = `hermes-perm-${rpcId}`;
     const entry = { requestId, rpcId, toolCall: tc, options: Array.isArray(params.options) ? params.options : [], receivedAt: Date.now() };
+    // Hermes denies by itself after 60 s and says nothing: the card goes away then too.
+    entry.timer = setTimeout(() => {
+      if (this.permissions.get(requestId) !== entry) return;
+      this.permissions.delete(requestId);
+      this.emit('permission.resolved', { requestId, behavior: 'expired', toolName: toolName(tc.title) });
+      this.emit('notice', { subtype: 'permission', text: `Hermes denied "${clip(String(tc.title || 'a command'), 120)}" by itself: nobody answered within 60 s.` });
+      this.recomputeStatus();
+    }, PERMISSION_MS);
+    entry.timer.unref?.();
     this.permissions.set(requestId, entry);
     this.emit('permission.request', this.describePermission(entry));
     this.setStatus(STATUS.DECISION, 'permission');
@@ -431,7 +457,7 @@ export class HermesAgent {
       requestId: r.requestId, requestKind: 'permission', toolName: name, toolUseId: tc.toolCallId || null,
       input: tc.rawInput ?? { text: contentText(tc.content) }, summary: clip(String(tc.title || name), 300), description: contentText(tc.content) || null,
       suggestions: always ? [{ type: 'hermes', optionId: always.optionId, label: always.name }] : [], blockedPath: null, decisionReason: null,
-      expiresAt: r.receivedAt + 60000, // Hermes denies by itself after 60 s
+      expiresAt: r.receivedAt + PERMISSION_MS, // Hermes denies by itself after 60 s
     };
   }
 
@@ -442,6 +468,7 @@ export class HermesAgent {
     const has = (id) => req.options.some((o) => o.optionId === id);
     const optionId = behavior === 'allow' ? (always && has('allow_session') ? 'allow_session' : 'allow_once') : 'deny';
     this.write({ jsonrpc: '2.0', id: req.rpcId, result: { outcome: { outcome: 'selected', optionId } } });
+    clearTimeout(req.timer);
     this.permissions.delete(requestId);
     this.emit('permission.resolved', { requestId, behavior, toolName: toolName(req.toolCall?.title) });
     this.recomputeStatus();
@@ -509,7 +536,7 @@ export class HermesAgent {
     for (const e of left) {
       try {
         if (e.scheduled) this.scheduledPending = e.uuid;
-        await this.deliver(e.text, { uuid: e.uuid, resume: e.resume === true, scheduled: e.scheduled || null });
+        await this.deliver(e.text, { uuid: e.uuid, images: loadPictures(e.images), resume: e.resume === true, scheduled: e.scheduled || null });
         if (e.resume) resumed = true; else delivered += 1;
       } catch (err) {
         this.hub.log(`[${this.name}] a queued message could not go out again (${err.message}); it stays for the next start`);
@@ -525,6 +552,7 @@ export class HermesAgent {
     let picture = null;
     if (this.eyes && this.hub.eyes && !resume && !scheduled) {
       try { picture = await this.hub.eyes(this.id); } catch { picture = null; }
+      if (!this.proc) throw new Error(this.statusReason || 'agent process not running');
     }
     this.sentSinceStart = true;
     const turnWasRunning = this.turnRunning;
@@ -579,8 +607,11 @@ export class HermesAgent {
 
   pump() {
     if (!this.proc || !this.isReady || this.turnRunning || !this.queue.length) return;
-    const items = this.queue.splice(0);
+    // Everything waiting goes as one prompt, except a slash command, which goes alone.
+    const cut = isCommand(this.queue[0].text) ? 1 : this.queue.findIndex((it) => isCommand(it.text));
+    const items = this.queue.splice(0, cut > 0 ? cut : this.queue.length);
     const prompt = this.compose(items);
+    const proc = this.proc;
     this.turnRunning = true;
     this.turnIndex += 1;
     this.interrupted = false;
@@ -588,24 +619,29 @@ export class HermesAgent {
     this.msg = null;
     if (!this.turnOpenAt) this.turnOpenAt = Date.now();
     const startedAt = Date.now();
+    // The messages stay in the journal until the turn ends: Hermes saves a conversation only when its turn is over,
+    // so a turn cut off by a crash or a restart has to be delivered again.
+    this.turnItems = items.map((it) => it.uuid);
     for (const it of items) {
       const p = this.pendingUser.get(it.uuid);
       this.pendingUser.delete(it.uuid);
-      this.hub.journal?.done(this.id, it.uuid);
       if (it.uuid === this.scheduledPending) { this.scheduledPending = null; this.scheduledRun = true; }
       this.emit('user.consumed', { uuid: it.uuid, folded: false, waitedMs: p ? Date.now() - p.sentAt : 0 });
     }
     this.persist();
     this.setStatus(STATUS.WORKING, 'turn started');
+    // A turn whose process went away is onExit's (this.proc changed): no turn.end, turnOpenAt kept.
     this.call('session/prompt', { sessionId: this.sessionId, prompt }, 0).then(
-      (r) => this.endTurn({ stopReason: r?.stopReason || 'end_turn', usage: r?.usage || null, startedAt }),
-      (err) => this.endTurn({ error: err.message, startedAt }),
+      (r) => { if (this.proc === proc) this.endTurn({ stopReason: r?.stopReason || 'end_turn', usage: r?.usage || null, startedAt }); },
+      (err) => { if (this.proc === proc) this.endTurn({ error: err.message, startedAt }); },
     );
   }
 
   endTurn({ stopReason, usage, error, startedAt }) {
     this.flushText();
-    for (const id of this.permissions.keys()) this.emit('permission.resolved', { requestId: id, behavior: 'cancelled' });
+    for (const uuid of this.turnItems || []) this.hub.journal?.done(this.id, uuid);
+    this.turnItems = [];
+    for (const [id, p] of this.permissions) { clearTimeout(p.timer); this.emit('permission.resolved', { requestId: id, behavior: 'cancelled' }); }
     this.permissions.clear();
     const interrupted = this.interrupted || stopReason === 'cancelled';
     let outcome;
@@ -740,8 +776,26 @@ export class HermesAgent {
 
 /** On Windows the venv's hermes.exe is a launcher with python.exe under it: stop the whole tree. */
 function killTree(proc) {
+  const plain = () => { try { proc.kill(); } catch { /* gone */ } };
   if (process.platform === 'win32' && proc.pid) {
-    try { spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }); return; } catch { /* fall through */ }
+    try {
+      const tk = spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+      tk.on('error', plain);
+      tk.on('exit', (code) => { if (code !== 0 && proc.exitCode === null) plain(); });
+      return;
+    } catch { /* fall through */ }
   }
-  try { proc.kill(); } catch { /* gone */ }
+  plain();
+}
+
+/** Pictures of a journal entry, read back from the files the page's upload left (as agent.js does). */
+function loadPictures(images) {
+  const out = [];
+  for (const p of Array.isArray(images) ? images : []) {
+    try {
+      const data = fs.readFileSync(p.path).toString('base64');
+      out.push({ data, mediaType: p.mediaType, name: p.name, path: p.path, fileId: registerAttachment(p.path, p.mediaType, true) });
+    } catch { /* gone */ }
+  }
+  return out;
 }

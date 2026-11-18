@@ -11,6 +11,7 @@
 // (the other one wins, tools stay `mcp__oasis__*`), so both tool names are pre-allowed either way.
 // If the Oasis page server is down when an agent starts, the server shows as failed and the agent works without it.
 import { createHash } from 'node:crypto';
+import { requiredToken } from './token.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -71,7 +72,9 @@ export function pluginShipsWorldTools(cwd, configDir = process.env.CLAUDE_CONFIG
 }
 
 export function worldToolsConfig() {
-  return { mcpServers: { [WORLD_SERVER]: { type: 'http', url: worldToolsUrl() } } };
+  // With a local key the page server asks for it on its tool route too.
+  const token = requiredToken();
+  return { mcpServers: { [WORLD_SERVER]: { type: 'http', url: worldToolsUrl(), ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}) } } };
 }
 
 let file = null;

@@ -126,12 +126,31 @@ async function characterNote($: EngineInterface, engine: string, sessionId: stri
   }
 }
 
-function post($: EngineInterface, engine: string, path: string, body: object) {
-  return $.http.fetch(`${engine}${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+/**
+ * The Oasis's local key (~/.oasis/token), read once through the launcher. An Oasis started with a key refuses
+ * requests without it; one started without (or none installed) gives '' and nothing is sent.
+ */
+let key: Promise<string> | undefined
+function localKey($: EngineInterface): Promise<string> {
+  return (key ??= $.process
+    .run(['node', `${$.plugin.root}/scripts/oasis-launch.mjs`, '--token'], { timeoutMs: 10_000 })
+    .then(ran => (ran.exitCode === 0 ? ran.stdout.trim() : ''))
+    .catch(() => ''))
+}
+
+async function post($: EngineInterface, engine: string, path: string, body: object) {
+  const send = async () => {
+    const token = await localKey($)
+    return $.http.fetch(`${engine}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(token ? { 'x-oasis-token': token } : {}) },
+      body: JSON.stringify(body),
+    })
+  }
+  const res = await send()
+  if (res.status !== 403) return res
+  key = undefined // the Oasis was installed or its key made after this session started: read it again, once
+  return send()
 }
 
 export const register: Register = on => {

@@ -11,6 +11,7 @@
 //
 // <agent>: a name (or the start of one), an agent id or a session id. OASIS_ENGINE_URL (default
 // http://127.0.0.1:4530). Appointments set here say who set them: OASIS_AGENT_ID's agent, else "the owner's shell".
+import { tokenHeaders } from '../src/token.js';
 const args = process.argv.slice(2);
 const flag = (name) => { const i = args.indexOf(name); if (i === -1) return null; const value = args[i + 1]; args.splice(i, 2); return value ?? null; };
 const base = (process.env.OASIS_ENGINE_URL || 'http://127.0.0.1:4530').replace(/\/+$/, '');
@@ -18,7 +19,7 @@ const base = (process.env.OASIS_ENGINE_URL || 'http://127.0.0.1:4530').replace(/
 async function cmd(body) {
   let response;
   try {
-    response = await fetch(`${base}/api/cmd`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    response = await fetch(`${base}/api/cmd`, { method: 'POST', headers: { 'content-type': 'application/json', ...tokenHeaders() }, body: JSON.stringify(body) });
   } catch {
     throw new Error(`the Oasis engine does not answer at ${base}`);
   }

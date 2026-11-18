@@ -13,6 +13,8 @@
 //   OASIS_WEB_PORT   the page server's port (default 4516)
 //   OASIS_PORT       the agent engine's port (default 4530)
 //   OASIS_NO_OPEN=1  do not open the browser
+//   OASIS_REQUIRE_TOKEN  1: both servers ask for the local key (always so in the slim edition); 0: never
+//   OASIS_TOKEN_FILE     where the key is kept (default ~/.oasis/token)
 //   OASIS_PNPM       the pnpm command to use (default: pnpm, else corepack's, else `npx pnpm@<pinned>`)
 //
 // Two editions run from this one file:
@@ -21,6 +23,7 @@
 //     `next build`, then `next start`.
 // Exit codes: 0 fine, 3 the page server did not come up in time, 6 setup failed.
 import { spawn, spawnSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
@@ -140,6 +143,30 @@ function fail(message) {
   return false
 }
 
+/**
+ * The local key: made once, kept in a file only its owner can read. Both servers get it and then refuse
+ * requests without it; the browser gets it in the address the village is opened with.
+ */
+const TOKEN_FILE = process.env.OASIS_TOKEN_FILE || path.join(os.homedir(), '.oasis', 'token')
+const REQUIRE_TOKEN = process.env.OASIS_REQUIRE_TOKEN === '1' || (SLIM && process.env.OASIS_REQUIRE_TOKEN !== '0')
+
+export function localToken(file = TOKEN_FILE) {
+  try {
+    const token = fs.readFileSync(file, 'utf8').trim()
+    if (/^[A-Za-z0-9_-]{32,}$/.test(token)) return token
+  } catch {
+    // made below
+  }
+  const token = randomBytes(32).toString('base64url')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, `${token}
+`, { mode: 0o600 })
+  try { fs.chmodSync(file, 0o600) } catch { /* Windows: the user's profile folder is already private */ }
+  return token
+}
+
+const tokenEnv = () => (REQUIRE_TOKEN ? { OASIS_LOCAL_TOKEN: localToken(), OASIS_TOKEN_FILE: TOKEN_FILE } : {})
+
 function webEnv() {
   const env = { OASIS_ENGINE_HTTP_URL: `http://127.0.0.1:${ENGINE_PORT}` }
   if (ENGINE_PORT !== 4530) env.NEXT_PUBLIC_AGENT_ENGINE_URL = `ws://127.0.0.1:${ENGINE_PORT}/ws`
@@ -192,8 +219,9 @@ function openBrowser(url) {
   }
 }
 
-export function villageUrl({ session = '', firstRun = false, port = WEB_PORT } = {}) {
+export function villageUrl({ session = '', firstRun = false, port = WEB_PORT, key = '' } = {}) {
   const query = new URLSearchParams({ profile: 'village' })
+  if (key) query.set('key', key)
   if (session) query.set('session', session)
   if (firstRun) query.set('firstRun', '1')
   return `http://localhost:${port}/?${query}`
@@ -209,6 +237,7 @@ async function start() {
     run.engine = startServer('engine', path.join(HOME, 'packages', 'oasis-agent-engine', 'src', 'index.js'), [], {
       OASIS_PORT: String(ENGINE_PORT),
       OASIS_WEB_URL: `http://127.0.0.1:${WEB_PORT}`,
+      ...tokenEnv(),
     })
     started.push('engine')
   }
@@ -216,7 +245,7 @@ async function start() {
     say(`The world was already running on port ${WEB_PORT}.`)
   } else {
     const next = bin('next', 'dist', 'bin', 'next')
-    run.web = startServer('world', next, [SLIM ? 'start' : 'dev', '-p', String(WEB_PORT), '-H', '127.0.0.1'], webEnv())
+    run.web = startServer('world', next, [SLIM ? 'start' : 'dev', '-p', String(WEB_PORT), '-H', '127.0.0.1'], { ...webEnv(), ...tokenEnv() })
     started.push('world')
   }
   if (started.length) {
@@ -234,7 +263,8 @@ async function start() {
     fs.writeFileSync(FIRST_RUN_FILE, JSON.stringify({ at: new Date().toISOString(), node: process.versions.node, platform: `${os.platform()} ${os.arch()}` }, null, 2))
   }
   const url = villageUrl({ session: arg('--session'), firstRun })
-  openBrowser(url)
+  // The key goes to the browser, never to the output (a log or a chat window would keep it).
+  openBrowser(REQUIRE_TOKEN ? villageUrl({ session: arg('--session'), firstRun, key: localToken() }) : url)
   say(process.env.OASIS_NO_OPEN ? `The Oasis is running at ${url}` : `Opened ${url}`)
   return 0
 }
@@ -244,6 +274,7 @@ async function status() {
   say(`Engine (port ${ENGINE_PORT}): ${engine ? 'running' : 'not running'}`)
   say(`World  (port ${WEB_PORT}): ${web ? 'running' : 'not running'}`)
   say(`Edition: ${SLIM ? 'slim' : 'workshop'}, in ${HOME}`)
+  say(`Local key: ${REQUIRE_TOKEN ? 'asked for' : 'not asked for'}`)
   return 0
 }
 

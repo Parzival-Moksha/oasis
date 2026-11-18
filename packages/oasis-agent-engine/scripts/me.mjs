@@ -12,6 +12,7 @@
 // Who is asking comes from the environment the engine starts each agent with: OASIS_AGENT_ID and
 // OASIS_ENGINE_URL. Anywhere else (a desktop session, another kind of agent, a terminal):
 // --agent <name, agent id or session id>, and OASIS_ENGINE_URL (default http://127.0.0.1:4530).
+import { tokenHeaders } from '../src/token.js';
 const args = process.argv.slice(2);
 const flag = (name) => { const i = args.indexOf(name); if (i === -1) return null; const value = args[i + 1]; args.splice(i, 2); return value || null; };
 const agent = flag('--agent') || flag('--session') || process.env.OASIS_AGENT_ID || '';
@@ -21,7 +22,7 @@ const [action, ...rest] = args;
 async function cmd(body) {
   let response;
   try {
-    response = await fetch(`${base}/api/cmd`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    response = await fetch(`${base}/api/cmd`, { method: 'POST', headers: { 'content-type': 'application/json', ...tokenHeaders() }, body: JSON.stringify(body) });
   } catch {
     throw new Error(`the Oasis engine does not answer at ${base}`);
   }

@@ -10,7 +10,10 @@
 //   3. Hands over to the Oasis's start script (<home>/scripts/oasis.mjs start), which starts the page server
 //      and the agent engine if they are not running, and opens the village in the browser.
 //
-//   node oasis-launch.mjs [--session <id>] [--home <folder>] [--from <file.tar.gz>] [--no-install] [--where]
+//   node oasis-launch.mjs [--session <id>] [--home <folder>] [--from <file.tar.gz>] [--no-install] [--where] [--token]
+//
+// --token prints the Oasis's local key (~/.oasis/token) and nothing else: the plugin's hooks send it with their
+// requests to the Oasis on this machine, which refuses requests without it. It is sent nowhere else.
 //
 // Exit codes: 0 opened, 2 the Oasis is not installed and was not installed now, 3 it did not come up in time,
 //             4 the download or its checksum failed, 5 Node is too old.
@@ -116,6 +119,10 @@ async function main() {
   if (Number(process.versions.node.split('.')[0]) < 20) {
     say(`The Oasis needs Node.js 20 or later (this is ${process.versions.node}).`)
     return 5
+  }
+  if (has('--token')) {
+    try { say(fs.readFileSync(process.env.OASIS_TOKEN_FILE || path.join(dataDir(), 'token'), 'utf8').trim()) } catch { /* no key: the Oasis runs without one */ }
+    return 0
   }
   let home = findHome()
   if (has('--where')) {

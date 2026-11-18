@@ -6,6 +6,7 @@
 //   ws://127.0.0.1:4530/listen  live dictation (Moonshine, see ears.js; ?engine=elevenlabs: scribe-live.js)
 //   GET  /api/agents, /api/sessions, /health
 //   GET  /file/<id>          a file an agent sent with SendUserFile (files.js; only those, by random id)
+import { tokenAllowed } from './token.js';
 import { setting } from './settings.js';
 import http from 'node:http';
 import path from 'node:path';
@@ -741,8 +742,12 @@ function hostAllowed(host) {
   return LOOPBACK.includes(name.toLowerCase());
 }
 
-function requestAllowed(req) {
-  return hostAllowed(req.headers.host) && originAllowed(req.headers.origin);
+// With a local key (token.js), every request carries it, except the two that cannot: /health (the plugin asks
+// whether the Oasis is up before it has a key; it says nothing private) and /hook (Claude Code's own http hooks).
+const OPEN_PATHS = new Set(['/health', '/hook']);
+function requestAllowed(req, url) {
+  if (!hostAllowed(req.headers.host) || !originAllowed(req.headers.origin)) return false;
+  return OPEN_PATHS.has(url?.pathname) || tokenAllowed(req, url);
 }
 
 function readBody(req, limit = 2 * 1024 * 1024) {
@@ -762,7 +767,7 @@ function sendJson(res, code, obj) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  if (!requestAllowed(req)) return sendJson(res, 403, { error: 'origin not allowed' });
+  if (!requestAllowed(req, url)) return sendJson(res, 403, { error: 'not allowed: this Oasis asks for its local key (open it with /oasis or scripts/oasis.mjs)' });
   try {
     if (req.method === 'GET' && url.pathname.startsWith('/file/')) return serveAttachment(url.pathname.slice('/file/'.length), res, req);
     if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, clients: clients.size, restart: restartInfo(), claude: resolveClaude(), ears: earsStatus(), clipWatchdog: clipWatchdogState(), liveScribe: { model: LIVE_SCRIBE_MODEL, ready: hasLiveScribe() }, places: { missions: setting('missionsDir'), grill: setting('grillFile') } });
@@ -827,7 +832,7 @@ const wss = new WebSocketServer({ noServer: true });
 const earsWss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  if (url.pathname === '/listen' && requestAllowed(req)) {
+  if (url.pathname === '/listen' && requestAllowed(req, url)) {
     earsWss.handleUpgrade(req, socket, head, (ws) => {
       // Voice typing through ElevenLabs when the page asks for it and there is a key; local Moonshine otherwise.
       if (url.searchParams.get('engine') === 'elevenlabs' && hasLiveScribe()) return listenScribe(ws, url, (m) => hub.log(m));
@@ -835,7 +840,7 @@ server.on('upgrade', (req, socket, head) => {
     });
     return;
   }
-  if (url.pathname !== '/ws' || !requestAllowed(req)) {
+  if (url.pathname !== '/ws' || !requestAllowed(req, url)) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     socket.destroy();
     return;

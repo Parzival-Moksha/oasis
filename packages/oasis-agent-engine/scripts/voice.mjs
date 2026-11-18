@@ -7,6 +7,7 @@
 // Who is asking comes from the environment the engine starts each agent with: OASIS_AGENT_ID and
 // OASIS_ENGINE_URL. Outside an agent: --agent <name or id> and OASIS_ENGINE_URL (default http://127.0.0.1:4530).
 // The owner's pick in the agent's settings menu wins over this.
+import { tokenHeaders } from '../src/token.js';
 const args = process.argv.slice(2);
 const flag = (name) => { const i = args.indexOf(name); if (i === -1) return null; const value = args[i + 1]; args.splice(i, 2); return value || null; };
 const agent = flag('--agent') || process.env.OASIS_AGENT_ID || '';
@@ -14,7 +15,7 @@ const base = (process.env.OASIS_ENGINE_URL || 'http://127.0.0.1:4530').replace(/
 const [action, key] = args;
 
 async function cmd(body) {
-  const response = await fetch(`${base}/api/cmd`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const response = await fetch(`${base}/api/cmd`, { method: 'POST', headers: { 'content-type': 'application/json', ...tokenHeaders() }, body: JSON.stringify(body) });
   const json = await response.json().catch(() => ({}));
   if (!response.ok || json.ok === false) throw new Error(json.error || `engine answered ${response.status}`);
   // Commands that answer {ok, data} arrive wrapped once more by /api/cmd.

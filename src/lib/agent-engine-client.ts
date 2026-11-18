@@ -6,6 +6,7 @@
 // retrying with exponential backoff and the slice reports `offline`; nothing else in the
 // Oasis depends on it.
 
+import { withLocalToken } from './local-token'
 import type {
   EngineScheduleEvery,
   EngineScheduleSettings,
@@ -57,7 +58,7 @@ export function agentEngineFileUrl(id: string, engineUrl: string = resolveAgentE
   base.protocol = base.protocol === 'wss:' ? 'https:' : 'http:'
   base.pathname = `/file/${encodeURIComponent(id)}`
   base.search = ''
-  return base.toString()
+  return withLocalToken(base.toString())
 }
 
 export interface BackoffOptions {
@@ -514,7 +515,7 @@ export class AgentEngineClient {
   private open(): void {
     let socket: WebSocketLike
     try {
-      socket = this.createSocket(this.url)
+      socket = this.createSocket(withLocalToken(this.url))
     } catch (error) {
       this.scheduleReconnect(error instanceof Error ? error.message : String(error))
       return
