@@ -14,6 +14,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { useRef, useEffect, useState, useContext } from 'react'
+import { isDragLookOn } from '../../lib/drag-look'
 import { useFrame, useLoader } from '@react-three/fiber'
 import { useKeyboardControls } from '@react-three/drei'
 import * as THREE from 'three'
@@ -604,7 +605,8 @@ export function PlayerAvatar({
 
     const mobile = getMobileInputSnapshot()
 
-    if (isThirdPersonActive && (pointerLocked || mobile.lookActive)) {
+    // Drag look (lib/drag-look.ts): a browser without pointer lock turns the camera by dragging.
+    if (isThirdPersonActive && (pointerLocked || mobile.lookActive || isDragLookOn())) {
       const mouseDelta = consumeMouseLookDelta()
       if (mouseDelta.x !== 0 || mouseDelta.y !== 0) {
         const sens = mouseSensitivity * 0.003

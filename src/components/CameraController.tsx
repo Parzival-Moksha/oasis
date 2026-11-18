@@ -29,6 +29,7 @@ import { useInputManager, getInputCapabilities, consumeMouseLookDelta, wasUILaye
 import { getMobileInputSnapshot, isProbablyMobileDevice } from '../lib/mobile-controls'
 import { setCameraSnapshot } from '../lib/camera-bridge'
 import { setPointerReleaseNotifier } from '../lib/pointer-release'
+import { isDragLookOn, setDragLookNotifier } from '../lib/drag-look'
 import { showNotice } from './forge/GlobalNotice'
 import { guardAudioListener } from '../lib/audio-listener-guard'
 import { deriveAvatarAnchoredWindowPlacement, resolveAgentWindowRenderScale } from '../lib/agent-avatar-utils'
@@ -164,7 +165,8 @@ function useMouseLook(sensitivity: number) {
   return (camera: THREE.PerspectiveCamera) => {
     const input = useInputManager.getState()
     const mobile = getMobileInputSnapshot()
-    const lookDriven = input.pointerLocked || mobile.lookActive
+    // Drag look (lib/drag-look.ts): a browser without pointer lock turns the camera by dragging.
+    const lookDriven = input.pointerLocked || mobile.lookActive || isDragLookOn()
     // ─═̷─ Don't drive the camera here when the prior base mode was third-person.
     // In that case PlayerAvatar owns the camera; running this mouse-look would
     // flip the player into a noclip-style direct-camera-rotate during placement
@@ -489,9 +491,11 @@ export function CameraController() {
     canvas.addEventListener('click', onClick)
     // When Escape had to stop a drag or a late lock, say so (lib/pointer-release.ts).
     setPointerReleaseNotifier(text => showNotice(text, 'info'))
+    setDragLookNotifier((text, tone) => showNotice(text, tone || 'info'))
     return () => {
       canvas.removeEventListener('click', onClick)
       setPointerReleaseNotifier(null)
+      setDragLookNotifier(null)
     }
   }, [])
 

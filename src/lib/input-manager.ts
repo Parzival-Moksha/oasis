@@ -7,8 +7,9 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { create } from 'zustand'
+import { LOCK_ANSWER_MS, installDragLook, isDragLookOn, noteLockFailed, noteLockGranted } from './drag-look'
 import { useEffect } from 'react'
-import { installPointerRelease, lockRequestPending, noteLockRequested } from './pointer-release'
+import { installPointerRelease, lockRequestPending, noteLockRequested, noteLockSettled } from './pointer-release'
 
 interface MouseLookDebugState {
   droppedSampleCount: number
@@ -490,15 +491,22 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     }
 
     if (!stillNeedsLock()) return
+    // This browser never gives the page the mouse (Claude Code's built-in browser): the camera turns by dragging.
+    if (isDragLookOn()) return
     // One request at a time: a second one while the first is on its way made the browser lock twice in a row.
     if (lockRequestPending()) return
     noteLockRequested()
+    // A refusal, or no answer at all (some embedded panes neither lock nor say no), counts once per request
+    // (lib/drag-look.ts decides when the camera turns by dragging instead).
+    let failed = false
+    const fail = (reason: string) => { if (!failed) { failed = true; noteLockSettled(); noteLockFailed(reason) } }
+    setTimeout(() => { if (!document.pointerLockElement && stillNeedsLock()) fail('no answer') }, LOCK_ANSWER_MS)
     try {
       const result = (canvas as HTMLElement).requestPointerLock() as unknown
       if (result && typeof (result as Promise<void>).then === 'function') {
-        ;(result as Promise<void>).catch(() => {/* state settles on the next user gesture */})
+        ;(result as Promise<void>).catch(() => fail('refused'))
       }
-    } catch {/* legacy sync throw, same handling */}
+    } catch { fail('refused') }
   },
 
   releasePointerLock: () => {
@@ -509,6 +517,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
 
   _syncPointerLockState: () => {
     const locked = !!document.pointerLockElement
+    if (locked) noteLockGranted()
     clearMouseLookAccumulator()
     skipNextMouseLookSample = locked
     mouseLookDebugState.lastPointerLockChangeAt = getMouseLookNow()
@@ -584,6 +593,8 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
 
     // Escape (key up) always gives the mouse back: lock, a lock on its way, pointer captures and their drags.
     const uninstallPointerRelease = installPointerRelease()
+    // No pointer lock in this browser: drag to look (lib/drag-look.ts), through the touch-look queue.
+    const uninstallDragLook = installDragLook(pushMouseLookDelta, () => get().can().mouseLook)
     document.addEventListener('pointerlockchange', onPointerLockChange)
     document.addEventListener('pointerlockerror', onPointerLockError)
     document.addEventListener(mouseLookEvent, onMouseLookMove)
@@ -594,6 +605,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
 
     return () => {
       uninstallPointerRelease()
+      uninstallDragLook()
       document.removeEventListener('pointerlockchange', onPointerLockChange)
       document.removeEventListener('pointerlockerror', onPointerLockError)
       document.removeEventListener(mouseLookEvent, onMouseLookMove)
