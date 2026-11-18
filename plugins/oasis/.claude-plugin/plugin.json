@@ -6,9 +6,9 @@
     "name": "Parzival-Moksha"
   },
   "license": "MIT",
-  "homepage": "https://github.com/Parzival-Moksha/oasis",
-  "repository": "https://github.com/Parzival-Moksha/oasis",
-  "privacyPolicyUrl": "https://github.com/Parzival-Moksha/oasis/blob/main/plugins/oasis/PRIVACY.md",
+  "homepage": "https://github.com/Parzival-Moksha/oasis-lite",
+  "repository": "https://github.com/Parzival-Moksha/oasis-lite",
+  "privacyPolicyUrl": "https://github.com/Parzival-Moksha/oasis-lite/blob/main/plugins/oasis/PRIVACY.md",
   "keywords": [
     "3d",
     "village",

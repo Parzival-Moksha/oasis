@@ -277,7 +277,7 @@ function writeCut({ chosen, avatarRows, data }, problems) {
   // package.json: the same dependencies (the lockfile must still match), the slim Oasis's own name and scripts.
   const pkg = JSON.parse(data.get('package.json').toString('utf8'))
   const plugin = JSON.parse(data.get('plugins/oasis/.claude-plugin/plugin.json').toString('utf8'))
-  pkg.name = 'oasis-village'
+  pkg.name = 'oasis-lite'
   pkg.version = plugin.version
   pkg.description = 'The Oasis: your Claude Code sessions as characters in a 3D village on your own machine.'
   pkg.license = 'MIT'
