@@ -1,4 +1,6 @@
 import { spawn } from 'child_process'
+import { resolveNpmCli } from '@/lib/claude-bin'
+import { checkImagePath, checkModel, checkSessionId } from '@/lib/cli-args'
 import type { ChildProcessWithoutNullStreams } from 'child_process'
 import { NextRequest } from 'next/server'
 
@@ -277,7 +279,16 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  const sessionId = body.sessionId?.trim()
+  // The session, the model and the image paths go on the CLI's command line: checked first (lib/cli-args.ts).
+  let sessionId: string | undefined
+  try {
+    sessionId = checkSessionId(body.sessionId)
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'bad request' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
   const existingRecord = sessionId ? await getAgentSessionRecord(sessionId) : null
   if (existingRecord && existingRecord.agentType !== 'codex') {
     return new Response(JSON.stringify({ error: `Session ${sessionId} belongs to ${existingRecord.agentType}` }), {
@@ -287,12 +298,21 @@ export async function POST(request: NextRequest) {
   }
 
   const modelSettings = await resolveCodexModelSettings()
-  const selectedModel = body.model?.trim() || existingRecord?.model || modelSettings.defaultModel
-  const images = Array.isArray(body.images)
-    ? body.images.filter((image): image is string => typeof image === 'string' && image.trim().length > 0)
-    : []
+  let selectedModel: string
+  let images: string[]
+  try {
+    selectedModel = checkModel(body.model, existingRecord?.model || modelSettings.defaultModel)
+    images = Array.isArray(body.images)
+      ? body.images.filter((image): image is string => typeof image === 'string' && image.trim().length > 0).map(image => checkImagePath(image))
+      : []
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'bad request' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
   const codexPrompt = buildCodexOasisPrompt(prompt, asRecord(body.oasisContext))
-  const codexPath = process.platform === 'win32' ? 'codex.cmd' : 'codex'
+  const codexCli = resolveNpmCli('codex', process.env.OASIS_CODEX_BIN)
   const args = buildCodexArgs({
     model: selectedModel,
     sessionId,
@@ -396,10 +416,11 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        child = spawn(codexPath, args, {
+        // No shell: the real program with an argument array (claude-bin.ts); a value can never become a command.
+        child = spawn(codexCli.command, [...codexCli.prefixArgs, ...args], {
           cwd: OASIS_ROOT,
           env: buildCodexCliEnv(),
-          shell: true,
+          shell: codexCli.shell,
           windowsHide: true,
         })
       } catch (error) {

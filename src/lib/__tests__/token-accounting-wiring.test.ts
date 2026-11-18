@@ -59,14 +59,19 @@ describe('token accounting wiring', () => {
     expect(anorakProPanel).toContain('summarizeUsageTokens')
   })
 
-  it('Merlin panel and profile button use the new token payload shape', () => {
+  it('Merlin panel uses the new token payload shape', () => {
     const merlinPanel = readSource('components/forge/MerlinPanel.tsx')
-    const profileButton = readSource('components/forge/ProfileButton.tsx')
-
     expect(merlinPanel).toContain("interface MerlinUsageEvent extends TokenUsagePayload")
     expect(merlinPanel).toContain("case 'usage'")
-    expect(profileButton).toContain('getProfileDisplayInputTokens(data.grand)')
-    expect(profileButton).toContain('formatProfileTokenCost(data)')
+  })
+
+  // The Profile's old "Token Burn" block (Oasis web panels only, it read zero for today and the week) was removed
+  // on 2026-11-16 at the owner's request: the Profile shows Claude Code's own numbers (ClaudeTokenScore: the
+  // transcript index, plan limits, daily charts by model family).
+  it('profile button shows Claude Code token usage, not the old token-burn block', () => {
+    const profileButton = readSource('components/forge/ProfileButton.tsx')
+    expect(profileButton).toContain('<ClaudeTokenScore />')
+    expect(profileButton).not.toContain('getProfileDisplayInputTokens(data.grand)')
   })
 
   it('Prisma token storage includes provider, session, cached input, and cost fields', () => {

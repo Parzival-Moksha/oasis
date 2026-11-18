@@ -16,7 +16,7 @@
     "stress:room": "node scripts/oasis-room-swarm.mjs",
     "docs:local": "node scripts/sync-local-docs.mjs",
     "build": "next build",
-    "start": "next start -p 4516",
+    "start": "next start -p 4516 -H 127.0.0.1",
     "smoke:relay-hosted": "node scripts/openclaw-relay-hosted-smoke.mjs",
     "deploy:openclaw": "node scripts/deploy-openclaw-parzival.mjs",
     "seed:default-worlds": "npx tsx prisma/seed-default-worlds.ts",

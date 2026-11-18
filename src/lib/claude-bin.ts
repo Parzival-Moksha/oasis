@@ -14,36 +14,44 @@ export interface ClaudeCli {
   shell: boolean
 }
 
-let cached: ClaudeCli | null = null
+const cache = new Map<string, ClaudeCli>()
 
-export function resolveClaudeCli(): ClaudeCli {
-  if (cached) return cached
-  const override = process.env.OASIS_CLAUDE_BIN
+/**
+ * Any npm-installed CLI (claude, codex): its real program, so it starts without a shell. On Windows the npm shim
+ * `<name>.cmd` only runs its target (.exe, or a .js under node_modules): read that target from the shim.
+ * `override`: a program to use instead (a .js runs with this node).
+ */
+export function resolveNpmCli(name: string, override?: string): ClaudeCli {
+  const known = cache.get(name)
+  if (known) return known
+  const remember = (cli: ClaudeCli) => { cache.set(name, cli); return cli }
   if (override) {
-    cached = override.endsWith('.js')
+    return remember(override.endsWith('.js')
       ? { command: process.execPath, prefixArgs: [override], shell: false }
-      : { command: override, prefixArgs: [], shell: false }
-    return cached
+      : { command: override, prefixArgs: [], shell: false })
   }
-  if (process.platform !== 'win32') return (cached = { command: 'claude', prefixArgs: [], shell: false })
+  if (process.platform !== 'win32') return remember({ command: name, prefixArgs: [], shell: false })
 
   const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean)
   for (const dir of dirs) {
-    const exe = path.join(dir, 'claude.exe')
-    if (fs.existsSync(exe)) return (cached = { command: exe, prefixArgs: [], shell: false })
+    const exe = path.join(dir, `${name}.exe`)
+    if (fs.existsSync(exe)) return remember({ command: exe, prefixArgs: [], shell: false })
   }
   for (const dir of dirs) {
-    const shim = path.join(dir, 'claude.cmd')
+    const shim = path.join(dir, `${name}.cmd`)
     if (!fs.existsSync(shim)) continue
     const match = fs.readFileSync(shim, 'utf8').match(/"%dp0%\\([^"]+?\.(exe|js|cjs|mjs))"/i)
     const target = match ? path.join(dir, match[1]) : ''
     if (target && fs.existsSync(target)) {
-      cached = /\.exe$/i.test(target)
+      return remember(/\.exe$/i.test(target)
         ? { command: target, prefixArgs: [], shell: false }
-        : { command: process.execPath, prefixArgs: [target], shell: false }
-      return cached
+        : { command: process.execPath, prefixArgs: [target], shell: false })
     }
-    return (cached = { command: shim, prefixArgs: [], shell: true })
+    return remember({ command: shim, prefixArgs: [], shell: true })
   }
-  return (cached = { command: 'claude.cmd', prefixArgs: [], shell: true })
+  return remember({ command: `${name}.cmd`, prefixArgs: [], shell: true })
+}
+
+export function resolveClaudeCli(): ClaudeCli {
+  return resolveNpmCli('claude', process.env.OASIS_CLAUDE_BIN)
 }

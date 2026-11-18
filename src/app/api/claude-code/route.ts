@@ -23,6 +23,8 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest } from 'next/server'
 import { spawn } from 'child_process'
+import { resolveClaudeCli } from '@/lib/claude-bin'
+import { checkModel, checkSessionId } from '@/lib/cli-args'
 import path from 'path'
 import fs from 'fs'
 import {
@@ -234,8 +236,18 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  const agentModel = model || 'opus'
-  const isResume = !!sessionId
+  // Both go on the CLI's command line: only a model id and a session uuid (lib/cli-args.ts).
+  let agentModel: string
+  let resumeId: string | undefined
+  try {
+    agentModel = checkModel(model, 'opus')
+    resumeId = checkSessionId(sessionId)
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'bad request' }), {
+      status: 400, headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  const isResume = !!resumeId
   const selectedAgent = body.agent === 'anorak-pro' ? 'anorak-pro' : null
   const usageProvider = 'anthropic'
   const usageSource = selectedAgent ? 'anorak-pro-chat' : 'anorak'
@@ -243,7 +255,7 @@ export async function POST(request: NextRequest) {
   console.log(`[ClaudeCode] ${isResume ? 'Resuming' : 'New'} ${selectedAgent || 'default'} session (${agentModel}): "${prompt.substring(0, 80)}"`)
 
   // ── BUILD CLI ARGS ────────────────────────────────────────
-  const claudePath = process.platform === 'win32' ? 'claude.cmd' : 'claude'
+  const claudeCli = resolveClaudeCli()
 
   // Ensure MCP config file exists for mission-mcp (media + mission tools)
   // Agent-mode invocations rely on the repo's .mcp.json for the full tool surface.
@@ -266,8 +278,8 @@ export async function POST(request: NextRequest) {
   if (mcpConfigPath) {
     args.push('--mcp-config', mcpConfigPath)
   }
-  if (isResume && sessionId) {
-    args.push('--resume', sessionId)
+  if (resumeId) {
+    args.push('--resume', resumeId)
   }
 
   let fullPrompt = isResume
@@ -313,9 +325,10 @@ export async function POST(request: NextRequest) {
       const keepAliveInterval = setInterval(sendKeepAlive, 15000)
 
       // ── SPAWN CLAUDE CODE ───────────────────────────────
-      const child = spawn(claudePath, args, {
+      // No shell: the real program with an argument array (claude-bin.ts); a value can never become a command.
+      const child = spawn(claudeCli.command, [...claudeCli.prefixArgs, ...args], {
         cwd: OASIS_ROOT,
-        shell: true,
+        shell: claudeCli.shell,
         env: buildClaudeCliEnv(),
         windowsHide: true,
       })
@@ -324,7 +337,7 @@ export async function POST(request: NextRequest) {
       child.stdin.end()
 
       let streamBuffer = ''
-      let capturedSessionId = sessionId || ''
+      let capturedSessionId = resumeId || ''
       let latestUsage: TokenUsagePayload = {
         inputTokens: 0,
         outputTokens: 0,

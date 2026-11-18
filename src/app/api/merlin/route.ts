@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { spawn } from 'child_process'
+import { resolveClaudeCli } from '@/lib/claude-bin'
+import { checkSessionId } from '@/lib/cli-args'
 import fs from 'fs'
 import path from 'path'
 
@@ -376,7 +378,13 @@ export async function POST(request: NextRequest) {
 
   const worldId = sanitizeWorldId(body.worldId)
   const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
-  const requestedSessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : ''
+  // It goes on the CLI's command line: only a session uuid (lib/cli-args.ts). The model is from MERLIN_MODELS.
+  let requestedSessionId = ''
+  try {
+    requestedSessionId = checkSessionId(body.sessionId) || ''
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'bad request' }, { status: 400 })
+  }
   const model = resolveMerlinModel(body.model)
   const playerContext = parsePromptPlayerContext(body.playerContext)
   const usageProvider = 'anthropic'
@@ -396,7 +404,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const claudePath = process.platform === 'win32' ? 'claude.cmd' : 'claude'
+  const claudeCli = resolveClaudeCli()
   const mcpConfigPath = ensureMerlinMcpConfig(worldId)
   const isResume = Boolean(requestedSessionId)
   const args = [
@@ -461,9 +469,10 @@ export async function POST(request: NextRequest) {
         void recordSession(requestedSessionId)
       }
 
-      const child = spawn(claudePath, args, {
+      // No shell: the real program with an argument array (claude-bin.ts); a value can never become a command.
+      const child = spawn(claudeCli.command, [...claudeCli.prefixArgs, ...args], {
         cwd: OASIS_ROOT,
-        shell: true,
+        shell: claudeCli.shell,
         env: buildClaudeCliEnv(),
         windowsHide: true,
       })
