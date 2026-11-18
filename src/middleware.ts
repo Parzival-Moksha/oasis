@@ -25,7 +25,8 @@ export function middleware(request: NextRequest) {
   if (verdict.action === 'deny') return NextResponse.json({ error: verdict.error }, { status: verdict.status })
   if (verdict.action === 'set-cookie') {
     // Keep the key out of the address bar and the history: store it, then show the same page without it.
-    const clean = request.nextUrl.clone()
+    // Back to the very address that was asked for (localhost and 127.0.0.1 keep separate cookies).
+    const clean = new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, `http://${request.headers.get('host')}`)
     clean.searchParams.delete('key')
     const response = NextResponse.redirect(clean)
     response.cookies.set(LOCAL_TOKEN_COOKIE, required, { sameSite: 'strict', path: '/', maxAge: 60 * 60 * 24 * 365 })
