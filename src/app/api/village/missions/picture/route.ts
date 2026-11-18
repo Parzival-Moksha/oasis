@@ -6,6 +6,7 @@ import path from 'node:path'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { guardAgentRoute } from '@/lib/local-request-guard'
+import { missionsDir } from '@/lib/oasis-settings'
 import { isMissionPicture } from '@/lib/village/village-missions'
 
 export const dynamic = 'force-dynamic'
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
   if (denied) return denied
   const name = new URL(request.url).searchParams.get('name') || ''
   if (!isMissionPicture(name) || name !== path.basename(name)) return NextResponse.json({ error: 'not a picture name' }, { status: 400 })
-  const dir = process.env.OASIS_MISSIONS_DIR || 'C:\\7c_oasis\\docs\\missions'
+  const dir = missionsDir()
   try {
     const bytes = await fs.readFile(path.join(dir, 'pictures', name))
     return new NextResponse(new Uint8Array(bytes), {

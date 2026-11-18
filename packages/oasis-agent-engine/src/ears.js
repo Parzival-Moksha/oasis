@@ -9,6 +9,7 @@
 // Which Python and which model folder: OASIS_EARS_PYTHON / OASIS_EARS_MODELS, else the engine's own ears/.venv and
 // ears/.cache, else Tyler's (C:/7f_Tyler, or OASIS_TYLER_DIR), which already has the helper's packages and the models.
 // With none of them, the first press of the mic creates ears/.venv and installs ears/requirements.txt (about 50 MB).
+import { setting } from './settings.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,9 +24,10 @@ const isWin = process.platform === 'win32';
 const venvPython = (venv) => (isWin ? path.join(venv, 'Scripts', 'python.exe') : path.join(venv, 'bin', 'python'));
 const OWN_VENV = path.join(EARS_DIR, '.venv');
 const OWN_MODELS = path.join(EARS_DIR, '.cache');
-const TYLER = process.env.OASIS_TYLER_DIR || (isWin ? 'C:/7f_Tyler' : path.join(os.homedir(), '7f_Tyler'));
-const TYLER_PYTHON = venvPython(path.join(TYLER, 'Tyler', 'ears', '.venv'));
-const TYLER_MODELS = path.join(TYLER, 'studio', '.cache', 'ears');
+// A folder that already has the helper set up (this machine's `tylerDir` setting); without one the engine builds its own.
+const TYLER = setting('tylerDir');
+const TYLER_PYTHON = TYLER ? venvPython(path.join(TYLER, 'Tyler', 'ears', '.venv')) : '';
+const TYLER_MODELS = TYLER ? path.join(TYLER, 'studio', '.cache', 'ears') : '';
 export const EARS_MODEL = process.env.OASIS_EARS_MODEL || 'moonshine-medium';
 const IDLE_MS = 20 * 60_000;
 const SETUP_OK = path.join(OWN_VENV, 'oasis-ears.ok');
@@ -33,10 +35,10 @@ const SETUP_OK = path.join(OWN_VENV, 'oasis-ears.ok');
 export function earsPaths() {
   const python = process.env.OASIS_EARS_PYTHON
     || (fs.existsSync(SETUP_OK) ? venvPython(OWN_VENV) : null)
-    || (fs.existsSync(TYLER_PYTHON) ? TYLER_PYTHON : null);
+    || (TYLER_PYTHON && fs.existsSync(TYLER_PYTHON) ? TYLER_PYTHON : null);
   const models = process.env.OASIS_EARS_MODELS
     || (fs.existsSync(OWN_MODELS) ? OWN_MODELS : null)
-    || (fs.existsSync(TYLER_MODELS) ? TYLER_MODELS : OWN_MODELS);
+    || (TYLER_MODELS && fs.existsSync(TYLER_MODELS) ? TYLER_MODELS : OWN_MODELS);
   return { python, models, model: EARS_MODEL };
 }
 

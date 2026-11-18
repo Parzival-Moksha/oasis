@@ -25,11 +25,6 @@
 // messages, so the mod leaves those alone (OASIS_AGENT_ID is set in their environment).
 import type { Register, EngineInterface } from 'claude-code'
 
-/** Where the owner keeps the mission board; OASIS_MISSIONS_DIR overrides it. */
-const MISSIONS_DIR = 'C:\\7c_oasis\\docs\\missions'
-/** Where questions for the owner that can wait are collected; OASIS_GRILL_FILE overrides it. */
-const GRILL_FILE = 'C:/7c_oasis/docs/grill/open.md'
-
 /** Short, about 200 tokens: where the session is, its tools, and where things for the owner go. */
 function oasisNote(missions: string, grill: string, canSendFiles: boolean): string {
   return [
@@ -38,18 +33,28 @@ function oasisNote(missions: string, grill: string, canSendFiles: boolean): stri
     'The owner may talk to this session there, by voice or text; what they say arrives here as an ordinary prompt.',
     'The Oasis MCP server (tools named oasis) can look at that world, place and change things in it, and take screenshots.',
     ...(canSendFiles ? ['To show the owner a picture, an audio file, a video or a document, send the file with SendUserFile (it plays or opens in the thread); a file path alone is not enough.'] : []),
-    `The mission board is the folder ${missions}.`,
-    `Questions for the owner that are not urgent go at the bottom of ${grill}, under "Added by agents": one line with your name, the question and your recommendation, instead of waiting in this thread.`,
+    ...(missions ? [`The mission board is the folder ${missions}.`] : []),
+    ...(grill ? [`Questions for the owner that are not urgent go at the bottom of ${grill}, under "Added by agents": one line with your name, the question and your recommendation, instead of waiting in this thread.`] : []),
   ].join('\n')
 }
 
-/** The section, or null when the Oasis engine doesn't answer (then the session is told nothing). */
+/**
+ * The section, or null when the Oasis engine doesn't answer (then the session is told nothing).
+ * Where the mission board and the list of questions are is the machine's own business: the engine says
+ * (`places` in /health, from its settings), and OASIS_MISSIONS_DIR / OASIS_GRILL_FILE override it.
+ */
 async function oasisSection($: EngineInterface, fallback: string, canSendFiles: boolean): Promise<string | null> {
   try {
     const at = ((await $.env.get('OASIS_ENGINE_URL')) || fallback).replace(/\/+$/, '')
     const health = await $.http.fetch(`${at}/health`)
     if (!health.ok) return null
-    return oasisNote((await $.env.get('OASIS_MISSIONS_DIR')) || MISSIONS_DIR, (await $.env.get('OASIS_GRILL_FILE')) || GRILL_FILE, canSendFiles)
+    let places: { missions?: string; grill?: string } = {}
+    try {
+      places = (JSON.parse(health.text) as { places?: { missions?: string; grill?: string } }).places || {}
+    } catch {
+      places = {}
+    }
+    return oasisNote((await $.env.get('OASIS_MISSIONS_DIR')) || places.missions || '', (await $.env.get('OASIS_GRILL_FILE')) || places.grill || '', canSendFiles)
   } catch {
     return null
   }

@@ -1,7 +1,8 @@
 // Session-list helpers for the village picker. Pure: the engine's listSessions rows in, rows out.
 import type { EngineSessionMeta } from '../agent-engine-types'
 
-export const DEFAULT_ANORAK_PRO_CWD = 'C:\\7c_oasis'
+/** No lead-agent folder unless this machine names one (the `anorakProCwd` setting, GET /api/village/settings). */
+export const DEFAULT_ANORAK_PRO_CWD = ''
 
 export function normalizeCwd(cwd: string | null | undefined): string {
   return (cwd || '').trim().replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
@@ -32,6 +33,7 @@ export function pickSuggestions(
   anorakCwd: string = DEFAULT_ANORAK_PRO_CWD,
 ): { anorak: EngineSessionMeta | null; recent: EngineSessionMeta[] } {
   const target = normalizeCwd(anorakCwd)
+  if (!target) return { anorak: null, recent: [...sessions].sort((a, b) => b.mtime - a.mtime).slice(0, 5) }
   const sorted = [...sessions].sort((a, b) => b.mtime - a.mtime)
   return {
     anorak: sorted.find(session => normalizeCwd(session.cwd) === target) || null,

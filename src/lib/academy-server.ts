@@ -6,6 +6,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
+import { academyDirSetting } from './oasis-settings'
 import { ACADEMY_SAMPLE_KEYS, ACADEMY_SAMPLE_SKILLS } from './village/academy-sample'
 import {
   applyAcademyUpdate,
@@ -19,10 +20,8 @@ import {
   type AcademyUpdateResult,
 } from './village/village-academy'
 
-const DEFAULT_DIR = 'C:\\7c_oasis\\academy'
-
 export function academyDir(): string {
-  return process.env.OASIS_ACADEMY_DIR || DEFAULT_DIR
+  return academyDirSetting()
 }
 
 export function academyStatePath(): string {

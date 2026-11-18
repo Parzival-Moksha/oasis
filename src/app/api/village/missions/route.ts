@@ -12,18 +12,14 @@ import path from 'node:path'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { guardAgentRoute } from '@/lib/local-request-guard'
+import { missionsDir } from '@/lib/oasis-settings'
 import { isMissionFile, isMissionPicture, parseMission, rankMissions } from '@/lib/village/village-missions'
 import { appendMissionLog, missionFileName, newMissionMarkdown, setMissionHeader, type MissionHeaderPatch } from '@/lib/village/village-mission-edit'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const DEFAULT_DIR = 'C:\\7c_oasis\\docs\\missions'
 const MAX_BYTES = 400_000
-
-function missionsDir(): string {
-  return process.env.OASIS_MISSIONS_DIR || DEFAULT_DIR
-}
 
 /** Only a plain mission file name inside the folder: no path, no README. */
 function missionPath(file: unknown): string | null {

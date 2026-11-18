@@ -9,14 +9,13 @@ import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '../../lib/input-manager'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import type { EngineSessionMeta, SpawnAgentArgs } from '../../lib/agent-engine-types'
-import { DEFAULT_ANORAK_PRO_CWD, filterSessions, pickSuggestions } from '../../lib/village/village-sessions'
+import { filterSessions, pickSuggestions } from '../../lib/village/village-sessions'
+import { useVillageSettings } from '../../lib/village/village-settings-client'
 import { VILLAGE_PICKER_LAYER, focusVillageAgent, openVillagePicker } from './village-actions'
 import { cwdLabel, formatAgo, formatBytes } from './village-status'
 import { FolderBrowser } from './FolderBrowser'
 import { CUSTOM_MODEL_VALUE, cleanModelId, mergeModelLists, type ModelOption } from '../../lib/village/village-models'
 
-/** Anorak Pro's home folder (override with NEXT_PUBLIC_ANORAK_PRO_CWD). */
-const ANORAK_PRO_CWD = process.env.NEXT_PUBLIC_ANORAK_PRO_CWD || DEFAULT_ANORAK_PRO_CWD
 const PAGE = 60
 const FETCH_STEP = 300
 const MODES = ['', 'default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
@@ -209,7 +208,9 @@ function NewAgentForm({ defaults, onDone, onError, initialCwd = '', recentFolder
 
 /** Anorak Pro is always on offer; the 5 most recent sessions only while the village is empty. */
 function Suggestions({ sessions, defaults, onDone, onError, showRecent }: { sessions: EngineSessionMeta[]; defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink; showRecent: boolean }) {
-  const { anorak, recent } = useMemo(() => pickSuggestions(sessions, ANORAK_PRO_CWD), [sessions])
+  // Anorak Pro's home folder is this machine's (`anorakProCwd`); a machine without one gets no such entry.
+  const ANORAK_PRO_CWD = useVillageSettings().anorakProCwd
+  const { anorak, recent } = useMemo(() => pickSuggestions(sessions, ANORAK_PRO_CWD), [sessions, ANORAK_PRO_CWD])
   const [busy, setBusy] = useState(false)
   const newAnorak = () => {
     const args: SpawnAgentArgs = { name: 'Anorak Pro', cwd: ANORAK_PRO_CWD }
@@ -224,8 +225,8 @@ function Suggestions({ sessions, defaults, onDone, onError, showRecent }: { sess
   }
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200/80">Start here</div>
-      <div className="rounded-lg border border-fuchsia-300/30 bg-fuchsia-500/10 px-3 py-2">
+      {ANORAK_PRO_CWD && <div className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200/80">Start here</div>}
+      {ANORAK_PRO_CWD && <div className="rounded-lg border border-fuchsia-300/30 bg-fuchsia-500/10 px-3 py-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="text-[13px] font-black text-white">Anorak Pro</div>
@@ -236,7 +237,7 @@ function Suggestions({ sessions, defaults, onDone, onError, showRecent }: { sess
           </button>
         </div>
         {anorak && <div className="mt-2"><SessionRow session={{ ...anorak, title: `Anorak Pro: ${anorak.title}` }} defaults={defaults} onDone={onDone} onError={onError} /></div>}
-      </div>
+      </div>}
       {showRecent && recent.length > 0 && <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/45">Most recent</div>}
       {showRecent && recent.map(session => <SessionRow key={session.path} session={session} defaults={defaults} onDone={onDone} onError={onError} />)}
     </div>

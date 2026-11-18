@@ -25,6 +25,7 @@ import {
 } from './village-mission-store'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS } from './village-status'
 import { formatClock } from '../../lib/village/work-vow'
+import { getVillageSettings } from '../../lib/village/village-settings-client'
 import { getWorkVowState, setWorkMission, subscribeWorkVow } from './work-vow-client'
 
 const FIELD = 'rounded border border-white/15 bg-black/50 px-1 py-0.5 text-[11.5px] text-white outline-none focus:border-sky-300/70'
@@ -175,6 +176,7 @@ export function MissionSheet({ mission, mode }: { mission: Mission; mode: 'side'
         title: mission.title,
         who: mission.who,
         text: message,
+        dir: (await getVillageSettings()).missionsDir,
         villageAgents: agents.filter(agent => agent.owned && agent.id !== target.agent.id).map(agent => agent.name),
       }))
       await logMission(mission.file, `Handed to ${target.agent.name}.`, 'Mindcraft')

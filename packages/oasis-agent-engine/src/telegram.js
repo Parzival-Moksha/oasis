@@ -18,6 +18,7 @@
 //
 // Runs only in the real engine (port 4530) unless OASIS_TELEGRAM=1; OASIS_TELEGRAM=0 turns it off. Test engines on other
 // ports never touch the bot. The token never reaches a log line, a message or an error text (redact()).
+import { envValue, ownEnvValue, setting } from './settings.js';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -37,7 +38,6 @@ export const TELL_GAP_MS = 30 * 60_000;
 /** After a restart, an agent that owed a reply here still owes it for this long (journal.js `owed`). */
 const REARM_MS = 15 * 60_000;
 const SCRIBE_API = 'https://api.elevenlabs.io/v1/speech-to-text';
-const SCRIBE_ENV = 'C:/cb_video/claude/.env'; // where C:/8f_dirk/scribe.py reads ELEVENLABS_API_KEY
 
 export const STATUS_EMOJI = { working: '🟢', waiting: '🔵', 'needs-decision': '🟠', error: '🔴', idle: '⚪' };
 
@@ -212,13 +212,13 @@ export function pingText(a, { lastText = '', lastTurnEnd = null } = {}) {
   return `🟠 ${name} needs you: ${clipLine(what, 400)}`;
 }
 
-/** ELEVENLABS_API_KEY from the environment, else from the file scribe.py reads. Never logged. */
-export function readScribeKey(file = process.env.OASIS_SCRIBE_ENV || SCRIBE_ENV) {
+/** ELEVENLABS_API_KEY from the environment, else the Oasis's own .env, else the file this machine names (`scribeEnv`). Never logged. */
+export function readScribeKey(file = setting('scribeEnv')) {
   if (process.env.ELEVENLABS_API_KEY) return process.env.ELEVENLABS_API_KEY.trim();
-  try {
-    const m = fs.readFileSync(file, 'utf8').match(/^\s*ELEVENLABS_API_KEY\s*=\s*(.*)$/m);
-    return m ? m[1].trim().replace(/^["']|["']$/g, '') : '';
-  } catch { return ''; }
+  const own = ownEnvValue('ELEVENLABS_API_KEY');
+  if (own) return own;
+  if (!file) return '';
+  try { return envValue(fs.readFileSync(file, 'utf8'), 'ELEVENLABS_API_KEY'); } catch { return ''; }
 }
 
 const sleep = (ms, signal) => new Promise((resolve) => {

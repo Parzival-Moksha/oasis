@@ -7,9 +7,7 @@ import path from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-// @ts-expect-error a plain .mjs file without types
 import * as proxyModule from '../../../plugins/oasis/mcp/oasis-mcp.mjs'
-// @ts-expect-error a plain .js file without types
 import * as worldtoolsModule from '../../../packages/oasis-agent-engine/src/worldtools.js'
 
 type Tool = { name: string; title?: string; annotations?: Record<string, unknown> }

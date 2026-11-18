@@ -38,7 +38,9 @@ export function findMissionAgent<T extends DispatchAgentLike>(agents: Iterable<T
 
 /** The message the agent receives. */
 export function formatMissionNote(input: { file: string; title: string; who: string; text: string; dir?: string; villageAgents?: string[] }): string {
-  const path = `${(input.dir || 'C:\\7c_oasis\\docs\\missions').replace(/[\\/]+$/, '')}\\${input.file}`
+  // The folder is this machine's (GET /api/village/settings); without it the agent gets the file's name.
+  const dir = (input.dir || '').replace(/[\\/]+$/, '')
+  const path = dir ? `${dir}${dir.includes('/') && !dir.includes('\\') ? '/' : '\\'}${input.file}` : input.file
   const others = (input.villageAgents || []).filter(Boolean)
   return [
     `[Mindcraft] The owner left a note on the mission "${input.title}" (${path}):`,

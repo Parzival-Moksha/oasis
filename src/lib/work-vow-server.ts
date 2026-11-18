@@ -6,6 +6,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
+import { missionsDir } from './oasis-settings'
 import { appendMissionLog } from './village/village-mission-edit'
 import { missionForAgent } from './village/mission-dispatch'
 import { isMissionFile, parseMission, type Mission } from './village/village-missions'
@@ -34,10 +35,6 @@ import {
 
 export function workVowPath(): string {
   return process.env.OASIS_WORK_VOW_STATE || path.join(process.cwd(), 'data', 'work-vow.local.json')
-}
-
-function missionsDir(): string {
-  return process.env.OASIS_MISSIONS_DIR || 'C:\\7c_oasis\\docs\\missions'
 }
 
 /** No file yet is an empty book. A file that cannot be read is an error: never overwrite days with nothing. */
