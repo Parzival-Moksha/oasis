@@ -12,6 +12,37 @@ export interface OlderHistoryState {
 }
 
 const IDLE: OlderHistoryState = { loading: false, error: null }
+
+// ─── a piece lands only while the thread is not being scrolled ──────────────────────────────────────────────
+// The owner (2026-11-18, again after 3a6b7a2): scroll up one screen, and the thread flies 10 to 30 screens up.
+// The thread is column-reverse, so a piece added above should leave the view where it is; but a wheel scroll the
+// browser animates aims at a spot counted from the top, and when a piece lands mid-animation the scroll carries on
+// up through all of it (and near the top loads the next piece, and flies through that too). Setting scrollTop does
+// not stop a scroll the compositor runs. So a piece that arrives while the thread is being scrolled waits until the
+// thread has not moved for SCROLL_QUIET_MS, then lands: no animation is running when the content grows.
+export const SCROLL_QUIET_MS = 250
+const MAX_HOLD_MS = 15_000
+const lastScroll = new Map<string, number>()
+
+/** The thread of this agent moved (a scroll or wheel event). */
+export function noteThreadScroll(agentId: string, at = Date.now()): void {
+  lastScroll.set(agentId, at)
+}
+
+/** How long to wait before a piece may land (0: now). */
+export function holdForScrollMs(agentId: string, now = Date.now(), heldSince = now): number {
+  if (now - heldSince >= MAX_HOLD_MS) return 0
+  const last = lastScroll.get(agentId)
+  if (last === undefined) return 0
+  return Math.max(0, SCROLL_QUIET_MS - (now - last))
+}
+
+async function scrollSettled(agentId: string): Promise<void> {
+  const since = Date.now()
+  for (let wait = holdForScrollMs(agentId, since, since); wait > 0; wait = holdForScrollMs(agentId, Date.now(), since)) {
+    await new Promise(resolve => setTimeout(resolve, wait))
+  }
+}
 const states = new Map<string, OlderHistoryState>()
 const listeners = new Set<() => void>()
 
@@ -49,6 +80,7 @@ export async function loadOlderHistory(agentId: string): Promise<boolean> {
       { agentId, before: cursor.before, anchor: cursor.anchor ?? null },
       { timeoutMs: 60_000 },
     )
+    await scrollSettled(agentId)
     useOasisStore.getState().agentEngineDispatch({
       type: 'history/older',
       agentId,

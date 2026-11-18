@@ -24,7 +24,7 @@ import { openVillageImages, toggleVillageScreen } from './village-actions'
 import { agentEngineFileUrl } from '../../lib/agent-engine-client'
 import { groupThread, threadImages, toolRunShape, type ThreadItem } from '../../lib/village/village-thread'
 import { hasInjectedText, parseInjectedUserText, type TaskNotice } from '../../lib/village/village-injected'
-import { getOlderHistoryState, loadOlderHistory, retryOlderHistory, subscribeOlderHistory } from './village-history'
+import { getOlderHistoryState, loadOlderHistory, noteThreadScroll, retryOlderHistory, subscribeOlderHistory } from './village-history'
 import { formatMessageTime, fullMessageTime } from '../../lib/village/message-time'
 import { hideSpokenLive, splitSpoken } from '../../lib/village/village-spoken'
 import { SpokenAgentContext, SpokenReply } from './CompanionToggles'
@@ -707,7 +707,9 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
       <div
         ref={scrollRef}
         data-village-thread
-        onScroll={compact ? undefined : maybeLoadOlder}
+        // Every scroll is noted: a piece of older history waits until the thread is still (village-history.ts). Not
+        // wheel events: at the top the wheel moves nothing, and the next piece should land then.
+        onScroll={compact ? undefined : () => { noteThreadScroll(agentId); maybeLoadOlder() }}
         className={`flex min-h-0 flex-1 flex-col-reverse overflow-y-auto pr-1 [scrollbar-width:thin] ${BRIGHT_GRAYS}`}
       >
       <div className="flex flex-col gap-1.5">
