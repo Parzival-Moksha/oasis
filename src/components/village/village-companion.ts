@@ -16,6 +16,7 @@
 // plays. It is only in the scene while a clip plays, and a clip only starts on a running AudioContext, so
 // nothing can queue ramps on a suspended context the way the listener once did.
 
+import { speakInBrowser, stopBrowserSpeech } from '../../lib/village/browser-speech'
 import * as THREE from 'three'
 import { getAudioListener } from '../CameraController'
 import { registerLipSync, unregisterLipSync, type LipSyncController } from '../../lib/lip-sync'
@@ -609,13 +610,19 @@ export function knownVillageClip(rawText: string, settings: AgentVoiceSettings):
 /** Stop whatever is being said (or fetched). */
 export function stopVillageSpeech(): void {
   speechToken += 1
+  stopBrowserSpeech()
   endPlayback()
   if (speech) setSpeech(null)
 }
 
+/** What the page server answers without a key (village-speech-server.ts). Once seen, it is not asked again on this page. */
+const NO_KEY = 'ELEVENLABS_API_KEY not configured'
+let noServerVoice = false
+
 const clipKey = (text: string, voice: string, modelSpeed: number) => `${voice}\n${modelSpeed}\n${text}`
 
 function fetchClip(text: string, voice: string, modelSpeed: number): Promise<Clip> {
+  if (noServerVoice) return Promise.reject(new Error(NO_KEY))
   const key = clipKey(text, voice, modelSpeed)
   let job = clips.get(key)
   if (!job) {
@@ -679,9 +686,29 @@ export async function speakVillageAgent(agentId: string, rawText: string, settin
   const plan = speechSpeedPlan(settings.speed)
   let clip: Clip
   try {
+    if (noServerVoice) throw new Error(NO_KEY)
     clip = await fetchClip(text, voice, plan.modelSpeed)
   } catch (error) {
-    console.warn(`[village] speech failed: ${error instanceof Error ? error.message : String(error)}`)
+    const message = error instanceof Error ? error.message : String(error)
+    // No ElevenLabs key on this machine: the browser's own voice says it (free, nothing leaves the machine).
+    if (message.includes(NO_KEY)) {
+      noServerVoice = true
+      if (token !== speechToken) return false
+      const said = speakInBrowser(text, {
+        voiceKey: voice,
+        rate: settings.speed,
+        onEnd: () => {
+          if (token !== speechToken) return
+          setSpeech(null)
+          flushEndWaiters()
+        },
+      })
+      if (!said) return fail('no voice: no ElevenLabs key, and this browser has no speech of its own')
+      lastSpeech = { agentId, text, at: Date.now(), waitMs: Math.round(performance.now() - askedAt), result: `the browser's voice (no ElevenLabs key)` }
+      setSpeech({ agentId, text, phase: 'speaking' })
+      return true
+    }
+    console.warn(`[village] speech failed: ${message}`)
     return fail('fetch failed')
   }
   if (token !== speechToken) return false
