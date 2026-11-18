@@ -15,12 +15,9 @@ export const include = [
   // The app
   'src/',
   'prisma/schema.prisma',
-  'prisma/seed-default-worlds.ts',
-  'prisma/default-worlds/',
   'packages/oasis-agent-engine/',
   'plugins/oasis/',
   '.claude-plugin/marketplace.json',
-  'package.json',
   'pnpm-lock.yaml',
   'next.config.mjs',
   'next-env.d.ts',
@@ -28,33 +25,46 @@ export const include = [
   'tsconfig.json',
   'tailwind.config.js',
   'postcss.config.js',
-  'vitest.config.ts',
   'LICENSE',
   'scripts/oasis.mjs',
   'scripts/slim/seed-first-world.mjs',
-  'data/asset-catalog-extras.json',
+  'data/credits.json',
   'data/ground-presets-extras.json',
 
-  // Assets: ours, or CC0
-  'public/ui/',
+  // Assets: ours, or under a licence that allows passing them on (each has a line in assetLicences below)
+  'public/ui/rail/',
+  'public/ui/spellbook/',
+  'public/ui/textures-extracted/',
   'public/skies/',
-  'public/splash/',
   'public/icons/',
   'public/fonts/',
   'public/lipsync/',
+  'public/voice/',
   'public/favicon.svg',
   'public/oasislogo.jpg',
-  'public/headaudio.mjs',
-  'public/headworklet.min.mjs',
-  'public/model-en-mixed.bin',
-  'public/parameters.mjs',
-  'public/training.mjs',
-  'public/manifest.webmanifest',
   'public/audio/kenney_interface-sounds/',
   'public/audio/kenney_impact-sounds/',
   'public/audio/kenney-ui/',
   'public/audio/kenney-rpg/',
-  'public/animations/ual/UAL1_Standard.glb',
+  'public/audio/kenney_voiceover-pack/',
+  'public/audio/kenney_voiceover-pack-fighter/',
+  'public/animations/ual/',
+  // The first world (Oasis Dusk): its ground, the two textures its crafted things use, five small plants
+  'public/ground/gravelly_sand_diff_1k.jpg',
+  'public/ground/rock_face_diff_1k.jpg',
+  'public/ground/marble_01_diff_1k.jpg',
+  'public/models/stylized-nature/grass_common_tall.gltf',
+  'public/models/stylized-nature/Grass_Common_Tall.bin',
+  'public/models/stylized-nature/grass_common_short.gltf',
+  'public/models/stylized-nature/Grass_Common_Short.bin',
+  'public/models/stylized-nature/grass_wispy_tall.gltf',
+  'public/models/stylized-nature/Grass_Wispy_Tall.bin',
+  'public/models/stylized-nature/grass_wispy_short.gltf',
+  'public/models/stylized-nature/Grass_Wispy_Short.bin',
+  'public/models/stylized-nature/fern_1.gltf',
+  'public/models/stylized-nature/Fern_1.bin',
+  'public/models/stylized-nature/Textures/Grass.jpg',
+  'public/models/stylized-nature/Textures/Leaves.jpg',
 ]
 
 export const exclude = [
@@ -65,31 +75,62 @@ export const exclude = [
   'packages/oasis-agent-engine/sandbox/',
   // The workshop's manifest for the world tools; the cut ships plugins/oasis/mcp/directory.mcp.json as .mcp.json
   'plugins/oasis/.mcp.json',
+  // The workshop's two-window launcher for Windows; the cut starts with scripts/oasis.mjs everywhere
+  'plugins/oasis/scripts/oasis-launch.ps1',
   '**/*.url',
-  'public/ui/hud/iterations/',
   'public/ui/spellbook/tiles/_alternates/',
+  // The hosted site's marketing pages
+  'src/app/landing/',
+  'src/app/website/',
+  'src/components/site/',
+  // Making pictures, video, music, speech and 3D models with AI services: not part of the slim Oasis
+  'src/app/api/imagine/',
+  'src/app/api/media/image/',
+  'src/app/api/media/video/',
+  'src/app/api/media/voice/',
+  'src/app/api/media/music/',
+  'src/app/api/conjure/',
 ]
 
 /**
- * Avatars in the cut: only files whose own metadata says CC0 (the cut checks it again and refuses otherwise),
- * plus the ones made for the Oasis. Their thumbnails come along.
+ * Avatars in the cut: only files whose own metadata says CC0 (the cut checks it again and refuses otherwise).
+ * Their thumbnails come along. The first one is the body a new player starts in.
  */
 export const avatars = [
-  { file: 'The_Worm.vrm', licence: 'CC0' },
-  { file: 'Mushy.vrm', licence: 'CC0' },
-  { file: 'Witch.vrm', licence: 'CC0' },
-  { file: 'David.vrm', licence: 'CC0' },
-  { file: 'CoolCow.vrm', licence: 'CC0' },
   { file: 'CoolAlien.vrm', licence: 'CC0' },
   { file: 'UnicornPerson.vrm', licence: 'CC0' },
-  { file: 'Hacker.vrm', licence: 'ours', note: 'Generated for the Oasis' },
+  { file: 'David.vrm', licence: 'CC0' },
+  { file: 'Witch.vrm', licence: 'CC0' },
+  { file: 'EYEWizard.vrm', licence: 'CC0' },
+  { file: 'HodlerKing.vrm', licence: 'CC0' },
+  { file: 'CoolGuitar.vrm', licence: 'CC0' },
+  { file: 'CuteMoth.vrm', licence: 'CC0' },
+  { file: 'CoolCow.vrm', licence: 'CC0' },
+  { file: 'Mushy.vrm', licence: 'CC0' },
+  { file: 'The_Worm.vrm', licence: 'CC0' },
+  { file: 'EYECleric.vrm', licence: 'CC0' },
+]
+
+/** The world a new install opens in: a seed of the workshop, with its sky changed to one the cut ships. */
+export const firstWorld = { seed: 'prisma/default-worlds/oasis-dusk.world.json', sky: 'oasis_dusk' }
+
+/**
+ * Lines of source the cut changes, because they name an asset the cut does not ship. Each `from` must be
+ * found exactly once, or the cut stops: a changed workshop is noticed, not silently shipped broken.
+ */
+export const transforms = [
+  // A new player's body: one the cut ships (the workshop's default is CC BY and stays there).
+  { file: 'src/lib/profile-defaults.ts', from: "'/avatars/gallery/VIPE_Hero__2902.vrm'", to: "'/avatars/gallery/CoolAlien.vrm'" },
+  // The player's walk, run and sprint: the CC0 animation pack instead of the Mixamo files.
+  { file: 'src/lib/forge/animation-library.ts', from: "{ id: 'walk',        filename: 'Unarmed Walk Forward.fbx',        label: 'Walk',       category: 'locomotion' },", to: "{ id: 'walk',        filename: 'ual/UAL1_Standard.glb', glbClipName: 'Walk_Loop', label: 'Walk',       category: 'locomotion' }," },
+  { file: 'src/lib/forge/animation-library.ts', from: "{ id: 'run',         filename: 'Medium Run.fbx',                  label: 'Run',           category: 'locomotion' },", to: "{ id: 'run',         filename: 'ual/UAL1_Standard.glb', glbClipName: 'Jog_Fwd_Loop', label: 'Run',           category: 'locomotion' }," },
+  { file: 'src/lib/forge/animation-library.ts', from: "{ id: 'sprint',      filename: 'Running.fbx',                     label: 'Sprint',        category: 'locomotion' },", to: "{ id: 'sprint',      filename: 'ual/UAL1_Standard.glb', glbClipName: 'Sprint_Loop', label: 'Sprint',        category: 'locomotion' }," },
 ]
 
 /** Asset folders and the licence each ships under, for ASSETS.md. `match` is a path prefix. */
 export const assetLicences = [
   { match: 'public/ui/', licence: 'Made for the Oasis (generated art); MIT with the code', source: 'the Oasis' },
   { match: 'public/skies/', licence: 'Made for the Oasis (generated panoramas, 2026-11-09); MIT with the code', source: 'the Oasis' },
-  { match: 'public/splash/', licence: 'Made for the Oasis (generated art); MIT with the code', source: 'the Oasis' },
   { match: 'public/icons/', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
   { match: 'public/audio/kenney', licence: 'CC0 1.0', source: 'Kenney (kenney.nl)' },
   { match: 'public/animations/ual/', licence: 'CC0 1.0', source: 'Quaternius, Universal Animation Library (Standard)' },
@@ -98,12 +139,9 @@ export const assetLicences = [
   { match: 'public/fonts/helvetiker_', licence: 'MgOpen licence (free to use, copy and distribute)', source: 'Magenta Ltd, MgOpen Moderna as "helvetiker" (three.js typeface files)' },
   { match: 'public/fonts/inter-', licence: 'SIL Open Font License 1.1', source: 'Rasmus Andersson, Inter' },
   { match: 'public/lipsync/wlipsync/', licence: 'MIT', source: 'mrxz, wLipSync (browser runtime and starter profile)' },
-  { match: 'public/headaudio.mjs', licence: 'MIT', source: 'met4citizen, HeadAudio' },
-  { match: 'public/headworklet.min.mjs', licence: 'MIT', source: 'met4citizen, HeadAudio' },
-  { match: 'public/model-en-mixed.bin', licence: 'MIT', source: 'met4citizen, HeadAudio (viseme model)' },
-  { match: 'public/parameters.mjs', licence: 'MIT', source: 'met4citizen, HeadAudio' },
-  { match: 'public/training.mjs', licence: 'MIT', source: 'met4citizen, HeadAudio' },
+  { match: 'public/voice/', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
+  { match: 'public/ground/', licence: 'CC0 1.0', source: 'Poly Haven (polyhaven.com)' },
+  { match: 'public/models/stylized-nature/', licence: 'CC0 1.0', source: 'Quaternius, Stylized Nature MegaKit' },
   { match: 'public/favicon.svg', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
   { match: 'public/oasislogo.jpg', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
-  { match: 'public/manifest.webmanifest', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
 ]

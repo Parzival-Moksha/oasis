@@ -9,15 +9,17 @@
 //                  emptied first, except its .git folder, so it can be a checkout of the slim repository.
 //   --report-only  print the size table for what would be cut; write nothing
 //   --no-archive   skip measuring the .tar.gz (faster)
+//   --working-tree take tracked files as they are on disk, not as committed (to try a change before committing)
 //
-// Only tracked files are taken (git ls-files), so nothing local, ignored or secret can slip in.
+// Only committed files are taken, with their committed content (git HEAD), so nothing local, ignored, secret or
+// half-finished in the working tree can slip in. --working-tree takes the files as they are on disk instead.
 // Exit codes: 0 fine, 1 the cut is over a limit or an asset has no licence that allows redistribution.
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { fileURLToPath } from 'node:url'
-import { ARCHIVE_LIMIT_MIB, FILE_LIMIT, assetLicences, avatars, exclude, include } from './slim/cut.config.mjs'
+import { ARCHIVE_LIMIT_MIB, FILE_LIMIT, assetLicences, avatars, exclude, firstWorld, include, transforms } from './slim/cut.config.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
@@ -48,29 +50,43 @@ export function chooser(includes, excludes) {
 }
 
 /** The licence a .vrm file states about itself (VRM 0.x `licenseName`, VRM 1.0 `licenseUrl`). */
-export function vrmLicence(file) {
-  const fd = fs.openSync(file, 'r')
-  try {
-    const head = Buffer.alloc(20)
-    fs.readSync(fd, head, 0, 20, 0)
-    if (head.toString('latin1', 0, 4) !== 'glTF') return null
-    const length = head.readUInt32LE(12)
-    const json = Buffer.alloc(length)
-    fs.readSync(fd, json, 0, length, 20)
-    const ext = JSON.parse(json.toString('utf8')).extensions || {}
-    const old = ext.VRM?.meta
-    if (old) return { licence: old.licenseName || '', author: old.author || '', title: old.title || '' }
-    const meta = ext.VRMC_vrm?.meta
-    if (meta) return { licence: meta.licenseUrl || '', author: (meta.authors || []).join(', '), title: meta.name || '' }
-    return null
-  } finally {
-    fs.closeSync(fd)
-  }
+export function vrmLicence(source) {
+  const data = Buffer.isBuffer(source) ? source : fs.readFileSync(source)
+  if (data.toString('latin1', 0, 4) !== 'glTF') return null
+  const length = data.readUInt32LE(12)
+  const ext = JSON.parse(data.toString('utf8', 20, 20 + length)).extensions || {}
+  const old = ext.VRM?.meta
+  if (old) return { licence: old.licenseName || '', author: old.author || '', title: old.title || '' }
+  const meta = ext.VRMC_vrm?.meta
+  if (meta) return { licence: meta.licenseUrl || '', author: (meta.authors || []).join(', '), title: meta.name || '' }
+  return null
 }
 
 function tracked() {
-  const out = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, maxBuffer: 64 * MIB }).toString('utf8')
+  const argv = flag('--working-tree') ? ['ls-files', '-z'] : ['ls-tree', '-r', '-z', '--name-only', 'HEAD']
+  const out = execFileSync('git', argv, { cwd: ROOT, maxBuffer: 64 * MIB }).toString('utf8')
   return out.split('\0').filter(Boolean)
+}
+
+/** The content of each file: as committed (one `git cat-file --batch` for all of them), or from disk. */
+function contents(files) {
+  const map = new Map()
+  if (flag('--working-tree')) {
+    for (const file of files) map.set(file, fs.readFileSync(path.join(ROOT, file)))
+    return map
+  }
+  const out = execFileSync('git', ['cat-file', '--batch'], { cwd: ROOT, input: files.map((f) => `HEAD:${f}\n`).join(''), maxBuffer: 1024 * MIB })
+  let at = 0
+  for (const file of files) {
+    const eol = out.indexOf(10, at)
+    const header = out.toString('utf8', at, eol)
+    const match = /^[0-9a-f]+ blob (\d+)$/.exec(header)
+    if (!match) throw new Error(`git has no committed content for ${file}: ${header}`)
+    const size = Number(match[1])
+    map.set(file, out.subarray(eol + 1, eol + 1 + size))
+    at = eol + 1 + size + 1
+  }
+  return map
 }
 
 const thumbOf = (file) => `${file.replace(/\.vrm$/, '').replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/_+/g, '_').toLowerCase()}.jpg`
@@ -80,29 +96,62 @@ function plan() {
   const files = tracked()
   const take = chooser(include, exclude)
   const chosen = new Set(files.filter(take))
+  for (const pattern of include) if (!files.some(rule(pattern))) problems.push(`nothing matches the include rule ${pattern}`)
 
   // Avatars: named one by one, each checked against what the file says about itself.
-  const avatarRows = []
   const thumbs = files.filter((f) => f.startsWith('public/avatars/gallery/thumbs/'))
+  const wanted = []
   for (const a of avatars) {
     const rel = `public/avatars/gallery/${a.file}`
     if (!files.includes(rel)) { problems.push(`avatar not in the repository: ${rel}`); continue }
-    const meta = vrmLicence(path.join(ROOT, rel))
-    if (a.licence === 'CC0' && meta?.licence !== 'CC0') { problems.push(`${rel}: listed as CC0, but the file says "${meta?.licence ?? 'nothing'}"`); continue }
-    if (a.licence !== 'CC0' && a.licence !== 'ours') { problems.push(`${rel}: licence "${a.licence}" is not one the cut ships`); continue }
-    chosen.add(rel)
-    avatarRows.push({ file: rel, licence: a.licence === 'ours' ? 'Made for the Oasis; MIT with the code' : 'CC0 1.0', source: a.licence === 'ours' ? 'the Oasis' : meta.author, title: meta?.title || a.file })
+    if (a.licence !== 'CC0') { problems.push(`${rel}: licence "${a.licence}" is not one the cut ships`); continue }
+    wanted.push(rel)
     const stem = a.file.replace(/\.vrm$/, '').toLowerCase().replace(/[^a-z0-9]/g, '')
-    const thumb = thumbs.find((t) => path.basename(t, path.extname(t)).toLowerCase().replace(/[^a-z0-9]/g, '') === stem) || thumbs.find((t) => t.endsWith(`/${thumbOf(a.file)}`))
+    const thumb = thumbs.find((t) => path.basename(t, path.extname(t)).toLowerCase().replace(/[^a-z0-9]/g, '') === stem)
     if (thumb) chosen.add(thumb)
   }
+  for (const rel of wanted) chosen.add(rel)
+  for (const file of [firstWorld.seed, 'package.json', 'data/asset-catalog-extras.json', 'src/components/scene-lib/constants.ts', 'plugins/oasis/mcp/directory.mcp.json', 'plugins/oasis/.claude-plugin/plugin.json']) {
+    if (!files.includes(file)) problems.push(`not in the repository: ${file}`)
+  }
+  const sorted = [...chosen].sort()
+  const data = contents([...new Set([...sorted, firstWorld.seed, 'package.json', 'data/asset-catalog-extras.json', ...fs.readdirSync(path.join(ROOT, 'scripts', 'slim', 'root')).map((n) => `scripts/slim/root/${n}`)])].filter((f) => files.includes(f)))
 
-  // Every asset under public/ must have a licence line, or it does not ship.
+  const avatarRows = []
+  for (const rel of wanted) {
+    const meta = vrmLicence(data.get(rel))
+    if (meta?.licence !== 'CC0') { problems.push(`${rel}: listed as CC0, but the file says "${meta?.licence ?? 'nothing'}"`); chosen.delete(rel); continue }
+    avatarRows.push({ file: rel, licence: 'CC0 1.0', source: meta.author, title: meta.title || path.basename(rel) })
+  }
+
   for (const file of chosen) {
     if (!file.startsWith('public/') || file.startsWith('public/avatars/')) continue
-    if (!/\.(png|jpe?g|webp|gif|svg|hdr|glb|gltf|vrm|fbx|mp3|ogg|wav|woff2?|ttf|otf|json|bin|mjs|js|webmanifest|md|txt)$/i.test(file)) problems.push(`unexpected kind of file under public/: ${file}`)
+    if (!/\.(png|jpe?g|webp|gif|svg|hdr|glb|gltf|vrm|mp3|ogg|wav|woff2?|ttf|otf|json|bin|mjs|js|md|txt)$/i.test(file)) problems.push(`unexpected kind of file under public/: ${file}`)
   }
-  return { chosen: [...chosen].sort(), avatarRows, problems }
+  return { chosen: [...chosen].sort(), avatarRows, problems, data }
+}
+
+/** Catalog entries (id and file) written in src/components/scene-lib/constants.ts, one per line. */
+export function catalogEntries(source) {
+  const entries = []
+  for (const line of source.split('\n')) {
+    const id = /\bid: '([^']+)'/.exec(line)
+    const file = /\bpath: '(\/[^']+)'/.exec(line)
+    if (id && file) entries.push({ id: id[1], path: file[1] })
+  }
+  return entries
+}
+
+/** The catalog override for the cut: every built-in entry whose file is not shipped is taken out. */
+export function slimCatalogExtras(extras, entries, shipped) {
+  const has = (p) => shipped.has(`public${decodeURIComponent(p)}`)
+  const deleted = new Set(extras.deletedIds || [])
+  for (const entry of entries) if (!has(entry.path)) deleted.add(entry.id)
+  return {
+    _doc: 'Written by scripts/cut-slim.mjs: the catalog entries whose files the slim Oasis does not ship are taken out here.',
+    deletedIds: [...deleted].sort(),
+    additions: (extras.additions || []).filter((entry) => entry?.path && has(entry.path)),
+  }
 }
 
 /** The table's rows: a label and a test. First match wins. */
@@ -116,15 +165,15 @@ const ROWS = [
   ['Skies', (f) => f.startsWith('public/skies/')],
   ['Menu and HUD art', (f) => f.startsWith('public/ui/')],
   ['Sounds', (f) => f.startsWith('public/audio/')],
-  ['Ground', (f) => f.startsWith('public/ground/')],
-  ['Splash, icons, fonts, lip sync', (f) => f.startsWith('public/')],
+  ['Ground and plants of the first world', (f) => f.startsWith('public/ground/') || f.startsWith('public/models/')],
+  ['Icons, fonts, lip sync', (f) => f.startsWith('public/')],
   ['Config, scripts, docs', () => true],
 ]
 
-function sizes(files, base) {
+function sizes(files, sizeOf) {
   const rows = ROWS.map(([label]) => ({ label, files: 0, bytes: 0 }))
   for (const file of files) {
-    const bytes = fs.statSync(path.join(base, file)).size
+    const bytes = sizeOf(file)
     const row = rows[ROWS.findIndex(([, test]) => test(file))]
     row.files++
     row.bytes += bytes
@@ -186,23 +235,45 @@ function assetsDoc(files, avatarRows) {
   return { text: lines.join('\n'), unknown }
 }
 
-function writeCut({ chosen, avatarRows }) {
+function writeCut({ chosen, avatarRows, data }, problems) {
   emptyExceptGit(OUT)
-  for (const file of chosen) {
+  const put = (file, content) => {
     const to = path.join(OUT, file)
     fs.mkdirSync(path.dirname(to), { recursive: true })
-    fs.copyFileSync(path.join(ROOT, file), to)
+    fs.writeFileSync(to, content)
   }
+  const texts = new Map()
+  for (const t of transforms) {
+    const before = texts.get(t.file) ?? data.get(t.file)?.toString('utf8')
+    if (before === undefined) { problems.push(`transform: ${t.file} is not in the cut`); continue }
+    if (before.split(t.from).length !== 2) { problems.push(`transform: expected exactly one "${t.from.slice(0, 60)}…" in ${t.file}`); continue }
+    texts.set(t.file, before.replace(t.from, t.to))
+  }
+  for (const file of chosen) put(file, texts.get(file) ?? data.get(file))
+
   // The plugin's world tools: the local server inside the plugin, not the workshop's http entry.
-  fs.copyFileSync(path.join(ROOT, 'plugins/oasis/mcp/directory.mcp.json'), path.join(OUT, 'plugins/oasis/.mcp.json'))
-  // Files the cut has under other names than the workshop.
-  const slim = path.join(ROOT, 'scripts', 'slim', 'root')
-  if (fs.existsSync(slim)) {
-    for (const name of fs.readdirSync(slim)) fs.copyFileSync(path.join(slim, name), path.join(OUT, name))
+  put('plugins/oasis/.mcp.json', data.get('plugins/oasis/mcp/directory.mcp.json'))
+  // Files the cut has under other names than the workshop (README, .gitignore, .env.example, the marker).
+  for (const [file, content] of data) if (file.startsWith('scripts/slim/root/')) put(file.slice('scripts/slim/root/'.length), content)
+
+  // The catalog: only what is shipped.
+  const shipped = new Set(chosen)
+  const extras = slimCatalogExtras(JSON.parse(data.get('data/asset-catalog-extras.json').toString('utf8')), catalogEntries(data.get('src/components/scene-lib/constants.ts').toString('utf8')), shipped)
+  put('data/asset-catalog-extras.json', `${JSON.stringify(extras, null, 1)}\n`)
+
+  // The first world: one seed, its sky changed to a shipped one, and a manifest that lists only it.
+  const seed = JSON.parse(data.get(firstWorld.seed).toString('utf8'))
+  seed.data.skyBackgroundId = firstWorld.sky
+  for (const placement of seed.data.catalogPlacements || []) {
+    if (placement.glbPath && !shipped.has(`public${placement.glbPath}`)) problems.push(`the first world places ${placement.glbPath}, which the cut does not ship`)
   }
+  const seedName = path.basename(firstWorld.seed)
+  put(`prisma/default-worlds/${seedName}`, `${JSON.stringify(seed)}\n`)
+  put('prisma/default-worlds/manifest.json', `${JSON.stringify({ seedVersion: 1, worlds: [{ slug: seed.slug, id: seed.id, file: seedName, name: seed.name, visibility: seed.visibility }] }, null, 2)}\n`)
+
   // package.json: the same dependencies (the lockfile must still match), the slim Oasis's own name and scripts.
-  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
-  const plugin = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins/oasis/.claude-plugin/plugin.json'), 'utf8'))
+  const pkg = JSON.parse(data.get('package.json').toString('utf8'))
+  const plugin = JSON.parse(data.get('plugins/oasis/.claude-plugin/plugin.json').toString('utf8'))
   pkg.name = 'oasis-village'
   pkg.version = plugin.version
   pkg.description = 'The Oasis: your Claude Code sessions as characters in a 3D village on your own machine.'
@@ -218,10 +289,9 @@ function writeCut({ chosen, avatarRows }) {
     build: 'next build',
     start: 'next start -p 4516 -H 127.0.0.1',
   }
-  fs.writeFileSync(path.join(OUT, 'package.json'), `${JSON.stringify(pkg, null, 2)}
-`)
+  put('package.json', `${JSON.stringify(pkg, null, 2)}\n`)
   const doc = assetsDoc(chosen, avatarRows)
-  fs.writeFileSync(path.join(OUT, 'ASSETS.md'), doc.text)
+  put('ASSETS.md', doc.text)
   return doc.unknown
 }
 
@@ -236,13 +306,13 @@ function main() {
   const cut = plan()
   const problems = [...cut.problems]
   if (flag('--report-only')) {
-    const total = printTable(sizes(cut.chosen, ROOT))
+    const total = printTable(sizes(cut.chosen, (f) => cut.data.get(f).length))
     const doc = assetsDoc(cut.chosen, cut.avatarRows)
     for (const file of doc.unknown) problems.push(`no licence line for ${file} (scripts/slim/cut.config.mjs, assetLicences)`)
     if (total.files > FILE_LIMIT) problems.push(`${total.files} files: over ${FILE_LIMIT}`)
     return finish(problems)
   }
-  const unknown = writeCut(cut)
+  const unknown = writeCut(cut, problems)
   for (const file of unknown) problems.push(`no licence line for ${file} (scripts/slim/cut.config.mjs, assetLicences)`)
   const files = []
   const walk = (dir) => {
@@ -255,7 +325,7 @@ function main() {
   }
   walk(OUT)
   const archive = flag('--no-archive') ? undefined : archiveSize(OUT, files)
-  const total = printTable(sizes(files, OUT), archive)
+  const total = printTable(sizes(files, (f) => fs.statSync(path.join(OUT, f)).size), archive)
   console.log(`\n  Written to ${OUT}`)
   if (total.files > FILE_LIMIT) problems.push(`${total.files} files: over ${FILE_LIMIT}`)
   if (archive !== undefined && archive > ARCHIVE_LIMIT_MIB * MIB) problems.push(`the archive is ${(archive / MIB).toFixed(1)} MiB: over ${ARCHIVE_LIMIT_MIB}`)
