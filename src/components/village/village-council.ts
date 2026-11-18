@@ -21,7 +21,7 @@ import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import { COUNCIL, councilAngle, councilFront, councilPlaces, councilRadius, type CouncilPlace, type CouncilPoint } from '../../lib/village/village-council'
 import { useOasisStore } from '../../store/oasisStore'
 import { getVillageDesk } from './village-actions'
-import { STAGE, isStageWorldName, stageArrival } from '../../lib/village/village-stage'
+import { STAGE, isStageWorldName, stageRoute, type StageObstacle } from '../../lib/village/village-stage'
 import { ensureVillageAudio, getAgentVoiceSettings, prepareVillageSpeech, setVillageSpeechCouncilOnly, speakVillageAgent, stopVillageSpeech, whenVillageSpeechEnds, type AgentVoiceSettings } from './village-companion'
 
 export interface CouncilRequest {
@@ -78,7 +78,37 @@ const MOVE_TIMEOUT_MS = 40_000
 
 /** Where each cast member of a stage world appears and goes back to (its home there). Empty outside a Council. */
 const stageCast = new Map<string, { x: number; z: number; yaw: number }>()
+/** Its way in and out: through a gap between the seats when a seat stands behind its place (`door`). */
+const stageDoors = new Map<string, { x: number; z: number }>()
 let castLeaving: number | null = null
+
+/**
+ * What stands around the fire in this world: every crafted object and catalog piece from just outside the circle
+ * to where the cast appears (logs, stones). The cast walks in and out between them, not through them.
+ */
+function stageObstacles(center: CouncilPoint, radius: number): StageObstacle[] {
+  const state = useOasisStore.getState()
+  const out: StageObstacle[] = []
+  const near = (x: number, z: number) => {
+    const r = Math.hypot(x - center.x, z - center.z)
+    return r > radius + 0.2 && r < radius + STAGE.arriveDistance - 0.2
+  }
+  for (const scene of state.craftedScenes || []) {
+    const at = (state.transforms?.[scene.id]?.position as [number, number, number] | undefined) || scene.position || [0, 0, 0]
+    for (const object of scene.objects || []) {
+      const x = at[0] + (object.position?.[0] || 0)
+      const z = at[2] + (object.position?.[2] || 0)
+      if (!near(x, z)) continue
+      const size = Array.isArray(object.scale) ? Math.max(...object.scale.map(Number).filter(Number.isFinite)) : Number(object.scale) || 1
+      out.push({ x, z, reach: Math.max(0.15, size / 2) })
+    }
+  }
+  for (const piece of state.placedCatalogAssets || []) {
+    const at = (state.transforms?.[piece.id]?.position as [number, number, number] | undefined) || piece.position
+    if (at && near(at[0], at[2])) out.push({ x: at[0], z: at[2], reach: 0.6 })
+  }
+  return out
+}
 
 /** Is the world the owner is in a stage ("The Council")? */
 export function isStageWorldNow(): boolean {
@@ -99,6 +129,7 @@ function clearStageCast(): void {
   }
   if (!stageCast.size) return
   stageCast.clear()
+  stageDoors.clear()
   notify()
 }
 
@@ -262,8 +293,10 @@ async function start(req: CouncilRequest): Promise<Record<string, unknown>> {
     const desk = getVillageDesk(ids[0])
     center = { x: desk ? desk.anchor[0] : 0, z: desk ? desk.anchor[2] + radius + 2 : radius + 2 }
   }
-  // The owner's place stays free when they are at the circle (within twice its radius of the fire).
-  const ownerAngle = me && Math.hypot(me.x - center.x, me.z - center.z) <= radius * 2 ? councilAngle(center, me) : null
+  // The owner's place stays free when they are at the circle (within twice its radius of the fire). On a stage
+  // the owner is always one of the circle: their place is on their side of the fire, wherever they stand (coming
+  // through the portal they land almost 10 m out).
+  const ownerAngle = me && (stage || Math.hypot(me.x - center.x, me.z - center.z) <= radius * 2) ? councilAngle(center, me) : null
   const spots = councilPlaces(ids.length, center, radius, ownerAngle)
   const places = new Map<string, CouncilPlace>()
   ids.forEach((id, index) => places.set(id, spots[index]))
@@ -274,7 +307,13 @@ async function start(req: CouncilRequest): Promise<Record<string, unknown>> {
       castLeaving = null
     }
     stageCast.clear()
-    ids.forEach((id, index) => stageCast.set(id, stageArrival(spots[index], center)))
+    stageDoors.clear()
+    const obstacles = stageObstacles(center, radius)
+    ids.forEach((id, index) => {
+      const route = stageRoute(spots[index], center, obstacles)
+      stageCast.set(id, route.arrival)
+      if (route.door) stageDoors.set(id, route.door)
+    })
     notify()
     const asked = Date.now()
     while (ids.some(id => !getVillageDesk(id)) && Date.now() - asked < 8000) await new Promise(resolve => window.setTimeout(resolve, 100))
@@ -293,8 +332,14 @@ async function start(req: CouncilRequest): Promise<Record<string, unknown>> {
   setVillageSpeechCouncilOnly(true)
   lines.clear()
   const mine = run
-  // Everyone walks to their place at once.
-  const arrivals = ids.map(id => moveTo(id, places.get(id) as CouncilPlace, center, false))
+  // Everyone walks to their place at once (on a stage, round a seat through its door first).
+  const arrivals = ids.map(async id => {
+    const place = places.get(id) as CouncilPlace
+    const door = stageDoors.get(id)
+    if (door && !(await moveTo(id, door, place, false))) return false
+    if (mine !== run) return false
+    return moveTo(id, place, center, false)
+  })
   notify()
   const settled = await Promise.all(arrivals)
   if (mine !== run) return { stopped: true }
@@ -448,6 +493,31 @@ function end(): Record<string, unknown> {
   return { ended: Boolean(was) }
 }
 
+/**
+ * The end of a Council on a stage: everyone walks back out the way they came in (through its door, if it had one,
+ * then into the dark) and is gone; then the Council is over. Answers at once; nobody speaks meanwhile.
+ */
+function leaveStage(): Record<string, unknown> {
+  const c = council
+  if (!c) return end()
+  stop()
+  const mine = run
+  void Promise.all(c.members.map(async id => {
+    const home = stageCast.get(id)
+    const door = stageDoors.get(id)
+    if (door && !(await moveTo(id, door, c.center, false))) return
+    if (mine !== run || !home) return
+    // Facing away from the fire as it goes.
+    await moveTo(id, home, { x: home.x * 2 - c.center.x, z: home.z * 2 - c.center.z }, false)
+  })).then(() => {
+    if (mine !== run || council !== c) return
+    end()
+    // They are out in the dark already: gone now, not after the usual walk home.
+    clearStageCast()
+  })
+  return { ended: true, leaving: true }
+}
+
 export function getCouncilStatus(): Record<string, unknown> {
   return {
     on: council !== null,
@@ -469,7 +539,7 @@ export function runCouncilRequest(req: CouncilRequest): Promise<Record<string, u
   const action = String(req?.action || '')
   if (action === 'status') return Promise.resolve(getCouncilStatus())
   if (action === 'stop') return Promise.resolve(stop())
-  if (action === 'end') return Promise.resolve(end())
+  if (action === 'end') return Promise.resolve(stageCast.size && council ? leaveStage() : end())
   const queuedIn = run
   lastStepAt = Date.now()
   const job = chain.then(async () => {
