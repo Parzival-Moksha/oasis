@@ -1,0 +1,3926 @@
+{
+  "seedVersion": 1,
+  "slug": "the-council",
+  "id": "world-1795024653273-vaax",
+  "userId": "local-user",
+  "name": "The Council",
+  "icon": "🔥",
+  "visibility": "private",
+  "creatorName": "The Oasis",
+  "creatorAvatar": null,
+  "thumbnailUrl": null,
+  "data": {
+    "version": 1,
+    "terrain": null,
+    "craftedScenes": [
+      {
+        "id": "crafted-mcp-1795024808073-z9z0",
+        "name": "Council seats",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              1.703,
+              0.182,
+              4.111
+            ],
+            "scale": [
+              0.424,
+              1.61,
+              0.424
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              -1.271
+            ],
+            "color": "#3f2b1e",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.928,
+              0.182,
+              4.35
+            ],
+            "scale": [
+              0.365,
+              0.02,
+              0.365
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              -1.271
+            ],
+            "color": "#a98558",
+            "roughness": 0.9
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              2.478,
+              0.182,
+              3.872
+            ],
+            "scale": [
+              0.365,
+              0.02,
+              0.365
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              -1.271
+            ],
+            "color": "#a98558",
+            "roughness": 0.9
+          },
+          {
+            "type": "sphere",
+            "position": [
+              4.111,
+              0.2,
+              1.703
+            ],
+            "scale": [
+              1.15,
+              0.62,
+              0.85
+            ],
+            "rotation": [
+              0,
+              1.378,
+              0
+            ],
+            "color": "#615b56",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              4.606,
+              0.1,
+              0.937
+            ],
+            "scale": [
+              0.5,
+              0.34,
+              0.42
+            ],
+            "rotation": [
+              0.2,
+              1.178,
+              0.1
+            ],
+            "color": "#544e49",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              4.111,
+              0.186,
+              -1.703
+            ],
+            "scale": [
+              0.431,
+              1.524,
+              0.431
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              0.355
+            ],
+            "color": "#3f2b1e",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              4.378,
+              0.186,
+              -0.983
+            ],
+            "scale": [
+              0.371,
+              0.02,
+              0.371
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              0.355
+            ],
+            "color": "#a98558",
+            "roughness": 0.9
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              3.844,
+              0.186,
+              -2.423
+            ],
+            "scale": [
+              0.371,
+              0.02,
+              0.371
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              0.355
+            ],
+            "color": "#a98558",
+            "roughness": 0.9
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              1.703,
+              0.189,
+              -4.111
+            ],
+            "scale": [
+              0.438,
+              1.593,
+              0.438
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              1.164
+            ],
+            "color": "#4b3323",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              2.44,
+              0.189,
+              -3.793
+            ],
+            "scale": [
+              0.377,
+              0.02,
+              0.377
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              1.164
+            ],
+            "color": "#a98558",
+            "roughness": 0.9
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.966,
+              0.189,
+              -4.429
+            ],
+            "scale": [
+              0.377,
+              0.02,
+              0.377
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              1.164
+            ],
+            "color": "#a98558",
+            "roughness": 0.9
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -1.703,
+              0.196,
+              -4.111
+            ],
+            "scale": [
+              0.451,
+              1.506,
+              0.451
+            ],
+            "rotation": [
+              1.571,
+              0,
+              1.255
+            ],
+            "color": "#3f2b1e",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.982,
+              0.196,
+              -4.347
+            ],
+            "scale": [
+              0.388,
+              0.02,
+              0.388
+            ],
+            "rotation": [
+              1.571,
+              0,
+              1.255
+            ],
+            "color": "#a98558",
+            "roughness": 0.9
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -2.424,
+              0.196,
+              -3.875
+            ],
+            "scale": [
+              0.388,
+              0.02,
+              0.388
+            ],
+            "rotation": [
+              1.571,
+              0,
+              1.255
+            ],
+            "color": "#a98558",
+            "roughness": 0.9
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -4.111,
+              0.208,
+              -1.703
+            ],
+            "scale": [
+              0.475,
+              1.647,
+              0.475
+            ],
+            "rotation": [
+              1.571,
+              0,
+              0.273
+            ],
+            "color": "#4b3323",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -3.887,
+              0.208,
+              -2.502
+            ],
+            "scale": [
+              0.409,
+              0.02,
+              0.409
+            ],
+            "rotation": [
+              1.571,
+              0,
+              0.273
+            ],
+            "color": "#a98558",
+            "roughness": 0.9
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -4.335,
+              0.208,
+              -0.904
+            ],
+            "scale": [
+              0.409,
+              0.02,
+              0.409
+            ],
+            "rotation": [
+              1.571,
+              0,
+              0.273
+            ],
+            "color": "#a98558",
+            "roughness": 0.9
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -4.111,
+              0.2,
+              1.703
+            ],
+            "scale": [
+              1.15,
+              0.62,
+              0.85
+            ],
+            "rotation": [
+              0,
+              5.305,
+              0
+            ],
+            "color": "#615b56",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -3.919,
+              0.1,
+              2.594
+            ],
+            "scale": [
+              0.5,
+              0.34,
+              0.42
+            ],
+            "rotation": [
+              0.2,
+              5.105,
+              0.1
+            ],
+            "color": "#544e49",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -1.703,
+              0.206,
+              4.111
+            ],
+            "scale": [
+              0.471,
+              1.465,
+              0.471
+            ],
+            "rotation": [
+              1.571,
+              0,
+              -1.173
+            ],
+            "color": "#4b3323",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -2.384,
+              0.206,
+              3.825
+            ],
+            "scale": [
+              0.405,
+              0.02,
+              0.405
+            ],
+            "rotation": [
+              1.571,
+              0,
+              -1.173
+            ],
+            "color": "#a98558",
+            "roughness": 0.9
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -1.022,
+              0.206,
+              4.397
+            ],
+            "scale": [
+              0.405,
+              0.02,
+              0.405
+            ],
+            "rotation": [
+              1.571,
+              0,
+              -1.173
+            ],
+            "color": "#a98558",
+            "roughness": 0.9
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.02,
+              -3.4
+            ],
+            "scale": [
+              1,
+              0.04,
+              0.9
+            ],
+            "rotation": [
+              0,
+              0.3,
+              0
+            ],
+            "color": "#77706a",
+            "roughness": 0.9,
+            "texturePresetId": "stone"
+          }
+        ],
+        "position": [
+          0,
+          0,
+          9
+        ],
+        "createdAt": "2026-11-18T18:00:08.073Z"
+      },
+      {
+        "id": "crafted-mcp-1795024808205-wq0d",
+        "name": "Distant mountains",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cone",
+            "position": [
+              -10.463,
+              37,
+              149.635
+            ],
+            "scale": [
+              120,
+              78,
+              120
+            ],
+            "rotation": [
+              0,
+              1.001,
+              0
+            ],
+            "color": "#141b2b",
+            "roughness": 1
+          },
+          {
+            "type": "cone",
+            "position": [
+              -10.463,
+              64.6,
+              149.635
+            ],
+            "scale": [
+              37.44,
+              23.4,
+              37.44
+            ],
+            "rotation": [
+              0,
+              0.313,
+              0
+            ],
+            "color": "#93a6cc",
+            "roughness": 0.9
+          },
+          {
+            "type": "cone",
+            "position": [
+              54.909,
+              26,
+              123.329
+            ],
+            "scale": [
+              95,
+              56,
+              95
+            ],
+            "rotation": [
+              0,
+              1.28,
+              0
+            ],
+            "color": "#141b2b",
+            "roughness": 1
+          },
+          {
+            "type": "cone",
+            "position": [
+              54.909,
+              45.9,
+              123.329
+            ],
+            "scale": [
+              29.64,
+              16.8,
+              29.64
+            ],
+            "rotation": [
+              0,
+              2.242,
+              0
+            ],
+            "color": "#93a6cc",
+            "roughness": 0.9
+          },
+          {
+            "type": "cone",
+            "position": [
+              -70,
+              29,
+              121.244
+            ],
+            "scale": [
+              105,
+              62,
+              105
+            ],
+            "rotation": [
+              0,
+              0.87,
+              0
+            ],
+            "color": "#141b2b",
+            "roughness": 1
+          },
+          {
+            "type": "cone",
+            "position": [
+              -70,
+              51,
+              121.244
+            ],
+            "scale": [
+              32.76,
+              18.6,
+              32.76
+            ],
+            "rotation": [
+              0,
+              0.091,
+              0
+            ],
+            "color": "#93a6cc",
+            "roughness": 0.9
+          },
+          {
+            "type": "cone",
+            "position": [
+              118.202,
+              33,
+              92.349
+            ],
+            "scale": [
+              110,
+              70,
+              110
+            ],
+            "rotation": [
+              0,
+              1.572,
+              0
+            ],
+            "color": "#141b2b",
+            "roughness": 1
+          },
+          {
+            "type": "cone",
+            "position": [
+              118.202,
+              57.8,
+              92.349
+            ],
+            "scale": [
+              34.32,
+              21,
+              34.32
+            ],
+            "rotation": [
+              0,
+              0.406,
+              0
+            ],
+            "color": "#93a6cc",
+            "roughness": 0.9
+          },
+          {
+            "type": "cone",
+            "position": [
+              -127.207,
+              24,
+              79.488
+            ],
+            "scale": [
+              100,
+              52,
+              100
+            ],
+            "rotation": [
+              0,
+              1.373,
+              0
+            ],
+            "color": "#141b2b",
+            "roughness": 1
+          },
+          {
+            "type": "cone",
+            "position": [
+              -127.207,
+              42.5,
+              79.488
+            ],
+            "scale": [
+              31.2,
+              15.6,
+              31.2
+            ],
+            "rotation": [
+              0,
+              2.266,
+              0
+            ],
+            "color": "#93a6cc",
+            "roughness": 0.9
+          },
+          {
+            "type": "cone",
+            "position": [
+              139.233,
+              21,
+              14.634
+            ],
+            "scale": [
+              90,
+              46,
+              90
+            ],
+            "rotation": [
+              0,
+              1.213,
+              0
+            ],
+            "color": "#141b2b",
+            "roughness": 1
+          },
+          {
+            "type": "cone",
+            "position": [
+              139.233,
+              37.4,
+              14.634
+            ],
+            "scale": [
+              28.08,
+              13.8,
+              28.08
+            ],
+            "rotation": [
+              0,
+              1.237,
+              0
+            ],
+            "color": "#93a6cc",
+            "roughness": 0.9
+          },
+          {
+            "type": "cone",
+            "position": [
+              -144.912,
+              28,
+              5.06
+            ],
+            "scale": [
+              105,
+              60,
+              105
+            ],
+            "rotation": [
+              0,
+              0.721,
+              0
+            ],
+            "color": "#141b2b",
+            "roughness": 1
+          },
+          {
+            "type": "cone",
+            "position": [
+              -144.912,
+              49.3,
+              5.06
+            ],
+            "scale": [
+              32.76,
+              18,
+              32.76
+            ],
+            "rotation": [
+              0,
+              0.524,
+              0
+            ],
+            "color": "#93a6cc",
+            "roughness": 0.9
+          },
+          {
+            "type": "cone",
+            "position": [
+              129.904,
+              20,
+              -75
+            ],
+            "scale": [
+              95,
+              44,
+              95
+            ],
+            "rotation": [
+              0,
+              1.459,
+              0
+            ],
+            "color": "#141b2b",
+            "roughness": 1
+          },
+          {
+            "type": "cone",
+            "position": [
+              129.904,
+              35.7,
+              -75
+            ],
+            "scale": [
+              29.64,
+              13.2,
+              29.64
+            ],
+            "rotation": [
+              0,
+              0.651,
+              0
+            ],
+            "color": "#93a6cc",
+            "roughness": 0.9
+          },
+          {
+            "type": "cone",
+            "position": [
+              -124.356,
+              23,
+              -83.879
+            ],
+            "scale": [
+              100,
+              50,
+              100
+            ],
+            "rotation": [
+              0,
+              0.462,
+              0
+            ],
+            "color": "#141b2b",
+            "roughness": 1
+          },
+          {
+            "type": "cone",
+            "position": [
+              -124.356,
+              40.8,
+              -83.879
+            ],
+            "scale": [
+              31.2,
+              15,
+              31.2
+            ],
+            "rotation": [
+              0,
+              1.38,
+              0
+            ],
+            "color": "#93a6cc",
+            "roughness": 0.9
+          },
+          {
+            "type": "cone",
+            "position": [
+              51.303,
+              22,
+              -140.954
+            ],
+            "scale": [
+              110,
+              48,
+              110
+            ],
+            "rotation": [
+              0,
+              0.927,
+              0
+            ],
+            "color": "#141b2b",
+            "roughness": 1
+          },
+          {
+            "type": "cone",
+            "position": [
+              51.303,
+              39.1,
+              -140.954
+            ],
+            "scale": [
+              34.32,
+              14.4,
+              34.32
+            ],
+            "rotation": [
+              0,
+              2.141,
+              0
+            ],
+            "color": "#93a6cc",
+            "roughness": 0.9
+          },
+          {
+            "type": "cone",
+            "position": [
+              -44.807,
+              18,
+              -137.903
+            ],
+            "scale": [
+              90,
+              40,
+              90
+            ],
+            "rotation": [
+              0,
+              1.016,
+              0
+            ],
+            "color": "#141b2b",
+            "roughness": 1
+          },
+          {
+            "type": "cone",
+            "position": [
+              -44.807,
+              32.3,
+              -137.903
+            ],
+            "scale": [
+              28.08,
+              12,
+              28.08
+            ],
+            "rotation": [
+              0,
+              2.778,
+              0
+            ],
+            "color": "#93a6cc",
+            "roughness": 0.9
+          }
+        ],
+        "position": [
+          0,
+          0,
+          9
+        ],
+        "createdAt": "2026-11-18T18:00:08.205Z"
+      },
+      {
+        "id": "crafted-mcp-1795025891122-3gd4",
+        "name": "Council fire",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.012,
+              0
+            ],
+            "scale": [
+              2.6,
+              0.024,
+              2.6
+            ],
+            "color": "#15100d",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.04,
+              0
+            ],
+            "scale": [
+              1.7,
+              0.08,
+              1.7
+            ],
+            "color": "#241a15",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.05,
+              0
+            ],
+            "scale": [
+              13,
+              0.003,
+              13
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.008,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 0.9,
+              "amplitude": 0.1
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.051,
+              0
+            ],
+            "scale": [
+              12.48,
+              0.003,
+              12.48
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.009,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 1.33,
+              "amplitude": 0.14
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.052,
+              0
+            ],
+            "scale": [
+              11.96,
+              0.003,
+              11.96
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.01,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 1.76,
+              "amplitude": 0.18
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.054,
+              0
+            ],
+            "scale": [
+              11.44,
+              0.003,
+              11.44
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.011,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 2.19,
+              "amplitude": 0.22
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.055,
+              0
+            ],
+            "scale": [
+              10.92,
+              0.003,
+              10.92
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.012,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 2.62,
+              "amplitude": 0.26
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.056,
+              0
+            ],
+            "scale": [
+              10.4,
+              0.003,
+              10.4
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.014,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 3.05,
+              "amplitude": 0.1
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.057,
+              0
+            ],
+            "scale": [
+              9.88,
+              0.003,
+              9.88
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.015,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 3.48,
+              "amplitude": 0.14
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.058,
+              0
+            ],
+            "scale": [
+              9.36,
+              0.003,
+              9.36
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.016,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 0.9,
+              "amplitude": 0.18
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.06,
+              0
+            ],
+            "scale": [
+              8.84,
+              0.003,
+              8.84
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.017,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 1.33,
+              "amplitude": 0.22
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.061,
+              0
+            ],
+            "scale": [
+              8.32,
+              0.003,
+              8.32
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.018,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 1.76,
+              "amplitude": 0.26
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.062,
+              0
+            ],
+            "scale": [
+              7.8,
+              0.003,
+              7.8
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.019,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 2.19,
+              "amplitude": 0.1
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.063,
+              0
+            ],
+            "scale": [
+              7.28,
+              0.003,
+              7.28
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.02,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 2.62,
+              "amplitude": 0.14
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.064,
+              0
+            ],
+            "scale": [
+              6.76,
+              0.003,
+              6.76
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.021,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 3.05,
+              "amplitude": 0.18
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.066,
+              0
+            ],
+            "scale": [
+              6.24,
+              0.003,
+              6.24
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.022,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 3.48,
+              "amplitude": 0.22
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.067,
+              0
+            ],
+            "scale": [
+              5.72,
+              0.003,
+              5.72
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.023,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 0.9,
+              "amplitude": 0.26
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.068,
+              0
+            ],
+            "scale": [
+              5.2,
+              0.003,
+              5.2
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.025,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 1.33,
+              "amplitude": 0.1
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.069,
+              0
+            ],
+            "scale": [
+              4.68,
+              0.003,
+              4.68
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.026,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 1.76,
+              "amplitude": 0.14
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.07,
+              0
+            ],
+            "scale": [
+              4.16,
+              0.003,
+              4.16
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.027,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 2.19,
+              "amplitude": 0.18
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.072,
+              0
+            ],
+            "scale": [
+              3.64,
+              0.003,
+              3.64
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.028,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 2.62,
+              "amplitude": 0.22
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.073,
+              0
+            ],
+            "scale": [
+              3.12,
+              0.003,
+              3.12
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.029,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 3.05,
+              "amplitude": 0.26
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.074,
+              0
+            ],
+            "scale": [
+              2.6,
+              0.003,
+              2.6
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.03,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 3.48,
+              "amplitude": 0.1
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.075,
+              0
+            ],
+            "scale": [
+              2.08,
+              0.003,
+              2.08
+            ],
+            "color": "#ff7a1f",
+            "emissive": "#ff6a10",
+            "emissiveIntensity": 0.5,
+            "opacity": 0.031,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 0.9,
+              "amplitude": 0.14
+            }
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.003,
+              0.17,
+              0.955
+            ],
+            "scale": [
+              0.585,
+              0.471,
+              0.531
+            ],
+            "rotation": [
+              -0.011,
+              2.939,
+              0.16
+            ],
+            "color": "#6a625c",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0.509,
+              0.149,
+              0.835
+            ],
+            "scale": [
+              0.521,
+              0.415,
+              0.459
+            ],
+            "rotation": [
+              -0.248,
+              0.092,
+              -0.091
+            ],
+            "color": "#575049",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0.905,
+              0.166,
+              0.427
+            ],
+            "scale": [
+              0.591,
+              0.461,
+              0.491
+            ],
+            "rotation": [
+              0.044,
+              2.267,
+              -0.11
+            ],
+            "color": "#575049",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0.968,
+              0.148,
+              -0.09
+            ],
+            "scale": [
+              0.578,
+              0.411,
+              0.474
+            ],
+            "rotation": [
+              -0.224,
+              0.398,
+              0.054
+            ],
+            "color": "#6a625c",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0.668,
+              0.171,
+              -0.678
+            ],
+            "scale": [
+              0.566,
+              0.474,
+              0.472
+            ],
+            "rotation": [
+              0.038,
+              1.07,
+              -0.098
+            ],
+            "color": "#575049",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0.315,
+              0.173,
+              -0.905
+            ],
+            "scale": [
+              0.608,
+              0.48,
+              0.518
+            ],
+            "rotation": [
+              -0.108,
+              0.293,
+              -0.001
+            ],
+            "color": "#575049",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.258,
+              0.153,
+              -0.98
+            ],
+            "scale": [
+              0.578,
+              0.426,
+              0.495
+            ],
+            "rotation": [
+              -0.058,
+              1.65,
+              0.019
+            ],
+            "color": "#6a625c",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.77,
+              0.186,
+              -0.638
+            ],
+            "scale": [
+              0.63,
+              0.517,
+              0.514
+            ],
+            "rotation": [
+              0.188,
+              1.31,
+              -0.17
+            ],
+            "color": "#575049",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.949,
+              0.153,
+              -0.14
+            ],
+            "scale": [
+              0.574,
+              0.426,
+              0.476
+            ],
+            "rotation": [
+              0.156,
+              1.914,
+              0.101
+            ],
+            "color": "#575049",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.885,
+              0.161,
+              0.35
+            ],
+            "scale": [
+              0.564,
+              0.447,
+              0.466
+            ],
+            "rotation": [
+              -0.182,
+              2.624,
+              -0.059
+            ],
+            "color": "#6a625c",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.494,
+              0.17,
+              0.837
+            ],
+            "scale": [
+              0.562,
+              0.472,
+              0.471
+            ],
+            "rotation": [
+              -0.215,
+              2.547,
+              0.078
+            ],
+            "color": "#575049",
+            "roughness": 0.95,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.1,
+              0
+            ],
+            "scale": [
+              1.5,
+              0.3,
+              1.5
+            ],
+            "color": "#ff5a14",
+            "emissive": "#ff4a08",
+            "emissiveIntensity": 1.3,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 2.3,
+              "amplitude": 0.18
+            }
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0.12,
+              0.2,
+              -0.08
+            ],
+            "scale": [
+              0.6,
+              0.22,
+              0.6
+            ],
+            "color": "#ffd27a",
+            "emissive": "#ffb030",
+            "emissiveIntensity": 1.56,
+            "roughness": 1,
+            "animation": {
+              "type": "pulse",
+              "speed": 3.7,
+              "amplitude": 0.4
+            }
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.076,
+              0.585,
+              0.306
+            ],
+            "scale": [
+              0.16,
+              1.426,
+              0.16
+            ],
+            "rotation": [
+              -0.455,
+              0,
+              0.109
+            ],
+            "color": "#3a2416",
+            "roughness": 1,
+            "emissive": "#ff3a00",
+            "emissiveIntensity": 0.12
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.315,
+              0.585,
+              0.022
+            ],
+            "scale": [
+              0.16,
+              1.426,
+              0.16
+            ],
+            "rotation": [
+              -0.035,
+              0,
+              0.466
+            ],
+            "color": "#2b1a11",
+            "roughness": 1,
+            "emissive": "#ff3a00",
+            "emissiveIntensity": 0.12
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.118,
+              0.585,
+              -0.292
+            ],
+            "scale": [
+              0.16,
+              1.426,
+              0.16
+            ],
+            "rotation": [
+              0.438,
+              0,
+              0.169
+            ],
+            "color": "#3a2416",
+            "roughness": 1,
+            "emissive": "#ff3a00",
+            "emissiveIntensity": 0.12
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.241,
+              0.585,
+              -0.202
+            ],
+            "scale": [
+              0.16,
+              1.426,
+              0.16
+            ],
+            "rotation": [
+              0.314,
+              0,
+              -0.352
+            ],
+            "color": "#2b1a11",
+            "roughness": 1,
+            "emissive": "#ff3a00",
+            "emissiveIntensity": 0.12
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.267,
+              0.585,
+              0.167
+            ],
+            "scale": [
+              0.16,
+              1.426,
+              0.16
+            ],
+            "rotation": [
+              -0.261,
+              0,
+              -0.393
+            ],
+            "color": "#3a2416",
+            "roughness": 1,
+            "emissive": "#ff3a00",
+            "emissiveIntensity": 0.12
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.24,
+              0.1
+            ],
+            "scale": [
+              0.2,
+              1.4,
+              0.2
+            ],
+            "rotation": [
+              1.457,
+              0,
+              -1.232
+            ],
+            "color": "#24150e",
+            "roughness": 1,
+            "emissive": "#ff3a00",
+            "emissiveIntensity": 0.25
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.05,
+              0.28,
+              -0.12
+            ],
+            "scale": [
+              0.18,
+              1.3,
+              0.18
+            ],
+            "rotation": [
+              1.521,
+              0,
+              0.38
+            ],
+            "color": "#2e1c12",
+            "roughness": 1,
+            "emissive": "#ff3a00",
+            "emissiveIntensity": 0.2
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              0.92,
+              0
+            ],
+            "scale": [
+              0.92,
+              1.6,
+              0.92
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "color": "#ffc766",
+            "color2": "#ff7a14",
+            "color3": "#a31e05",
+            "intensity": 0.675,
+            "speed": 1.15
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              0.92,
+              0
+            ],
+            "scale": [
+              0.92,
+              1.6,
+              0.92
+            ],
+            "rotation": [
+              0,
+              2.094,
+              0
+            ],
+            "color": "#ffc766",
+            "color2": "#ff7a14",
+            "color3": "#a31e05",
+            "intensity": 0.675,
+            "speed": 1.15
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              0.92,
+              0
+            ],
+            "scale": [
+              0.92,
+              1.6,
+              0.92
+            ],
+            "rotation": [
+              0,
+              4.189,
+              0
+            ],
+            "color": "#ffc766",
+            "color2": "#ff7a14",
+            "color3": "#a31e05",
+            "intensity": 0.675,
+            "speed": 1.15
+          },
+          {
+            "type": "flame",
+            "position": [
+              0.02,
+              0.62,
+              0.02
+            ],
+            "scale": [
+              0.5,
+              1,
+              0.5
+            ],
+            "rotation": [
+              0,
+              1.047,
+              0
+            ],
+            "color": "#ffe9a8",
+            "color2": "#ff7a14",
+            "color3": "#a31e05",
+            "intensity": 0.9,
+            "speed": 1.5
+          },
+          {
+            "type": "flame",
+            "position": [
+              0.02,
+              0.62,
+              0.02
+            ],
+            "scale": [
+              0.5,
+              1,
+              0.5
+            ],
+            "rotation": [
+              0,
+              4.189,
+              0
+            ],
+            "color": "#ffe9a8",
+            "color2": "#ff7a14",
+            "color3": "#a31e05",
+            "intensity": 0.9,
+            "speed": 1.5
+          },
+          {
+            "type": "flame",
+            "position": [
+              -0.2,
+              0.55,
+              0.12
+            ],
+            "scale": [
+              0.42,
+              0.9,
+              0.42
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "color": "#ffc766",
+            "color2": "#ff7a14",
+            "color3": "#a31e05",
+            "intensity": 0.81,
+            "speed": 1.35,
+            "animation": {
+              "type": "rotate",
+              "speed": 1.3,
+              "axis": "y"
+            }
+          },
+          {
+            "type": "flame",
+            "position": [
+              0.21,
+              0.6,
+              0.1
+            ],
+            "scale": [
+              0.44,
+              1,
+              0.44
+            ],
+            "rotation": [
+              0,
+              1.571,
+              0
+            ],
+            "color": "#ffc766",
+            "color2": "#ff7a14",
+            "color3": "#a31e05",
+            "intensity": 0.81,
+            "speed": 1.05,
+            "animation": {
+              "type": "rotate",
+              "speed": -1.7,
+              "axis": "y"
+            }
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              0.5,
+              -0.24
+            ],
+            "scale": [
+              0.4,
+              0.8,
+              0.4
+            ],
+            "rotation": [
+              0,
+              3.491,
+              0
+            ],
+            "color": "#ffc766",
+            "color2": "#ff7a14",
+            "color3": "#a31e05",
+            "intensity": 0.81,
+            "speed": 1.7,
+            "animation": {
+              "type": "rotate",
+              "speed": 2.1,
+              "axis": "y"
+            }
+          },
+          {
+            "type": "particle_emitter",
+            "position": [
+              0,
+              0.35,
+              0
+            ],
+            "scale": [
+              0.7,
+              0.45,
+              0.7
+            ],
+            "color": "#ffd27a",
+            "color2": "#ff4d00",
+            "particleCount": 26,
+            "particleType": "ember",
+            "speed": 1,
+            "intensity": 0.5
+          }
+        ],
+        "position": [
+          0,
+          0,
+          9
+        ],
+        "createdAt": "2026-11-18T18:18:11.122Z"
+      },
+      {
+        "id": "crafted-mcp-1795025977474-8rwg",
+        "name": "Standing stones",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "box",
+            "position": [
+              -1.481,
+              2.5,
+              11.102
+            ],
+            "scale": [
+              1.25,
+              5.3,
+              0.9
+            ],
+            "rotation": [
+              -0.001,
+              -0.203,
+              0.006
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "box",
+            "position": [
+              1.481,
+              2.5,
+              11.102
+            ],
+            "scale": [
+              1.25,
+              5.3,
+              0.9
+            ],
+            "rotation": [
+              0.003,
+              0.129,
+              0.027
+            ],
+            "color": "#a39c93",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              5.4,
+              11.18
+            ],
+            "scale": [
+              4.7,
+              0.8,
+              1.1
+            ],
+            "rotation": [
+              0,
+              0.02,
+              0.015
+            ],
+            "color": "#9a948c",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              5.498,
+              1.686,
+              9.846
+            ],
+            "scale": [
+              1.326,
+              4.683,
+              0.92
+            ],
+            "rotation": [
+              -0.089,
+              0.227,
+              -0.033
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              5.498,
+              0.468,
+              9.846
+            ],
+            "scale": [
+              1.485,
+              2.342,
+              1.058
+            ],
+            "rotation": [
+              -0.089,
+              0.227,
+              -0.033
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              9.761,
+              1.678,
+              5.887
+            ],
+            "scale": [
+              1.328,
+              4.66,
+              1.019
+            ],
+            "rotation": [
+              -0.04,
+              0.855,
+              -0.041
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              9.761,
+              0.466,
+              5.887
+            ],
+            "scale": [
+              1.487,
+              2.33,
+              1.172
+            ],
+            "rotation": [
+              -0.04,
+              0.855,
+              -0.041
+            ],
+            "color": "#9a948c",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              11.009,
+              1.69,
+              0.85
+            ],
+            "scale": [
+              1.314,
+              4.694,
+              1.086
+            ],
+            "rotation": [
+              -0.086,
+              1.477,
+              0.065
+            ],
+            "color": "#9a948c",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              11.009,
+              0.469,
+              0.85
+            ],
+            "scale": [
+              1.472,
+              2.347,
+              1.249
+            ],
+            "rotation": [
+              -0.086,
+              1.477,
+              0.065
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              10.012,
+              1.362,
+              -5.117
+            ],
+            "scale": [
+              1.36,
+              3.784,
+              1.031
+            ],
+            "rotation": [
+              0.01,
+              1.899,
+              -0.039
+            ],
+            "color": "#9a948c",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              10.012,
+              0.378,
+              -5.117
+            ],
+            "scale": [
+              1.523,
+              1.892,
+              1.186
+            ],
+            "rotation": [
+              0.01,
+              1.899,
+              -0.039
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              6.336,
+              1.444,
+              -9.761
+            ],
+            "scale": [
+              1.529,
+              4.012,
+              0.885
+            ],
+            "rotation": [
+              -0.021,
+              2.585,
+              0.007
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              6.336,
+              0.401,
+              -9.761
+            ],
+            "scale": [
+              1.712,
+              2.006,
+              1.018
+            ],
+            "rotation": [
+              -0.021,
+              2.585,
+              0.007
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -5.349,
+              1.863,
+              10.301
+            ],
+            "scale": [
+              1.292,
+              5.176,
+              0.927
+            ],
+            "rotation": [
+              -0.061,
+              -0.492,
+              -0.07
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -5.349,
+              0.518,
+              10.301
+            ],
+            "scale": [
+              1.447,
+              2.588,
+              1.066
+            ],
+            "rotation": [
+              -0.061,
+              -0.492,
+              -0.07
+            ],
+            "color": "#9a948c",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -10.099,
+              1.751,
+              5.808
+            ],
+            "scale": [
+              1.559,
+              4.863,
+              0.861
+            ],
+            "rotation": [
+              -0.087,
+              -1.077,
+              0.015
+            ],
+            "color": "#9a948c",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -10.099,
+              0.486,
+              5.808
+            ],
+            "scale": [
+              1.746,
+              2.432,
+              0.99
+            ],
+            "rotation": [
+              -0.087,
+              -1.077,
+              0.015
+            ],
+            "color": "#9a948c",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -11.277,
+              1.472,
+              0.804
+            ],
+            "scale": [
+              1.609,
+              4.088,
+              0.933
+            ],
+            "rotation": [
+              0.067,
+              -1.686,
+              -0.078
+            ],
+            "color": "#a39c93",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -11.277,
+              0.409,
+              0.804
+            ],
+            "scale": [
+              1.802,
+              2.044,
+              1.073
+            ],
+            "rotation": [
+              0.067,
+              -1.686,
+              -0.078
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -9.703,
+              1.434,
+              -5.758
+            ],
+            "scale": [
+              1.438,
+              3.983,
+              0.839
+            ],
+            "rotation": [
+              -0.077,
+              -2.015,
+              0.021
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -9.703,
+              0.398,
+              -5.758
+            ],
+            "scale": [
+              1.611,
+              1.992,
+              0.965
+            ],
+            "rotation": [
+              -0.077,
+              -2.015,
+              0.021
+            ],
+            "color": "#9a948c",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -5.568,
+              1.521,
+              -9.759
+            ],
+            "scale": [
+              1.444,
+              4.225,
+              0.972
+            ],
+            "rotation": [
+              -0.006,
+              -2.659,
+              -0.049
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -5.568,
+              0.423,
+              -9.759
+            ],
+            "scale": [
+              1.617,
+              2.113,
+              1.118
+            ],
+            "rotation": [
+              -0.006,
+              -2.659,
+              -0.049
+            ],
+            "color": "#9a948c",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              3.458,
+              2.016,
+              -10.968
+            ],
+            "scale": [
+              1.5,
+              5.6,
+              1
+            ],
+            "rotation": [
+              0.052,
+              3.102,
+              0.088
+            ],
+            "color": "#9a948c",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              3.458,
+              0.56,
+              -10.968
+            ],
+            "scale": [
+              1.68,
+              2.8,
+              1.15
+            ],
+            "rotation": [
+              0.052,
+              3.102,
+              0.088
+            ],
+            "color": "#a39c93",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -3.458,
+              1.872,
+              -10.968
+            ],
+            "scale": [
+              1.45,
+              5.2,
+              1
+            ],
+            "rotation": [
+              -0.004,
+              3.411,
+              -0.067
+            ],
+            "color": "#9a948c",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -3.458,
+              0.52,
+              -10.968
+            ],
+            "scale": [
+              1.624,
+              2.6,
+              1.15
+            ],
+            "rotation": [
+              -0.004,
+              3.411,
+              -0.067
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              13.125,
+              0.3,
+              4.264
+            ],
+            "scale": [
+              1.4,
+              1,
+              4.2
+            ],
+            "rotation": [
+              0.03,
+              0.698,
+              0.08
+            ],
+            "color": "#8c867f",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -12.616,
+              0.25,
+              6.219
+            ],
+            "scale": [
+              1.135,
+              0.701,
+              0.923
+            ],
+            "rotation": [
+              0,
+              1.319,
+              0
+            ],
+            "color": "#a39c93",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -9.109,
+              0.169,
+              -12.178
+            ],
+            "scale": [
+              0.766,
+              0.555,
+              0.759
+            ],
+            "rotation": [
+              0,
+              2.834,
+              0
+            ],
+            "color": "#a39c93",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -12.161,
+              0.328,
+              -6.746
+            ],
+            "scale": [
+              1.489,
+              1.186,
+              1.2
+            ],
+            "rotation": [
+              0,
+              0.989,
+              0
+            ],
+            "color": "#a39c93",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -1.876,
+              0.193,
+              -14.81
+            ],
+            "scale": [
+              0.879,
+              0.569,
+              0.797
+            ],
+            "rotation": [
+              0,
+              0.701,
+              0
+            ],
+            "color": "#a39c93",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              4.661,
+              0.15,
+              12.962
+            ],
+            "scale": [
+              0.68,
+              0.412,
+              0.632
+            ],
+            "rotation": [
+              0,
+              2.138,
+              0
+            ],
+            "color": "#a39c93",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -5.314,
+              0.149,
+              -13.705
+            ],
+            "scale": [
+              0.679,
+              0.389,
+              0.641
+            ],
+            "rotation": [
+              0,
+              0.309,
+              0
+            ],
+            "color": "#a39c93",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -2.571,
+              0.245,
+              15.392
+            ],
+            "scale": [
+              1.113,
+              0.761,
+              0.851
+            ],
+            "rotation": [
+              0,
+              2.643,
+              0
+            ],
+            "color": "#a39c93",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -4.867,
+              0.267,
+              14.306
+            ],
+            "scale": [
+              1.215,
+              0.702,
+              0.945
+            ],
+            "rotation": [
+              0,
+              0.52,
+              0
+            ],
+            "color": "#a39c93",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          },
+          {
+            "type": "sphere",
+            "position": [
+              6.746,
+              0.226,
+              -11.63
+            ],
+            "scale": [
+              1.029,
+              0.697,
+              0.743
+            ],
+            "rotation": [
+              0,
+              2.175,
+              0
+            ],
+            "color": "#a39c93",
+            "roughness": 0.97,
+            "texturePresetId": "rock"
+          }
+        ],
+        "position": [
+          0,
+          0,
+          9
+        ],
+        "createdAt": "2026-11-18T18:19:37.474Z"
+      },
+      {
+        "id": "crafted-mcp-1795026103567-c5i1",
+        "name": "Sky and woodpile",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "aurora",
+            "position": [
+              -20,
+              78,
+              200
+            ],
+            "scale": [
+              300,
+              80,
+              1
+            ],
+            "rotation": [
+              0.25,
+              0,
+              0
+            ],
+            "color": "#3dff9a",
+            "color2": "#3aa0ff",
+            "color3": "#b05cff",
+            "intensity": 0.7,
+            "speed": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              6.707,
+              0.15,
+              -2.778
+            ],
+            "scale": [
+              0.28,
+              1.346,
+              0.28
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              0.393
+            ],
+            "color": "#3f2b1e",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              6.975,
+              0.15,
+              -2.89
+            ],
+            "scale": [
+              0.28,
+              1.262,
+              0.28
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              0.393
+            ],
+            "color": "#4b3323",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              7.253,
+              0.15,
+              -3.004
+            ],
+            "scale": [
+              0.28,
+              1.371,
+              0.28
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              0.393
+            ],
+            "color": "#3f2b1e",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              7.521,
+              0.15,
+              -3.116
+            ],
+            "scale": [
+              0.28,
+              1.383,
+              0.28
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              0.393
+            ],
+            "color": "#4b3323",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              6.846,
+              0.41,
+              -2.836
+            ],
+            "scale": [
+              0.28,
+              1.358,
+              0.28
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              0.393
+            ],
+            "color": "#3f2b1e",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              7.114,
+              0.41,
+              -2.947
+            ],
+            "scale": [
+              0.28,
+              1.345,
+              0.28
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              0.393
+            ],
+            "color": "#4b3323",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              7.382,
+              0.41,
+              -3.058
+            ],
+            "scale": [
+              0.28,
+              1.44,
+              0.28
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              0.393
+            ],
+            "color": "#3f2b1e",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              6.985,
+              0.66,
+              -2.893
+            ],
+            "scale": [
+              0.28,
+              1.414,
+              0.28
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              0.393
+            ],
+            "color": "#4b3323",
+            "roughness": 1
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              7.253,
+              0.66,
+              -3.004
+            ],
+            "scale": [
+              0.28,
+              1.323,
+              0.28
+            ],
+            "rotation": [
+              -1.571,
+              0,
+              0.393
+            ],
+            "color": "#3f2b1e",
+            "roughness": 1
+          }
+        ],
+        "position": [
+          0,
+          0,
+          9
+        ],
+        "createdAt": "2026-11-18T18:21:43.567Z"
+      }
+    ],
+    "conjuredAssetIds": [],
+    "catalogPlacements": [
+      {
+        "id": "catalog-stylized-nature_pine_2-1795025024953-zscp",
+        "catalogId": "stylized-nature_pine_2",
+        "name": "Nature Pine 2",
+        "glbPath": "/models/stylized-nature/pine_2.gltf",
+        "position": [
+          -1.41,
+          0,
+          27.007
+        ],
+        "rotation": [
+          0,
+          0.82,
+          0
+        ],
+        "scale": 1.251
+      },
+      {
+        "id": "catalog-stylized-nature_pine_4-1795025025182-c6nh",
+        "catalogId": "stylized-nature_pine_4",
+        "name": "Nature Pine 4",
+        "glbPath": "/models/stylized-nature/pine_4.gltf",
+        "position": [
+          5.447,
+          0,
+          27.157
+        ],
+        "rotation": [
+          0,
+          1.861,
+          0
+        ],
+        "scale": 1.347
+      },
+      {
+        "id": "catalog-stylized-nature_pine_2-1795025025316-kum2",
+        "catalogId": "stylized-nature_pine_2",
+        "name": "Nature Pine 2",
+        "glbPath": "/models/stylized-nature/pine_2.gltf",
+        "position": [
+          11.299,
+          0,
+          22.864
+        ],
+        "rotation": [
+          0,
+          3.603,
+          0
+        ],
+        "scale": 1.255
+      },
+      {
+        "id": "catalog-stylized-nature_pine_4-1795025025449-06yo",
+        "catalogId": "stylized-nature_pine_4",
+        "name": "Nature Pine 4",
+        "glbPath": "/models/stylized-nature/pine_4.gltf",
+        "position": [
+          16.697,
+          0,
+          16.543
+        ],
+        "rotation": [
+          0,
+          1.162,
+          0
+        ],
+        "scale": 1.19
+      },
+      {
+        "id": "catalog-stylized-nature_pine_1-1795025025733-dnnv",
+        "catalogId": "stylized-nature_pine_1",
+        "name": "Nature Pine 1",
+        "glbPath": "/models/stylized-nature/pine_1.gltf",
+        "position": [
+          19.805,
+          0,
+          8.01
+        ],
+        "rotation": [
+          0,
+          5.545,
+          0
+        ],
+        "scale": 1.496
+      },
+      {
+        "id": "catalog-stylized-nature_pine_1-1795025025971-94lr",
+        "catalogId": "stylized-nature_pine_1",
+        "name": "Nature Pine 1",
+        "glbPath": "/models/stylized-nature/pine_1.gltf",
+        "position": [
+          16.763,
+          0,
+          1.614
+        ],
+        "rotation": [
+          0,
+          2.358,
+          0
+        ],
+        "scale": 1.152
+      },
+      {
+        "id": "catalog-stylized-nature_pine_2-1795025026064-ryak",
+        "catalogId": "stylized-nature_pine_2",
+        "name": "Nature Pine 2",
+        "glbPath": "/models/stylized-nature/pine_2.gltf",
+        "position": [
+          11.281,
+          0,
+          -5.559
+        ],
+        "rotation": [
+          0,
+          2.371,
+          0
+        ],
+        "scale": 1.338
+      },
+      {
+        "id": "catalog-stylized-nature_pine_1-1795025026162-ri0q",
+        "catalogId": "stylized-nature_pine_1",
+        "name": "Nature Pine 1",
+        "glbPath": "/models/stylized-nature/pine_1.gltf",
+        "position": [
+          5.688,
+          0,
+          -8.926
+        ],
+        "rotation": [
+          0,
+          4.369,
+          0
+        ],
+        "scale": 1.437
+      },
+      {
+        "id": "catalog-stylized-nature_pine_3-1795025026246-1b5f",
+        "catalogId": "stylized-nature_pine_3",
+        "name": "Nature Pine 3",
+        "glbPath": "/models/stylized-nature/pine_3.gltf",
+        "position": [
+          -5.021,
+          0,
+          -10.188
+        ],
+        "rotation": [
+          0,
+          6.206,
+          0
+        ],
+        "scale": 1.368
+      },
+      {
+        "id": "catalog-stylized-nature_pine_3-1795025026337-0ejm",
+        "catalogId": "stylized-nature_pine_3",
+        "name": "Nature Pine 3",
+        "glbPath": "/models/stylized-nature/pine_3.gltf",
+        "position": [
+          -11.328,
+          0,
+          -5.058
+        ],
+        "rotation": [
+          0,
+          4.717,
+          0
+        ],
+        "scale": 1.232
+      },
+      {
+        "id": "catalog-stylized-nature_pine_2-1795025026416-hfh6",
+        "catalogId": "stylized-nature_pine_2",
+        "name": "Nature Pine 2",
+        "glbPath": "/models/stylized-nature/pine_2.gltf",
+        "position": [
+          -15.074,
+          0,
+          -1.129
+        ],
+        "rotation": [
+          0,
+          0.345,
+          0
+        ],
+        "scale": 1.375
+      },
+      {
+        "id": "catalog-stylized-nature_pine_4-1795025026698-krmd",
+        "catalogId": "stylized-nature_pine_4",
+        "name": "Nature Pine 4",
+        "glbPath": "/models/stylized-nature/pine_4.gltf",
+        "position": [
+          -17.045,
+          0,
+          6.236
+        ],
+        "rotation": [
+          0,
+          4.476,
+          0
+        ],
+        "scale": 1.19
+      },
+      {
+        "id": "catalog-stylized-nature_pine_1-1795025026997-ua6z",
+        "catalogId": "stylized-nature_pine_1",
+        "name": "Nature Pine 1",
+        "glbPath": "/models/stylized-nature/pine_1.gltf",
+        "position": [
+          -18.142,
+          0,
+          14.751
+        ],
+        "rotation": [
+          0,
+          5.111,
+          0
+        ],
+        "scale": 1.135
+      },
+      {
+        "id": "catalog-stylized-nature_pine_3-1795025027099-jcud",
+        "catalogId": "stylized-nature_pine_3",
+        "name": "Nature Pine 3",
+        "glbPath": "/models/stylized-nature/pine_3.gltf",
+        "position": [
+          -15.903,
+          0,
+          20.997
+        ],
+        "rotation": [
+          0,
+          3.368,
+          0
+        ],
+        "scale": 1.488
+      },
+      {
+        "id": "catalog-stylized-nature_pine_5-1795025027195-6gez",
+        "catalogId": "stylized-nature_pine_5",
+        "name": "Nature Pine 5",
+        "glbPath": "/models/stylized-nature/pine_5.gltf",
+        "position": [
+          -8.866,
+          0,
+          26.528
+        ],
+        "rotation": [
+          0,
+          4.293,
+          0
+        ],
+        "scale": 1.479
+      },
+      {
+        "id": "catalog-stylized-nature_pine_3-1795025027295-zdqg",
+        "catalogId": "stylized-nature_pine_3",
+        "name": "Nature Pine 3",
+        "glbPath": "/models/stylized-nature/pine_3.gltf",
+        "position": [
+          2.28,
+          0,
+          33.44
+        ],
+        "rotation": [
+          0,
+          1.711,
+          0
+        ],
+        "scale": 1.604
+      },
+      {
+        "id": "catalog-stylized-nature_pine_4-1795025027404-swc3",
+        "catalogId": "stylized-nature_pine_4",
+        "name": "Nature Pine 4",
+        "glbPath": "/models/stylized-nature/pine_4.gltf",
+        "position": [
+          13.699,
+          0,
+          31.166
+        ],
+        "rotation": [
+          0,
+          0.05,
+          0
+        ],
+        "scale": 1.544
+      },
+      {
+        "id": "catalog-stylized-nature_pine_3-1795025027538-gnd9",
+        "catalogId": "stylized-nature_pine_3",
+        "name": "Nature Pine 3",
+        "glbPath": "/models/stylized-nature/pine_3.gltf",
+        "position": [
+          21.34,
+          0,
+          22.812
+        ],
+        "rotation": [
+          0,
+          4.484,
+          0
+        ],
+        "scale": 2.076
+      },
+      {
+        "id": "catalog-stylized-nature_pine_5-1795025027741-xwpb",
+        "catalogId": "stylized-nature_pine_5",
+        "name": "Nature Pine 5",
+        "glbPath": "/models/stylized-nature/pine_5.gltf",
+        "position": [
+          24.75,
+          0,
+          13.15
+        ],
+        "rotation": [
+          0,
+          3.106,
+          0
+        ],
+        "scale": 1.584
+      },
+      {
+        "id": "catalog-stylized-nature_pine_4-1795025027844-mc6m",
+        "catalogId": "stylized-nature_pine_4",
+        "name": "Nature Pine 4",
+        "glbPath": "/models/stylized-nature/pine_4.gltf",
+        "position": [
+          26.19,
+          0,
+          1.15
+        ],
+        "rotation": [
+          0,
+          5.323,
+          0
+        ],
+        "scale": 1.775
+      },
+      {
+        "id": "catalog-stylized-nature_pine_3-1795025028026-g992",
+        "catalogId": "stylized-nature_pine_3",
+        "name": "Nature Pine 3",
+        "glbPath": "/models/stylized-nature/pine_3.gltf",
+        "position": [
+          20.37,
+          0,
+          -8.501
+        ],
+        "rotation": [
+          0,
+          0.136,
+          0
+        ],
+        "scale": 1.963
+      },
+      {
+        "id": "catalog-stylized-nature_pine_4-1795025028132-m9qf",
+        "catalogId": "stylized-nature_pine_4",
+        "name": "Nature Pine 4",
+        "glbPath": "/models/stylized-nature/pine_4.gltf",
+        "position": [
+          15.164,
+          0,
+          -13.878
+        ],
+        "rotation": [
+          0,
+          6.24,
+          0
+        ],
+        "scale": 2.01
+      },
+      {
+        "id": "catalog-stylized-nature_pine_2-1795025028251-07x8",
+        "catalogId": "stylized-nature_pine_2",
+        "name": "Nature Pine 2",
+        "glbPath": "/models/stylized-nature/pine_2.gltf",
+        "position": [
+          1.037,
+          0,
+          -17.285
+        ],
+        "rotation": [
+          0,
+          0.532,
+          0
+        ],
+        "scale": 1.98
+      },
+      {
+        "id": "catalog-stylized-nature_pine_2-1795025028411-carm",
+        "catalogId": "stylized-nature_pine_2",
+        "name": "Nature Pine 2",
+        "glbPath": "/models/stylized-nature/pine_2.gltf",
+        "position": [
+          -9.154,
+          0,
+          -16.119
+        ],
+        "rotation": [
+          0,
+          1.164,
+          0
+        ],
+        "scale": 1.543
+      },
+      {
+        "id": "catalog-stylized-nature_pine_4-1795025028544-ntjs",
+        "catalogId": "stylized-nature_pine_4",
+        "name": "Nature Pine 4",
+        "glbPath": "/models/stylized-nature/pine_4.gltf",
+        "position": [
+          -19.213,
+          0,
+          -8.827
+        ],
+        "rotation": [
+          0,
+          4.603,
+          0
+        ],
+        "scale": 1.883
+      },
+      {
+        "id": "catalog-stylized-nature_pine_4-1795025028652-tl0b",
+        "catalogId": "stylized-nature_pine_4",
+        "name": "Nature Pine 4",
+        "glbPath": "/models/stylized-nature/pine_4.gltf",
+        "position": [
+          -23.943,
+          0,
+          3.743
+        ],
+        "rotation": [
+          0,
+          5.273,
+          0
+        ],
+        "scale": 1.8
+      },
+      {
+        "id": "catalog-stylized-nature_pine_4-1795025028761-shpg",
+        "catalogId": "stylized-nature_pine_4",
+        "name": "Nature Pine 4",
+        "glbPath": "/models/stylized-nature/pine_4.gltf",
+        "position": [
+          -26.805,
+          0,
+          8.673
+        ],
+        "rotation": [
+          0,
+          4.416,
+          0
+        ],
+        "scale": 1.972
+      },
+      {
+        "id": "catalog-stylized-nature_pine_3-1795025028866-95l1",
+        "catalogId": "stylized-nature_pine_3",
+        "name": "Nature Pine 3",
+        "glbPath": "/models/stylized-nature/pine_3.gltf",
+        "position": [
+          -23.372,
+          0,
+          21.452
+        ],
+        "rotation": [
+          0,
+          0.876,
+          0
+        ],
+        "scale": 1.6
+      },
+      {
+        "id": "catalog-stylized-nature_pine_4-1795025029090-bj60",
+        "catalogId": "stylized-nature_pine_4",
+        "name": "Nature Pine 4",
+        "glbPath": "/models/stylized-nature/pine_4.gltf",
+        "position": [
+          -15.876,
+          0,
+          27.047
+        ],
+        "rotation": [
+          0,
+          2.717,
+          0
+        ],
+        "scale": 2.046
+      },
+      {
+        "id": "catalog-stylized-nature_pine_1-1795025029185-kgc4",
+        "catalogId": "stylized-nature_pine_1",
+        "name": "Nature Pine 1",
+        "glbPath": "/models/stylized-nature/pine_1.gltf",
+        "position": [
+          -3.248,
+          0,
+          32.282
+        ],
+        "rotation": [
+          0,
+          2.361,
+          0
+        ],
+        "scale": 1.822
+      }
+    ],
+    "agentAvatars": [],
+    "transforms": {
+      "crafted-mcp-1795024808073-z9z0": {
+        "position": [
+          0,
+          0,
+          9
+        ]
+      },
+      "crafted-mcp-1795024808205-wq0d": {
+        "position": [
+          0,
+          0,
+          9
+        ]
+      },
+      "crafted-mcp-1795025891122-3gd4": {
+        "position": [
+          0,
+          0,
+          9
+        ]
+      },
+      "crafted-mcp-1795025977474-8rwg": {
+        "position": [
+          0,
+          0,
+          9
+        ]
+      },
+      "crafted-mcp-1795026103567-c5i1": {
+        "position": [
+          0,
+          0,
+          9
+        ]
+      }
+    },
+    "savedAt": "2026-11-18T18:21:43.567Z",
+    "behaviors": {},
+    "portalGates": [
+      {
+        "id": "portal-council-to-zen-workshop",
+        "variant": "verdant-arch",
+        "label": "Zen Workshop",
+        "position": [
+          0,
+          0,
+          -2
+        ],
+        "rotationY": 0,
+        "scale": 1,
+        "width": 2.4,
+        "height": 3.2,
+        "direction": "one-way",
+        "sourceWorldId": "world-1795024653273-vaax",
+        "action": {
+          "type": "load_world",
+          "worldId": "world-1794212026554-ghi9",
+          "worldName": "Zen Workshop"
+        },
+        "targetWorldId": "world-1794212026554-ghi9",
+        "targetWorldName": "Zen Workshop"
+      }
+    ],
+    "spatialWebObjects": [],
+    "agentWindows": [],
+    "lights": [
+      {
+        "id": "light-mcp-1795024800985-7lwp",
+        "type": "environment",
+        "color": "#ffffff",
+        "intensity": 0.5,
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1795024803107-xmne",
+        "type": "ambient",
+        "color": "#7f93c4",
+        "intensity": 0.22,
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1795024804899-khuc",
+        "type": "directional",
+        "color": "#a9c0ff",
+        "intensity": 0.55,
+        "position": [
+          -14,
+          38,
+          34
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1795024807768-7xc0",
+        "type": "point",
+        "color": "#ff8a3a",
+        "intensity": 38,
+        "position": [
+          0,
+          0.42,
+          9
+        ],
+        "visible": true
+      }
+    ],
+    "groundTiles": {
+      "-6,5": "dirt",
+      "-6,6": "dirt",
+      "-6,7": "dirt",
+      "-6,8": "dirt",
+      "-6,9": "dirt",
+      "-6,10": "dirt",
+      "-6,11": "dirt",
+      "-6,12": "dirt",
+      "-5,4": "dirt",
+      "-5,5": "dirt",
+      "-5,6": "dirt",
+      "-5,7": "dirt",
+      "-5,8": "dirt",
+      "-5,9": "dirt",
+      "-5,10": "dirt",
+      "-5,11": "dirt",
+      "-5,12": "dirt",
+      "-5,13": "dirt",
+      "-4,4": "dirt",
+      "-4,5": "dirt",
+      "-4,6": "dirt",
+      "-4,7": "dirt",
+      "-4,8": "dirt",
+      "-4,9": "dirt",
+      "-4,10": "dirt",
+      "-4,11": "dirt",
+      "-4,12": "dirt",
+      "-4,13": "dirt",
+      "-3,4": "dirt",
+      "-3,5": "dirt",
+      "-3,6": "dirt",
+      "-3,7": "dirt",
+      "-3,8": "dirt",
+      "-3,9": "dirt",
+      "-3,10": "dirt",
+      "-3,11": "dirt",
+      "-3,12": "dirt",
+      "-3,13": "dirt",
+      "-2,3": "dirt",
+      "-2,4": "dirt",
+      "-2,5": "dirt",
+      "-2,6": "dirt",
+      "-2,7": "dirt",
+      "-2,8": "dirt",
+      "-2,9": "dirt",
+      "-2,10": "dirt",
+      "-2,11": "dirt",
+      "-2,12": "dirt",
+      "-2,13": "dirt",
+      "-2,14": "dirt",
+      "-1,3": "dirt",
+      "-1,4": "dirt",
+      "-1,5": "dirt",
+      "-1,6": "dirt",
+      "-1,7": "dirt",
+      "-1,8": "dirt",
+      "-1,9": "dirt",
+      "-1,10": "dirt",
+      "-1,11": "dirt",
+      "-1,12": "dirt",
+      "-1,13": "dirt",
+      "-1,14": "dirt",
+      "0,2": "dirt",
+      "0,3": "dirt",
+      "0,4": "dirt",
+      "0,5": "dirt",
+      "0,6": "dirt",
+      "0,7": "dirt",
+      "0,8": "dirt",
+      "0,9": "dirt",
+      "0,10": "dirt",
+      "0,11": "dirt",
+      "0,12": "dirt",
+      "0,13": "dirt",
+      "0,14": "dirt",
+      "0,15": "dirt",
+      "1,2": "dirt",
+      "1,3": "dirt",
+      "1,4": "dirt",
+      "1,5": "dirt",
+      "1,6": "dirt",
+      "1,7": "dirt",
+      "1,8": "dirt",
+      "1,9": "dirt",
+      "1,10": "dirt",
+      "1,11": "dirt",
+      "1,12": "dirt",
+      "1,13": "dirt",
+      "1,14": "dirt",
+      "1,15": "dirt",
+      "2,3": "dirt",
+      "2,4": "dirt",
+      "2,5": "dirt",
+      "2,6": "dirt",
+      "2,7": "dirt",
+      "2,8": "dirt",
+      "2,9": "dirt",
+      "2,10": "dirt",
+      "2,11": "dirt",
+      "2,12": "dirt",
+      "2,13": "dirt",
+      "2,14": "dirt",
+      "3,3": "dirt",
+      "3,4": "dirt",
+      "3,5": "dirt",
+      "3,6": "dirt",
+      "3,7": "dirt",
+      "3,8": "dirt",
+      "3,9": "dirt",
+      "3,10": "dirt",
+      "3,11": "dirt",
+      "3,12": "dirt",
+      "3,13": "dirt",
+      "3,14": "dirt",
+      "4,5": "dirt",
+      "4,6": "dirt",
+      "4,7": "dirt",
+      "4,8": "dirt",
+      "4,9": "dirt",
+      "4,10": "dirt",
+      "4,11": "dirt",
+      "4,12": "dirt",
+      "5,6": "dirt",
+      "5,7": "dirt",
+      "5,8": "dirt",
+      "5,9": "dirt",
+      "5,10": "dirt",
+      "5,11": "dirt",
+      "6,8": "dirt",
+      "6,9": "dirt",
+      "-1,-3": "dirt",
+      "0,-3": "dirt",
+      "-1,-2": "dirt",
+      "0,-2": "dirt",
+      "-1,-1": "dirt",
+      "0,-1": "dirt",
+      "-1,0": "dirt",
+      "0,0": "dirt",
+      "-1,1": "dirt",
+      "0,1": "dirt",
+      "-1,2": "dirt"
+    },
+    "skyBackgroundId": "aurora_night",
+    "groundPresetId": "grass"
+  }
+}
