@@ -73,6 +73,8 @@ export const exclude = [
   '**/*.test.tsx',
   'src/test-utils/',
   'packages/oasis-agent-engine/sandbox/',
+  // The engine's lab notebook: findings from the owner's machine, not documentation
+  'packages/oasis-agent-engine/README.md',
   // The workshop's manifest for the world tools; the cut ships plugins/oasis/mcp/directory.mcp.json as .mcp.json
   'plugins/oasis/.mcp.json',
   // The workshop's two-window launcher for Windows; the cut starts with scripts/oasis.mjs everywhere
