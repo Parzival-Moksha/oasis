@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const tokenFile = () => process.env.OASIS_TOKEN_FILE || path.join(os.homedir(), '.oasis', 'token');
+export const tokenFile = () => process.env.OASIS_TOKEN_FILE || path.join(process.env.OASIS_DATA_DIR || path.join(os.homedir(), '.oasis'), 'token');
 
 /** The key the servers were started with; '' means no key is asked for. */
 export const requiredToken = (env = process.env) => (env.OASIS_LOCAL_TOKEN || '').trim();

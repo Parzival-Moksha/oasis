@@ -76,7 +76,7 @@ export function annotate(tool) {
 export const offered = (tools) => (tools || []).filter((t) => t?.name && !isExcluded(t.name)).map(annotate)
 
 function token() {
-  const file = process.env.OASIS_TOKEN_FILE || path.join(os.homedir(), '.oasis', 'token')
+  const file = process.env.OASIS_TOKEN_FILE || path.join(process.env.OASIS_DATA_DIR || path.join(os.homedir(), '.oasis'), 'token')
   try { return fs.readFileSync(file, 'utf8').trim() } catch { return '' }
 }
 

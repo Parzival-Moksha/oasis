@@ -147,7 +147,7 @@ function fail(message) {
  * The local key: made once, kept in a file only its owner can read. Both servers get it and then refuse
  * requests without it; the browser gets it in the address the village is opened with.
  */
-const TOKEN_FILE = process.env.OASIS_TOKEN_FILE || path.join(os.homedir(), '.oasis', 'token')
+const TOKEN_FILE = process.env.OASIS_TOKEN_FILE || path.join(process.env.OASIS_DATA_DIR || path.join(os.homedir(), '.oasis'), 'token')
 const REQUIRE_TOKEN = process.env.OASIS_REQUIRE_TOKEN === '1' || (SLIM && process.env.OASIS_REQUIRE_TOKEN !== '0')
 
 export function localToken(file = TOKEN_FILE) {

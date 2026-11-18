@@ -9,12 +9,15 @@
 //                  emptied first, except its .git and node_modules folders, so it can be a checkout of the slim repository.
 //   --report-only  print the size table for what would be cut; write nothing
 //   --no-archive   skip measuring the .tar.gz (faster)
+//   --release      also write the release archive the plugin downloads (<out>/../<asset name from
+//                  plugins/oasis/scripts/release.json>) and put its sha256 into the cut's release.json
 //   --working-tree take tracked files as they are on disk, not as committed (to try a change before committing)
 //
 // Only committed files are taken, with their committed content (git HEAD), so nothing local, ignored, secret or
 // half-finished in the working tree can slip in. --working-tree takes the files as they are on disk instead.
 // Exit codes: 0 fine, 1 the cut is over a limit or an asset has no licence that allows redistribution.
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
@@ -302,6 +305,31 @@ function archiveSize(dir, files) {
   return bytes
 }
 
+/**
+ * The archive the plugin's launcher downloads on a first run: the cut itself, as one .tar.gz, with its
+ * checksum written into the cut's plugins/oasis/scripts/release.json (the plugin refuses any other file).
+ */
+function writeRelease(files) {
+  const releaseFile = path.join(OUT, 'plugins', 'oasis', 'scripts', 'release.json')
+  const release = JSON.parse(fs.readFileSync(releaseFile, 'utf8'))
+  const archive = path.join(path.dirname(OUT), release.asset)
+  const list = path.join(path.dirname(OUT), `${release.asset}.files.txt`)
+  fs.writeFileSync(list, files.map((file) => `${file}\n`).join(''))
+  // On Windows: the system's own tar. A GNU tar from Git Bash on the PATH reads "C:" as a remote host.
+  const systemTar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+  const tar = process.platform === 'win32' && fs.existsSync(systemTar) ? systemTar : 'tar'
+  try {
+    execFileSync(tar, ['-czf', archive, '-C', OUT, '-T', list], { stdio: 'inherit' })
+  } finally {
+    fs.rmSync(list, { force: true })
+  }
+  release.sha256 = createHash('sha256').update(fs.readFileSync(archive)).digest('hex')
+  fs.writeFileSync(releaseFile, `${JSON.stringify(release, null, 2)}\n`)
+  console.log(`\n  Release archive: ${archive} (${(fs.statSync(archive).size / MIB).toFixed(1)} MiB)`)
+  console.log(`  sha256 ${release.sha256} (written to the cut's release.json)`)
+  return fs.statSync(archive).size
+}
+
 function main() {
   const cut = plan()
   const problems = [...cut.problems]
@@ -324,7 +352,7 @@ function main() {
     }
   }
   walk(OUT)
-  const archive = flag('--no-archive') ? undefined : archiveSize(OUT, files)
+  const archive = flag('--release') ? writeRelease(files) : flag('--no-archive') ? undefined : archiveSize(OUT, files)
   const total = printTable(sizes(files, (f) => fs.statSync(path.join(OUT, f)).size), archive)
   console.log(`\n  Written to ${OUT}`)
   if (total.files > FILE_LIMIT) problems.push(`${total.files} files: over ${FILE_LIMIT}`)
