@@ -14,3 +14,4 @@ public/generated-videos/
 public/generated-voices/
 public/generated-music/
 public/images/
+.release/

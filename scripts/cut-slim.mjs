@@ -9,7 +9,7 @@
 //                  emptied first, except its .git and node_modules folders, so it can be a checkout of the slim repository.
 //   --report-only  print the size table for what would be cut; write nothing
 //   --no-archive   skip measuring the .tar.gz (faster)
-//   --release      also write the release archive the plugin downloads (<out>/../<asset name from
+//   --release      also write the release archive the plugin downloads (<out>/.release/<asset name from
 //                  plugins/oasis/scripts/release.json>) and put its sha256 into the cut's release.json
 //   --working-tree take tracked files as they are on disk, not as committed (to try a change before committing)
 //
@@ -312,8 +312,11 @@ function archiveSize(dir, files) {
 function writeRelease(files) {
   const releaseFile = path.join(OUT, 'plugins', 'oasis', 'scripts', 'release.json')
   const release = JSON.parse(fs.readFileSync(releaseFile, 'utf8'))
-  const archive = path.join(path.dirname(OUT), release.asset)
-  const list = path.join(path.dirname(OUT), `${release.asset}.files.txt`)
+  // Beside the cut's files, in a folder its .gitignore leaves out: the archive is uploaded to a release, not committed.
+  const dir = path.join(OUT, '.release')
+  fs.mkdirSync(dir, { recursive: true })
+  const archive = path.join(dir, release.asset)
+  const list = path.join(dir, `${release.asset}.files.txt`)
   fs.writeFileSync(list, files.map((file) => `${file}\n`).join(''))
   // On Windows: the system's own tar. A GNU tar from Git Bash on the PATH reads "C:" as a remote host.
   const systemTar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
@@ -345,7 +348,7 @@ function main() {
   const files = []
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.next') continue
+      if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.next' || entry.name === '.release') continue
       const full = path.join(dir, entry.name)
       if (entry.isDirectory()) walk(full)
       else files.push(path.relative(OUT, full).split(path.sep).join('/'))
