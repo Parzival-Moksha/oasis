@@ -8,6 +8,8 @@ export type ShadowMode = 'off' | 'avatars' | 'all'
 export type ShadowQuality = 'low' | 'medium' | 'high'
 /** 'auto': every frame while something in range moves, 60 times a second otherwise. */
 export type ShadowRefresh = 'auto' | 'frame' | '60' | '30'
+/** Flop saver (src/lib/flop-saver.ts): auto, everything on, or saver. */
+export type FlopSaverMode = 'auto' | 'all' | 'saver'
 
 export interface GraphicsPrefs {
   /** Ground texel density against the original look: 1 (as before), 2 or 4 times sharper. */
@@ -22,10 +24,12 @@ export interface GraphicsPrefs {
   shadowStrength: number
   /** How often the shadow map is redrawn. */
   shadowRefresh: ShadowRefresh
+  /** Effects switch off by tiers while the frame rate stays under 30 (auto), never (all), or always (saver). */
+  flopSaver: FlopSaverMode
 }
 
 export const GRAPHICS_PREFS_DEFAULT: GraphicsPrefs = {
-  groundSharpness: 2, shadows: 'avatars', shadowQuality: 'high', shadowSoftness: 0.5, shadowStrength: 0.5, shadowRefresh: 'auto',
+  groundSharpness: 2, shadows: 'avatars', shadowQuality: 'high', shadowSoftness: 0.5, shadowStrength: 0.5, shadowRefresh: 'auto', flopSaver: 'auto',
 }
 
 function unit(value: unknown, fallback: number): number {
@@ -41,7 +45,9 @@ export function normalizeGraphicsPrefs(raw: unknown): GraphicsPrefs {
   const shadows = value.shadows
   const quality = value.shadowQuality
   const refresh = value.shadowRefresh
+  const flop = value.flopSaver
   return {
+    flopSaver: flop === 'auto' || flop === 'all' || flop === 'saver' ? flop : GRAPHICS_PREFS_DEFAULT.flopSaver,
     shadowQuality: quality === 'low' || quality === 'medium' || quality === 'high' ? quality : GRAPHICS_PREFS_DEFAULT.shadowQuality,
     shadowSoftness: unit(value.shadowSoftness, GRAPHICS_PREFS_DEFAULT.shadowSoftness),
     shadowStrength: unit(value.shadowStrength, GRAPHICS_PREFS_DEFAULT.shadowStrength),

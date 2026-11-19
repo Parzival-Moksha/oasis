@@ -8,8 +8,9 @@ import { useContext, useEffect, useState } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import type { SharedTabProps } from '../types'
 import { canRequestFullscreen, isFullscreenActive, setOasisFullscreen } from '@/lib/fullscreen-controls'
-import { setGraphicsPref, type GroundSharpness, type ShadowMode, type ShadowQuality, type ShadowRefresh } from '@/lib/graphics-prefs'
-import { useGraphicsPrefs } from '@/lib/use-graphics-prefs'
+import { setGraphicsPref, type FlopSaverMode, type GroundSharpness, type ShadowMode, type ShadowQuality, type ShadowRefresh } from '@/lib/graphics-prefs'
+import { useSavedGraphicsPrefs } from '@/lib/use-graphics-prefs'
+import { useFlopCaps } from '@/lib/use-flop-caps'
 
 function Choice<T extends string | number>({ label, hint, value, options, name, onChange }: {
   label: string
@@ -71,6 +72,14 @@ const SHADOW_REFRESH_HINT: Record<ShadowRefresh, string> = {
   frame: 'Redrawn on every frame. Smoothest, costs the most.',
   '60': 'At most 60 times a second: a moving shadow steps a little on a fast screen.',
   '30': 'At most 30 times a second: cheapest, visibly steps behind moving bodies.',
+}
+const FLOP_OPTIONS: Array<{ value: FlopSaverMode; label: string }> = [
+  { value: 'auto', label: 'Auto' }, { value: 'all', label: 'Everything on' }, { value: 'saver', label: 'Saver' },
+]
+const FLOP_HINT: Record<FlopSaverMode, string> = {
+  auto: 'All effects on; if the frame rate stays under 30, effects switch off one tier at a time, cheapest loss first, and come back when it recovers.',
+  all: 'All effects stay on, however slow it gets.',
+  saver: 'The heavy effects stay off: post effects, bloom, shadows, sharper ground, particles, and 75% resolution.',
 }
 const SHADOW_HINT: Record<ShadowMode, string> = {
   off: 'No shadows.',
@@ -151,7 +160,8 @@ function Slider({
 
 export function GraphicsTab({ menuOpacity, onMenuOpacityChange }: SharedTabProps) {
   const { settings, updateSetting } = useContext(SettingsContext)
-  const graphics = useGraphicsPrefs()
+  const graphics = useSavedGraphicsPrefs()
+  const flop = useFlopCaps()
   const [fullscreenActive, setFullscreenActive] = useState(false)
   const [fullscreenAvailable, setFullscreenAvailable] = useState(false)
 
@@ -230,6 +240,14 @@ export function GraphicsTab({ menuOpacity, onMenuOpacityChange }: SharedTabProps
 
       <section className="border-t border-white/10 pt-3">
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">World</div>
+        <Choice
+          label="Flop saver"
+          name="flopSaver"
+          value={graphics.flopSaver}
+          options={FLOP_OPTIONS}
+          hint={`${FLOP_HINT[graphics.flopSaver]}${flop.level > 0 ? ` Now at tier ${flop.level} of 5: some effects below are held down.` : ''}`}
+          onChange={value => setGraphicsPref('flopSaver', value)}
+        />
         <Choice
           label="Ground sharpness"
           name="groundSharpness"
