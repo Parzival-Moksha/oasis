@@ -20,6 +20,7 @@ import * as THREE from 'three'
 import { FontLoader, type Font } from 'three/examples/jsm/loaders/FontLoader.js'
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { SIDE_DARKER, TAG, divideColor, shadeColor, tagScale, tagText, type TagMarker } from '../../lib/village/village-tags'
 import { getTagSettings, getTagSettingsVersion, subscribeTagSettings, type TagStyle } from '../../lib/village/tag-style'
 import { measureVillageBody } from './village-companion'
@@ -227,6 +228,78 @@ interface TagEntry {
   phase: number
 }
 
+// ─── the T / E / F keys over the agent the owner is near (the bottom banner's three keys, in the world) ─────
+
+const KEYS = [
+  { key: 'T', word: 'talk', accent: '#34d399' },
+  { key: 'E', word: 'write', accent: '#38bdf8' },
+  { key: 'F', word: 'full', accent: '#c084fc' },
+] as const
+let keysGeometry: THREE.BufferGeometry | null = null
+
+/** The row of three keycaps with their words, centred on x, its bottom at y = 0: one geometry, colours on the vertices. */
+function keysRowGeometry(bold: Font, regular: Font): THREE.BufferGeometry {
+  if (keysGeometry) return keysGeometry
+  const cap = 0.2
+  const parts: THREE.BufferGeometry[] = []
+  const blocks: Array<{ width: number; build: (x: number) => void }> = KEYS.map(item => {
+    const word = layeredGeometry(regular, item.word, 0.075, '#f1f5f9', false).clone()
+    word.computeBoundingBox()
+    const wordBox = word.boundingBox as THREE.Box3
+    const wordWidth = wordBox.max.x - wordBox.min.x
+    return {
+      width: cap + 0.05 + wordWidth,
+      build: (x: number) => {
+        const mid = x + cap / 2
+        // An accent plate behind the cap (its rim), the dark cap, the letter on it in the accent colour.
+        parts.push(paint(new THREE.BoxGeometry(cap + 0.03, cap + 0.03, 0.02).translate(mid, cap / 2, -0.035), item.accent))
+        parts.push(paint(new RoundedBoxGeometry(cap, cap, 0.06, 2, 0.03).translate(mid, cap / 2, 0), '#0f172a'))
+        const letter = new TextGeometry(item.key, { font: bold, size: 0.12, height: 0.02, curveSegments: 3, bevelEnabled: false })
+        letter.computeBoundingBox()
+        const lb = letter.boundingBox as THREE.Box3
+        letter.translate(mid - (lb.min.x + lb.max.x) / 2, cap / 2 - (lb.min.y + lb.max.y) / 2, 0.032)
+        parts.push(paint(letter, item.accent))
+        parts.push(word.translate(x + cap + 0.05 - wordBox.min.x, cap / 2 - 0.035, 0))
+      },
+    }
+  })
+  const gap = 0.12
+  const total = blocks.reduce((sum, block) => sum + block.width, 0) + gap * (blocks.length - 1)
+  let x = -total / 2
+  for (const block of blocks) {
+    block.build(x)
+    x += block.width + gap
+  }
+  keysGeometry = mergeGeometries(parts, false) as THREE.BufferGeometry
+  parts.forEach(part => part.dispose())
+  keysGeometry.computeBoundingSphere()
+  return keysGeometry
+}
+
+// ─── how high each tag reaches (the desk screen keeps clear of it) ──────────────────────────────────
+
+const tops = new Map<string, number>()
+const topListeners = new Set<() => void>()
+let topVersion = 0
+
+function noteTop(agentId: string, top: number): void {
+  const before = tops.get(agentId)
+  if (before !== undefined && Math.abs(before - top) < 0.01) return
+  tops.set(agentId, top)
+  topVersion += 1
+  topListeners.forEach(listener => listener())
+}
+
+/**
+ * How high above the agent's feet its tag reaches at the chosen size, marker included (its slot is kept whether
+ * or not a marker shows): the desk screen over it stays above this (VillageWorld).
+ */
+export function useVillageTagReach(agentId: string): number {
+  useSyncExternalStore(listener => { topListeners.add(listener); return () => { topListeners.delete(listener) } }, () => topVersion, () => 0)
+  useSyncExternalStore(subscribeTagSettings, getTagSettingsVersion, () => 0)
+  return (tops.get(agentId) ?? TAG.defaultTop) + (TAG.markerAt + TAG.markerSize / 2) * getTagSettings().size
+}
+
 const tags = new Set<TagEntry>()
 const _rootQuat = new THREE.Quaternion()
 const _facing = new THREE.Quaternion()
@@ -252,6 +325,7 @@ export function VillageTagDriver() {
           // (a body without any skeleton is taken as it is after ten seconds).
           tag.tries += 1
           tag.top = body.top
+          noteTop(tag.agentId, body.top)
           tag.measured = body.rigged || tag.tries > 20
           root.position.y = body.top
         }
@@ -288,7 +362,9 @@ export function VillageTagDriver() {
 
 const NO_RAYCAST = () => {}
 
-export function VillageTag({ agentId, name, color, rim, status, statusColor, marker, avatarKey, x, z }: {
+export function VillageTag({ agentId, name, color, rim, status, statusColor, marker, avatarKey, x, z, keys = false }: {
+  /** The owner is near it (its T / E / F work): the keys show over its head. */
+  keys?: boolean
   agentId: string
   name: string
   /** The agent's colour, lightened to read on any background (village-tags.ts readableAccent). */
@@ -307,8 +383,8 @@ export function VillageTag({ agentId, name, color, rim, status, statusColor, mar
 }) {
   useSyncExternalStore(subscribeTagSettings, getTagSettingsVersion, () => 0)
   const { style } = getTagSettings()
-  const regular = useFont(style === 'outline' ? null : 'regular')
-  const bold = useFont(style === 'extruded' || marker ? 'bold' : null)
+  const regular = useFont(style === 'outline' && !keys ? null : 'regular')
+  const bold = useFont(style === 'extruded' || marker || keys ? 'bold' : null)
   const root = useRef<THREE.Group>(null)
   const board = useRef<THREE.Group>(null)
   const holder = useRef<THREE.Group>(null)
@@ -361,26 +437,30 @@ export function VillageTag({ agentId, name, color, rim, status, statusColor, mar
         {style === 'outline' ? (
           <>
             {plainStatus && (
-              <Text font={TROIKA_FONT} fontSize={TAG.statusSize * 1.05} color={statusColor} outlineWidth="14%" outlineColor="#000000" anchorX="center" anchorY="bottom" position={[0, TAG.statusAt, 0]} raycast={NO_RAYCAST} material-toneMapped={false}>
+              <Text name="village-tag-status" font={TROIKA_FONT} fontSize={TAG.statusSize * 1.05} color={statusColor} outlineWidth="14%" outlineColor="#000000" anchorX="center" anchorY="bottom" position={[0, TAG.statusAt, 0]} raycast={NO_RAYCAST} material-toneMapped={false}>
                 {plainStatus}
               </Text>
             )}
             {plainName && (
-              <Text font={TROIKA_FONT} fontSize={TAG.nameSize * 1.05} color={color} outlineWidth="12%" outlineColor="#000000" anchorX="center" anchorY="bottom" position={[0, TAG.nameAt, 0]} raycast={NO_RAYCAST} material-toneMapped={false}>
+              <Text name="village-tag-name" font={TROIKA_FONT} fontSize={TAG.nameSize * 1.05} color={color} outlineWidth="12%" outlineColor="#000000" anchorX="center" anchorY="bottom" position={[0, TAG.nameAt, 0]} raycast={NO_RAYCAST} material-toneMapped={false}>
                 {plainName}
               </Text>
             )}
           </>
         ) : (
           <>
-            {statusGeometry && <mesh geometry={statusGeometry} material={tagMaterial} position={[0, TAG.statusAt, 0]} raycast={NO_RAYCAST} />}
-            {nameGeometry && <mesh geometry={nameGeometry} material={tagMaterial} position={[0, TAG.nameAt, 0]} raycast={NO_RAYCAST} />}
+            {statusGeometry && <mesh name="village-tag-status" geometry={statusGeometry} material={tagMaterial} position={[0, TAG.statusAt, 0]} raycast={NO_RAYCAST} />}
+            {nameGeometry && <mesh name="village-tag-name" geometry={nameGeometry} material={tagMaterial} position={[0, TAG.nameAt, 0]} raycast={NO_RAYCAST} />}
           </>
+        )}
+        {/* T / E / F, just over its head, in the slot kept for them under the status word. */}
+        {keys && bold && regular && (
+          <mesh name="village-keys" geometry={keysRowGeometry(bold, regular)} material={tagMaterial} position={[0, TAG.keysAt, 0]} raycast={NO_RAYCAST} />
         )}
       </group>
       <group ref={holder} position={[0, TAG.markerAt, 0]}>
         {markerGeo && (
-          <group ref={spinRef}>
+          <group ref={spinRef} name="village-tag-marker">
             <mesh geometry={markerGeo} material={markerMaterialFor(statusColor)} raycast={NO_RAYCAST} />
             <mesh geometry={markerGeo} material={rimMaterialFor(rim)} scale={1.17} raycast={NO_RAYCAST} />
           </group>

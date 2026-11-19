@@ -12,6 +12,7 @@ import { VillageAgentsMenu } from './VillageAgentsMenu'
 import { AccountsWatch } from './AccountsWatch'
 import { VillageAcademyReader } from './VillageAcademyReader'
 import { GAME_HUD_TEXT, GameKeycap } from '../forge/GameKeycap'
+import { getTagSettings, subscribeTagSettings } from '../../lib/village/tag-style'
 
 /** Bottom-centre game prompt: a chamfered banner, a title, and key prompts in a row. */
 export function PromptBanner({ accent, title, children }: { accent: string; title: string; children: ReactNode }) {
@@ -47,6 +48,9 @@ export function VillageHud() {
   const nearbyId = useOasisStore(s => s.agentEngine.nearbyAgentId)
   const nearbyName = useOasisStore(s => (s.agentEngine.nearbyAgentId ? s.agentEngine.agents[s.agentEngine.nearbyAgentId]?.name : null))
   const inPlaza = useSyncExternalStore(subscribeVillagePlaza, isInVillagePlaza, () => false)
+  // The T / E / F keys show over the agent in the world (VillageTags.tsx); this banner only when asked for
+  // (Settings > Agents > Name tags).
+  const keysAtBottom = useSyncExternalStore(subscribeTagSettings, () => getTagSettings().keysAtBottom, () => false)
 
   return (
     <>
@@ -57,7 +61,7 @@ export function VillageHud() {
       {/* The Academy: the prompt at a node of the skill tree, and the node's sheet. */}
       <VillageAcademyReader />
 
-      {nearbyId && !focusedId && (
+      {nearbyId && !focusedId && keysAtBottom && (
         <PromptBanner accent="#34d399" title={nearbyName || 'agent'}>
           <KeyPrompt k="T" label="Talk" accent="#34d399" primary />
           <KeyPrompt k="E" label="Write" accent="#38bdf8" className="max-[700px]:hidden" />

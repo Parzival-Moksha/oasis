@@ -16,6 +16,11 @@ export interface TagSettings {
   style: TagStyle
   /** A multiplier on the tag's drawn size (name, status word and marker). */
   size: number
+  /**
+   * The T / E / F keys also as a banner at the bottom of the screen (as before 2026-11-19). Off by default: they
+   * show over the agent in the world now.
+   */
+  keysAtBottom: boolean
 }
 
 // v2 (2026-11-19): the layered and crazy styles are gone (they read as the default) and the default size halved;
@@ -32,6 +37,7 @@ export function clampTagSettings(raw: Partial<TagSettings> | null | undefined): 
   return {
     style: isTagStyle(raw?.style) ? raw.style : TAG_STYLE_DEFAULT,
     size: Math.min(TAG_SIZE.max, Math.max(TAG_SIZE.min, Math.round(size * 20) / 20)),
+    keysAtBottom: raw?.keysAtBottom === true,
   }
 }
 

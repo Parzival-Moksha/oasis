@@ -18,6 +18,7 @@ import {
   assignVillageSeats,
   DESK_WINDOW_PX,
   DESK_WINDOW_TILT,
+  DESK_WINDOW_WORLD,
   computeFocusPose,
   faceScreenLayout,
   deskWindowDistanceFactor,
@@ -67,7 +68,7 @@ import { VillageMissionWall } from './VillageMissionWall'
 import { VillageAcademyTree } from './VillageAcademyTree'
 import { AcademyLevelTag, AcademyVillageBody, useAcademyStone, useAcademyTrainee } from './VillageAcademyTrainee'
 import { VillageVoice } from './VillageVoice'
-import { VillageTag, VillageTagDriver } from './VillageTags'
+import { VillageTag, VillageTagDriver, useVillageTagReach } from './VillageTags'
 import { isStageWorldName, stationAtAnchor } from '../../lib/village/village-stage'
 import { getVillageHome, getVillageHomesVersion, subscribeVillageHomes, useVillageHomesSync } from './village-homes'
 import { readableAccent, tagMarker } from '../../lib/village/village-tags'
@@ -246,7 +247,7 @@ function useStationExtras(agentId: string): boolean {
 }
 
 /** Over the head, in the picture itself: the name in the agent's own colour, its status word, "!" or "?". */
-function StationTag({ agentId, colorKey, avatarKey }: { agentId: string; colorKey: string; avatarKey: string }) {
+function StationTag({ agentId, colorKey, avatarKey, keys }: { agentId: string; colorKey: string; avatarKey: string; keys: boolean }) {
   const info = useLabelInfo(agentId)
   useSyncExternalStore(subscribePanelLook, getPanelLookVersion, () => 0)
   if (!info) return null
@@ -262,6 +263,7 @@ function StationTag({ agentId, colorKey, avatarKey }: { agentId: string; colorKe
       avatarKey={avatarKey}
       x={STATION.avatar[0]}
       z={STATION.avatar[2]}
+      keys={keys}
     />
   )
 }
@@ -629,6 +631,13 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
   const blocked = useInputManager(s => isVillageFocusBlocked(s.inputState))
   const color = statusColor(status)
   const extras = useStationExtras(agentId)
+  // The desk screen floats over the tag: its bottom edge stays above everything the tag can show (its keys,
+  // status, name and marker), at the size chosen in Settings and for this body's height.
+  const tagReach = useVillageTagReach(agentId)
+  const deskWindowAt = useMemo<[number, number, number]>(
+    () => [STATION.window[0], Math.max(STATION.window[1], tagReach + (DESK_WINDOW_WORLD.height / 2) * Math.cos(DESK_WINDOW_TILT) + 0.08), STATION.window[2]],
+    [tagReach],
+  )
   const observed = kind !== 'owned'
   // "Follow me" (the agent panel's switch, remembered per session; on by default for Anorak).
   const followKey = useOasisStore(s => s.agentEngine.agents[agentId]?.sessionId || agentId)
@@ -705,7 +714,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
         {!focused && windowVisible && (
           <Html
             transform
-            position={homed ? HOME_WINDOW : STATION.window}
+            position={homed ? HOME_WINDOW : deskWindowAt}
             rotation-x={DESK_WINDOW_TILT}
             distanceFactor={deskWindowDistanceFactor('desk')}
             zIndexRange={overlayZ}
@@ -749,7 +758,8 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
           </mesh>
         )}
         {/* Not in the F view: there its face fills the left of the picture, and the sign would sit on it. */}
-        {!(focused && onScreen) && <StationTag agentId={agentId} colorKey={followKey} avatarKey={avatarUrl} />}
+        {/* Its name, status and marker; and while the owner is near it (not in its panel), its T / E / F keys. */}
+        {!(focused && onScreen) && <StationTag agentId={agentId} colorKey={followKey} avatarKey={avatarUrl} keys={nearby && !focused} />}
         {!(focused && onScreen) && extras && (
           <Html position={EXTRAS_AT} center distanceFactor={9} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>
             <StationExtras agentId={agentId} />

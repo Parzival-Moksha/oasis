@@ -133,12 +133,18 @@ export function tagText(text: string, max = 28): string {
 export const TAG = {
   nameSize: 0.17,
   statusSize: 0.1,
-  /** The status word's baseline above the head. */
-  statusAt: 0.09,
+  /**
+   * The T / E / F keys, over the agent the owner is near: a row just above the head (its bottom, and its height).
+   * Their slot is always kept, so nothing above moves when they appear.
+   */
+  keysAt: 0.05,
+  keysHeight: 0.2,
+  /** The status word's baseline above the head (over the keys). */
+  statusAt: 0.35,
   /** The name's baseline above the head (over the status word). */
-  nameAt: 0.25,
+  nameAt: 0.54,
   /** The marker's centre above the head (over the name). */
-  markerAt: 0.82,
+  markerAt: 1.16,
   markerSize: 0.5,
   /** Tags further than this from the camera grow, so a name across the plaza is still readable. */
   growFrom: 9,

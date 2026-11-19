@@ -93,6 +93,15 @@ export function AgentsTab() {
           </label>
           <div className="text-[10px] text-gray-500">The name always turns to you; the marker (! or ?) stands upright and turns slowly. The colour is the agent's own, set in its settings menu.</div>
         </div>
+        <SwitchRow
+          data="village-keys-bottom"
+          on={tagSettings.keysAtBottom}
+          onToggle={() => setTagSettings({ keysAtBottom: !tagSettings.keysAtBottom })}
+          title="T / E / F also at the bottom of the screen"
+          hint={tagSettings.keysAtBottom ? 'The banner shows too, under the keys over the agent you are near.' : 'Off: the keys show over the agent you are near, in the world.'}
+        />
+        <div>
+        </div>
       </section>
       <section>
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Village</div>

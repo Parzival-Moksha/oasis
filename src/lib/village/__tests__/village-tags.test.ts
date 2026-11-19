@@ -93,11 +93,11 @@ describe('tag settings', () => {
     expect(clampTagSettings({ size: 99 }).size).toBe(TAG_SIZE.max)
     expect(clampTagSettings({ size: 0 }).size).toBe(TAG_SIZE.min)
     expect(clampTagSettings({ style: 'nope' as never }).style).toBe('extruded')
-    expect(clampTagSettings(null)).toEqual({ style: 'extruded', size: 0.5 })
+    expect(clampTagSettings(null)).toEqual({ style: 'extruded', size: 0.5, keysAtBottom: false })
     // The styles taken out read as the default.
     expect(clampTagSettings({ style: 'crazy' as never }).style).toBe('extruded')
     expect(clampTagSettings({ style: 'layered' as never }).style).toBe('extruded')
-    expect(clampTagSettings({ style: 'outline', size: 1.5 })).toEqual({ style: 'outline', size: 1.5 })
+    expect(clampTagSettings({ style: 'outline', size: 1.5, keysAtBottom: true })).toEqual({ style: 'outline', size: 1.5, keysAtBottom: true })
   })
 })
 
