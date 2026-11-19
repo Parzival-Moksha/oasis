@@ -1,0 +1,41 @@
+<!doctype html>
+<!-- Shown in the Oasis app window while the page server starts (scripts/oasis-app.ps1). Checks every second whether
+     the Oasis answers, then goes there. The address to go to comes after the #. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Oasis</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #07040d; color: #e9e2ff; font: 15px/1.5 system-ui, sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; }
+  .box { text-align: center; }
+  .ring { width: 54px; height: 54px; margin: 0 auto 18px; border-radius: 50%; border: 3px solid #3b2a5c; border-top-color: #b48cff; animation: spin 1s linear infinite; }
+  .small { color: #8f84a8; font-size: 12px; margin-top: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="ring"></div>
+  <div>The Oasis is starting…</div>
+  <div class="small" id="wait">The page server takes about half a minute the first time.</div>
+</div>
+<script>
+  const target = decodeURIComponent(location.hash.slice(1)) || 'http://localhost:4516/?profile=village'
+  const origin = new URL(target).origin
+  const started = Date.now()
+  async function look() {
+    try {
+      // An opaque answer is enough: the server is up. A refused connection throws.
+      await fetch(origin + '/api/health', { mode: 'no-cors', cache: 'no-store' })
+      location.replace(target)
+      return
+    } catch {}
+    const s = Math.round((Date.now() - started) / 1000)
+    if (s > 150) document.getElementById('wait').textContent = 'Still not up after ' + s + ' s. Look at C:\\af_oasis\\logs\\world.log.'
+    setTimeout(look, 1000)
+  }
+  look()
+</script>
+</body>
+</html>

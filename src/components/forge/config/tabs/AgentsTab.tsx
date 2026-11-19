@@ -14,6 +14,7 @@ import { TAG_SIZE, TAG_STYLES, getTagSettings, getTagSettingsVersion, setTagSett
 import { isVillageVoiceOn, setVillageVoiceOn, subscribeVillageVoice } from '@/components/village/village-companion'
 import { WakeUpSettings } from './WakeUpSettings'
 import { AccountsSettings } from './AccountsSettings'
+import { ServicesSettings } from './ServicesSettings'
 
 /** An on/off row: a switch, a title and a line on what it does now. */
 function SwitchRow({ on, onToggle, title, hint, data }: { on: boolean; onToggle: () => void; title: string; hint: string; data: string }) {
@@ -269,6 +270,8 @@ export function AgentsTab() {
       <WakeUpSettings />
       {/* The Claude accounts the agents run on, and the village's default (the engine keeps them). */}
       <AccountsSettings />
+      {/* The agent engine and the page server: their state and a Restart button each (scripts/oasis-supervisor.mjs). */}
+      <ServicesSettings />
     </div>
   )
 }
