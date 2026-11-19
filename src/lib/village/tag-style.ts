@@ -1,16 +1,15 @@
 // ░▒▓ NAME TAG STYLE — how the name over an agent's head is drawn, and how big ▓▒░
 // Kept in this browser (localStorage), like the other village looks; chosen in Settings > Agents.
 
-export type TagStyle = 'outline' | 'layered' | 'extruded' | 'crazy'
+export type TagStyle = 'outline' | 'extruded'
 
 export const TAG_STYLES: Array<{ id: TagStyle; label: string; hint: string }> = [
-  { id: 'outline', label: 'Outlined', hint: 'Flat letters with a true outline (troika text, crisp at any distance). Cheapest to look at.' },
-  { id: 'layered', label: 'Layered', hint: 'The first look: flat letters with a darker copy stepped behind, and a black outline copy.' },
-  { id: 'extruded', label: '3D letters', hint: 'Real solid letters with a bevelled edge. The name sways a little so the depth shows.' },
-  { id: 'crazy', label: 'Crazy', hint: 'Solid calligraphic letters on a wave, shading through the colours of the agent.' },
+  { id: 'extruded', label: '3D letters', hint: 'Real solid letters with a bevelled edge; their sides 2.6 times darker than their faces.' },
+  { id: 'outline', label: 'Outlined', hint: 'Flat letters with a true outline (troika text, crisp at any distance).' },
 ]
 
-export const TAG_SIZE = { min: 0.5, max: 2.5, default: 1 } as const
+/** A multiplier on the drawn size. 1 was the first size; the owner (2026-11-19) wanted about half by default. */
+export const TAG_SIZE = { min: 0.25, max: 2, default: 0.5 } as const
 export const TAG_STYLE_DEFAULT: TagStyle = 'extruded'
 
 export interface TagSettings {
@@ -19,10 +18,13 @@ export interface TagSettings {
   size: number
 }
 
-const KEY = 'oasis.village.tagStyle.v1'
+// v2 (2026-11-19): the layered and crazy styles are gone (they read as the default) and the default size halved;
+// a size saved under v1 belonged to the old scale, so only v1's style is carried over.
+const KEY = 'oasis.village.tagStyle.v2'
+const OLD_KEY = 'oasis.village.tagStyle.v1'
 
 export function isTagStyle(value: unknown): value is TagStyle {
-  return value === 'outline' || value === 'layered' || value === 'extruded' || value === 'crazy'
+  return value === 'outline' || value === 'extruded'
 }
 
 export function clampTagSettings(raw: Partial<TagSettings> | null | undefined): TagSettings {
@@ -42,6 +44,12 @@ export function getTagSettings(): TagSettings {
     let raw: Partial<TagSettings> | null = null
     if (typeof window !== 'undefined') {
       try { raw = JSON.parse(window.localStorage.getItem(KEY) || 'null') } catch { raw = null }
+      if (!raw) {
+        try {
+          const old = JSON.parse(window.localStorage.getItem(OLD_KEY) || 'null') as Partial<TagSettings> | null
+          if (old && isTagStyle(old.style)) raw = { style: old.style }
+        } catch { /* nothing to carry over */ }
+      }
     }
     cache = clampTagSettings(raw)
   }

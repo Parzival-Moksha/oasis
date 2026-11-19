@@ -1,13 +1,13 @@
 'use client'
 
 // ░▒▓ VILLAGE TAGS — the name over each agent's head, and a quest marker when it wants the owner ▓▒░
-// In the 3D picture, not HTML. The name has four styles (Settings > Agents, lib/village/tag-style.ts) and a size:
+// In the 3D picture, not HTML. The name has two styles (Settings > Agents, lib/village/tag-style.ts) and a size:
+//   3D        real solid letters (three TextGeometry, bevelled), their sides 2.6 times darker than their faces;
+//             one merged mesh per name, built once and cached. The default.
 //   outlined  flat letters with a true outline: troika text (SDF), crisp at any distance.
-//   layered   the first look: flat letters, a darker copy stepped behind, a black copy around.
-//   3D        real solid letters (three TextGeometry, bevelled), one merged mesh per name, built once and cached.
-//   crazy     solid calligraphic letters on a wave, shading through the hues of the agent. Also one mesh.
-// The status word under it is flat, outlined. The name turns to the camera; the solid styles turn on the vertical
-// axis only (they stay upright) and sway a little, so their depth shows even when you stand square to them.
+// (Layered and crazy were taken out on 2026-11-19, and so was the sway of the 3D names: the owner found it annoying.)
+// The status word under it is flat, outlined. The name turns to the camera; 3D names turn on the vertical axis only,
+// so they stay upright.
 // The marker, a 3D "!" or "?" with a rim in the agent's colour, is NOT turned to the camera: upright, it turns
 // slowly on its own vertical axis and breathes.
 // Cost: one or two draw calls per agent for the name, one for the status word, two for a marker (body and rim);
@@ -20,7 +20,7 @@ import * as THREE from 'three'
 import { FontLoader, type Font } from 'three/examples/jsm/loaders/FontLoader.js'
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { TAG, shadeColor, tagScale, tagText, type TagMarker } from '../../lib/village/village-tags'
+import { SIDE_DARKER, TAG, divideColor, shadeColor, tagScale, tagText, type TagMarker } from '../../lib/village/village-tags'
 import { getTagSettings, getTagSettingsVersion, subscribeTagSettings, type TagStyle } from '../../lib/village/tag-style'
 import { measureVillageBody } from './village-companion'
 
@@ -28,7 +28,6 @@ const BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 const FONT_FILES = {
   regular: `${BASE}/fonts/helvetiker_regular.typeface.json`,
   bold: `${BASE}/fonts/helvetiker_bold.typeface.json`,
-  crazy: `${BASE}/fonts/gentilis_bold.typeface.json`,
 } as const
 /** The flat outlined style's font (an open-licence Inter Bold, served from here: nothing is fetched from a CDN). */
 const TROIKA_FONT = `${BASE}/fonts/inter-latin-700.woff`
@@ -128,43 +127,35 @@ function layeredGeometry(loaded: Font, text: string, size: number, color: string
 }
 
 /**
- * Solid letters: the front in `color`, the sides and bevel darker. `crazy` puts the baseline on a wave and
- * shades the hue along the word. Centred on x and z so it turns about its own middle.
+ * Solid letters: the faces in `color`, the sides and bevel 2.6 times darker (each colour channel as you would
+ * read it in a colour picker, divided by 2.6), so the depth reads at a glance. Centred on x and z.
  */
-function solidGeometry(loaded: Font, text: string, size: number, color: string, crazy: boolean): THREE.BufferGeometry {
-  const key = `S${crazy ? 'c' : 'x'}\u0001${text}\u0001${size}\u0001${color}`
+function solidGeometry(loaded: Font, text: string, size: number, color: string): THREE.BufferGeometry {
+  const key = `S\u0001${text}\u0001${size}\u0001${color}`
   const cached = textCache.get(key)
   if (cached) return cached
-  const depth = size * (crazy ? 0.42 : 0.34)
+  const depth = size * 0.34
   const geometry = new TextGeometry(text, {
-    font: loaded, size, height: depth, curveSegments: crazy ? 4 : 3,
+    font: loaded, size, height: depth, curveSegments: 3,
     bevelEnabled: true, bevelThickness: size * 0.035, bevelSize: size * 0.025, bevelOffset: 0, bevelSegments: 1,
   })
   const position = geometry.attributes.position
-  if (crazy) {
-    for (let i = 0; i < position.count; i += 1) {
-      position.setY(i, position.getY(i) + Math.sin(position.getX(i) / size * 2.4) * size * 0.16)
-    }
-  }
   geometry.computeBoundingBox()
   const box = geometry.boundingBox as THREE.Box3
-  const width = Math.max(1e-6, box.max.x - box.min.x)
   geometry.translate(-(box.min.x + box.max.x) / 2, 0, -depth / 2)
-  const base = { h: 0, s: 0, l: 0 }
-  _color.set(color).getHSL(base)
+  const face = new THREE.Color(color)
+  const side = new THREE.Color(divideColor(color, SIDE_DARKER))
   const colors = new Float32Array(position.count * 3)
-  // Group 0 is the front and back faces, group 1 the sides (and the bevel): the sides are darker.
+  // Group 0 is the front and back faces, group 1 the sides (and the bevel).
   const sideOf = new Uint8Array(position.count)
   for (const group of geometry.groups) {
     if (group.materialIndex === 1) sideOf.fill(1, group.start, group.start + group.count)
   }
   for (let i = 0; i < position.count; i += 1) {
-    const along = (position.getX(i) + width / 2) / width
-    const hue = crazy ? (base.h + (along - 0.5) * 0.5 + 1) % 1 : base.h
-    _color.setHSL(hue, base.s, sideOf[i] ? base.l * 0.42 : base.l)
-    colors[i * 3] = _color.r
-    colors[i * 3 + 1] = _color.g
-    colors[i * 3 + 2] = _color.b
+    const c = sideOf[i] ? side : face
+    colors[i * 3] = c.r
+    colors[i * 3 + 1] = c.g
+    colors[i * 3 + 2] = c.b
   }
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   geometry.deleteAttribute('uv')
@@ -178,9 +169,7 @@ function solidGeometry(loaded: Font, text: string, size: number, color: string, 
 export function tagTriangleCount(style: TagStyle, text: string): number {
   const size = TAG.nameSize
   let vertices = 0
-  if (style === 'extruded' && fonts.bold) vertices = solidGeometry(fonts.bold, text, size, '#ffffff', false).attributes.position.count
-  else if (style === 'crazy' && fonts.crazy) vertices = solidGeometry(fonts.crazy, text, size * 1.1, '#ffffff', true).attributes.position.count
-  else if (style === 'layered' && fonts.regular) vertices = layeredGeometry(fonts.regular, text, size, '#ffffff', true).attributes.position.count
+  if (style === 'extruded' && fonts.bold) vertices = solidGeometry(fonts.bold, text, size, '#ffffff').attributes.position.count
   return Math.round(vertices / 3)
 }
 
@@ -250,7 +239,7 @@ export function VillageTagDriver() {
     if (!tags.size) return
     const t = clock.elapsedTime
     const { style, size } = getTagSettings()
-    const solid = style === 'extruded' || style === 'crazy'
+    const solid = style === 'extruded'
     for (const tag of tags) {
       const root = tag.root
       if (!root.parent) continue
@@ -272,8 +261,8 @@ export function VillageTagDriver() {
       if (tag.board.scale.x !== scale) tag.board.scale.setScalar(scale)
       root.getWorldQuaternion(_rootQuat)
       if (solid) {
-        // Upright: only turned about the vertical axis, towards the camera, with a sway that shows the depth.
-        const yaw = Math.atan2(camera.position.x - _world.x, camera.position.z - _world.z) + Math.sin(t * 0.9 + tag.phase) * (style === 'crazy' ? 0.5 : 0.36)
+        // Upright: only turned about the vertical axis, towards the camera (no sway: the owner found it annoying).
+        const yaw = Math.atan2(camera.position.x - _world.x, camera.position.z - _world.z)
         _facing.setFromAxisAngle(_up, yaw)
         tag.board.quaternion.copy(_rootQuat).invert().multiply(_facing)
       } else {
@@ -320,7 +309,6 @@ export function VillageTag({ agentId, name, color, rim, status, statusColor, mar
   const { style } = getTagSettings()
   const regular = useFont(style === 'outline' ? null : 'regular')
   const bold = useFont(style === 'extruded' || marker ? 'bold' : null)
-  const crazy = useFont(style === 'crazy' ? 'crazy' : null)
   const root = useRef<THREE.Group>(null)
   const board = useRef<THREE.Group>(null)
   const holder = useRef<THREE.Group>(null)
@@ -331,11 +319,9 @@ export function VillageTag({ agentId, name, color, rim, status, statusColor, mar
   const plainStatus = tagText(status, 34)
   const nameGeometry = useMemo(() => {
     if (!plainName) return null
-    if (style === 'layered' && regular) return layeredGeometry(regular, plainName, TAG.nameSize, color, true)
-    if (style === 'extruded' && bold) return solidGeometry(bold, plainName, TAG.nameSize, color, false)
-    if (style === 'crazy' && crazy) return solidGeometry(crazy, plainName, TAG.nameSize * 1.1, color, true)
+    if (style === 'extruded' && bold) return solidGeometry(bold, plainName, TAG.nameSize, color)
     return null
-  }, [style, regular, bold, crazy, plainName, color])
+  }, [style, bold, plainName, color])
   const statusGeometry = useMemo(
     () => (style !== 'outline' && regular && plainStatus ? layeredGeometry(regular, plainStatus, TAG.statusSize, statusColor, false) : null),
     [style, regular, plainStatus, statusColor],

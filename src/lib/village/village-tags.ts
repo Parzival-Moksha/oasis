@@ -94,6 +94,18 @@ export function accentBackground(hex: string): string {
 /** Colours to pick from in the agent's settings menu. */
 export const ACCENT_SWATCHES = ['#5eead4', '#7dd3fc', '#a5b4fc', '#d8b4fe', '#f9a8d4', '#fda4af', '#fdba74', '#fde047', '#bef264', '#86efac']
 
+/** How much darker the sides of 3D letters are than their faces (the owner, 2026-11-19: "2,6x darker"). */
+export const SIDE_DARKER = 2.6
+
+/** A colour with each of its channels (0 to 255, as written in #rrggbb) divided by `by`. */
+export function divideColor(hex: string, by: number): string {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!match || !(by > 0)) return '#000000'
+  const n = parseInt(match[1], 16)
+  const part = (shift: number) => Math.round(((n >> shift) & 255) / by).toString(16).padStart(2, '0')
+  return `#${part(16)}${part(8)}${part(0)}`
+}
+
 /** A darker shade of a colour (the tag's extruded side). */
 export function shadeColor(hex: string, factor = 0.42): string {
   const hsl = hexToHsl(hex)

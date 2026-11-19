@@ -93,7 +93,21 @@ describe('tag settings', () => {
     expect(clampTagSettings({ size: 99 }).size).toBe(TAG_SIZE.max)
     expect(clampTagSettings({ size: 0 }).size).toBe(TAG_SIZE.min)
     expect(clampTagSettings({ style: 'nope' as never }).style).toBe('extruded')
-    expect(clampTagSettings(null)).toEqual({ style: 'extruded', size: 1 })
+    expect(clampTagSettings(null)).toEqual({ style: 'extruded', size: 0.5 })
+    // The styles taken out read as the default.
+    expect(clampTagSettings({ style: 'crazy' as never }).style).toBe('extruded')
+    expect(clampTagSettings({ style: 'layered' as never }).style).toBe('extruded')
     expect(clampTagSettings({ style: 'outline', size: 1.5 })).toEqual({ style: 'outline', size: 1.5 })
+  })
+})
+
+import { SIDE_DARKER, divideColor } from '../village-tags'
+
+describe('the sides of 3D letters', () => {
+  it('are 2.6 times darker than the faces, channel by channel', () => {
+    expect(SIDE_DARKER).toBe(2.6)
+    expect(divideColor('#ffffff', 2.6)).toBe('#626262')
+    expect(divideColor('#5adcf6', 2.6)).toBe('#23555f')
+    expect(divideColor('nonsense', 2.6)).toBe('#000000')
   })
 })
