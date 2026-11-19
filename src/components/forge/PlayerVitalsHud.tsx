@@ -2,7 +2,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { PlayerComputedStats } from '@/lib/player-progression'
-import { PLAYER_BASE_STATS } from '@/lib/player-progression'
+import { PASSIVE_MANA_INTERVAL_MS, PLAYER_BASE_STATS } from '@/lib/player-progression'
 import { useInputManager } from '@/lib/input-manager'
 import { useAudioManager } from '@/lib/audio-manager'
 import { setPlayerManaRecharging } from '@/lib/player-avatar-runtime'
@@ -231,12 +231,14 @@ function Bar({
   )
 }
 
-export function PlayerVitalsHud({ visible }: { visible: boolean }) {
+export function PlayerVitalsHud({ visible: visibleProp, combatOnly = false }: { visible: boolean; combatOnly?: boolean }) {
   const [vitals, setVitals] = useState<PlayerVitals>(DEFAULT_VITALS)
   const [castError, setCastError] = useState<string | null>(null)
   const [recharging, setRecharging] = useState(false)
   const [xpFlash, setXpFlash] = useState<{ id: number; amount: number } | null>(null)
   const selectedSpellId = useOasisStore(s => s.selectedSpellId)
+  const combatArmed = selectedSpellId === 'firebolt' || selectedSpellId === 'lightning-bolt' || selectedSpellId === 'ice-bolt'
+  const visible = visibleProp && (!combatOnly || combatArmed)
   const { settings } = useContext(SettingsContext)
   const hudFont = resolveFontFamily(settings.uiFont)
   const vitalsRef = useRef<PlayerVitals>(DEFAULT_VITALS)
@@ -418,6 +420,20 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
     }
   }, [refresh])
 
+  // ─═̷─ Passive mana: the server adds 2 a second (x Focus) since the last write; the bar shows it filling. ─═̷─
+  useEffect(() => {
+    if (!visible || recharging) return
+    const intervalMs = PASSIVE_MANA_INTERVAL_MS / Math.max(0.1, vitals.manaRegenMultiplier)
+    const timer = window.setInterval(() => {
+      const current = vitalsRef.current
+      if (current.mana >= current.maxMana || getPvpEnabled()) return
+      const next = { ...current, mana: Math.min(current.maxMana, current.mana + 1) }
+      vitalsRef.current = next
+      setVitals(next)
+    }, intervalMs)
+    return () => window.clearInterval(timer)
+  }, [recharging, visible, vitals.manaRegenMultiplier])
+
   // ─═̷─ PvP HUD sync ─═̷─
   // When in a PvP-enabled room the server owns HP/mana. We subscribe to the
   // room's player state and overwrite the local HUD's hp/mana with the
@@ -473,7 +489,7 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
       `}</style>
       <div className="rounded-lg border border-amber-200/22 bg-black/68 px-3 py-2 shadow-[0_0_34px_rgba(251,146,60,0.16)] backdrop-blur-md">
         <div className="mb-2 flex items-center justify-between gap-3">
-          <div className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-100/80">RP1</div>
+          <div className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-100/80" title="Play mode: spells fire, editing is hidden">Play</div>
           <div className={`truncate text-right text-[10px] font-black uppercase tracking-[0.14em] ${castError ? 'text-rose-200' : 'text-white/70'}`}>
             {spellText}
           </div>
