@@ -59,3 +59,14 @@ export function ownEnvValue(key, root = ROOT) {
   }
   return '';
 }
+
+/** Writes one value into this machine's settings file (the file is made when it is not there). */
+export function saveSetting(key, value, file = SETTINGS_FILE) {
+  let all = {};
+  try { all = JSON.parse(fs.readFileSync(file, 'utf8')) || {}; } catch { /* a new file */ }
+  all[key] = value;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(all, null, 2)}
+`);
+  cache = { mtime: -1, value: {} };
+}

@@ -9,7 +9,7 @@
 // Which Python and which model folder: OASIS_EARS_PYTHON / OASIS_EARS_MODELS, else the engine's own ears/.venv and
 // ears/.cache, else Tyler's (C:/7f_Tyler, or OASIS_TYLER_DIR), which already has the helper's packages and the models.
 // With none of them, the first press of the mic creates ears/.venv and installs ears/requirements.txt (about 50 MB).
-import { setting } from './settings.js';
+import { saveSetting, setting } from './settings.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -66,13 +66,24 @@ function run(cmd, args, status) {
 }
 
 let setupPromise = null;
+let earsAskedAt = 0;
+const EARS_ASK_MS = 10 * 60_000;
+/** What the first press of the mic answers in the packaged Oasis. */
+export const EARS_ASK = 'Voice typing needs a local helper that is not installed yet. Press the mic again to install it: it uses your Python 3, downloads about 50 MB of packages and one speech model (once, about a minute), and runs on this machine only.';
 async function ensurePython(status) {
   const found = earsPaths().python;
   if (found) return found;
-  // The slim Oasis installs nothing by itself: the helper is a Python folder of about 50 MB plus a speech model
-  // fetched on first use, so the person switches it on (OASIS_EARS_INSTALL=1). The workshop sets itself up as before.
-  if (process.env.OASIS_EARS_INSTALL === '0' || (process.env.OASIS_EDITION === 'slim' && process.env.OASIS_EARS_INSTALL !== '1')) {
-    throw new Error('Voice typing is off: it needs a local helper (Python 3, about 50 MB, and a speech model downloaded once). To turn it on, add OASIS_EARS_INSTALL=1 to the .env file in the Oasis folder and start the Oasis again.');
+  // The packaged Oasis installs nothing unasked: the helper is a Python folder of about 50 MB plus a speech model
+  // fetched on first use. The first press of the mic says so; a second press within ten minutes is the yes, and
+  // it is remembered (this machine's settings, `earsInstall`). OASIS_EARS_INSTALL=1 says yes ahead, =0 never.
+  // The owner's own Oasis (no edition set) sets itself up as before.
+  if (process.env.OASIS_EARS_INSTALL === '0') throw new Error('Voice typing is switched off on this machine (OASIS_EARS_INSTALL=0).');
+  if (process.env.OASIS_EDITION === 'slim' && process.env.OASIS_EARS_INSTALL !== '1' && setting('earsInstall') !== 'yes') {
+    if (Date.now() - earsAskedAt > EARS_ASK_MS) {
+      earsAskedAt = Date.now();
+      throw new Error(EARS_ASK);
+    }
+    saveSetting('earsInstall', 'yes');
   }
   setupPromise ||= (async () => {
     const py = findSystemPython();
@@ -222,7 +233,7 @@ export async function listen(ws, url, log) {
   try {
     python = await ensurePython((text) => json({ t: 'status', text }));
   } catch (e) {
-    return me.end(`Setting up the voice helper failed: ${e.message}`);
+    return me.end(e.message === EARS_ASK ? e.message : `Setting up the voice helper failed: ${e.message}`);
   }
   if (ws.readyState !== 1) return;
   const { models } = earsPaths();
