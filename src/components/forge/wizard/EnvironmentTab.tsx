@@ -3,8 +3,7 @@
 // ░▒▓ ENVIRONMENT — the Wizard console's first page (owner, 2026-11-19 walkthrough 0:01–4:20) ▓▒░
 // Four big items in this order: Lights, Background, Ground, Elevation. Ground is the texture half of the old
 // "Terrain brush"; Elevation is its sculpting half. Every light slider reads 0 to 1 (src/lib/forge/light-scale.ts).
-// Built from Hipster's UI kit (src/components/ui-kit). The few looks the kit has no part for yet sit in LOOK below,
-// so Hipster can swap them for kit parts without touching the rest.
+// Built only from Hipster's UI kit (src/components/ui-kit): the menu style switch in Settings restyles all of it.
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { useOasisStore } from '@/store/oasisStore'
@@ -13,7 +12,7 @@ import { GROUND_PRESETS, getTextureUrls, type GroundPreset } from '@/lib/forge/g
 import type { WorldLight, WorldLightType } from '@/lib/conjure/types'
 import { intensityToSlider, sliderToIntensity } from '@/lib/forge/light-scale'
 import { LightTooltipWrap } from './shared'
-import { KitButton, KitSlider, KitTileButton } from '@/components/ui-kit'
+import { KitButton, KitCard, KitPickTile, KitSlider, KitTileButton } from '@/components/ui-kit'
 
 export type EnvironmentSection = 'lights' | 'background' | 'ground' | 'elevation'
 
@@ -24,16 +23,13 @@ export const ENVIRONMENT_SECTIONS: { key: EnvironmentSection; label: string; ico
   { key: 'elevation', label: 'Elevation', icon: '⛰️', hint: 'Raise and lower the land', accent: '#fb923c', picture: '/ui/spellbook/tiles/ground-elevation.gpt2.webp' },
 ]
 
-/** Looks the kit has no part for yet (a card, a chosen tile, a picture grid). Hipster can swap these. */
-const LOOK = {
-  card: 'rounded-lg border border-white/10 bg-black/25 p-2.5',
-  chosen: 'rounded-[14px] outline outline-2 outline-offset-2 outline-white/85',
-  notChosen: 'rounded-[14px] opacity-75 hover:opacity-100',
-  pick: 'overflow-hidden rounded-lg border text-left transition-colors',
-  pickOn: 'border-white/85 ring-1 ring-white/60',
-  pickOff: 'border-white/10 hover:border-white/40',
-  text: 'text-[11px] text-white/85',
-  quiet: 'text-[11px] text-white/70',
+/** Plain text inside the kit's cards. */
+const TEXT = 'text-[11px] opacity-80'
+
+/** A picture for skies with no jpg of their own (HDR files and built-in presets). */
+function skyPlaceholder(emoji: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e1b4b"/><stop offset="1" stop-color="#05060a"/></linearGradient></defs><rect width="160" height="90" fill="url(#g)"/><text x="80" y="58" font-size="34" text-anchor="middle">${emoji}</text></svg>`
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
 const SECTION_KEY = 'oasis-wizard-environment-section'
@@ -93,10 +89,10 @@ function LightCard({ light, skyId }: { light: WorldLight; skyId: string }) {
 
   return (
     <LightTooltipWrap type={light.type} className="relative">
-      <div className={LOOK.card}>
+      <KitCard>
         <div className="mb-2 flex items-center gap-2">
           <span className="text-lg leading-none">{meta.icon}</span>
-          <span className="text-[13px] font-semibold text-white">{meta.name}</span>
+          <span className="text-[13px] font-semibold">{meta.name}</span>
           {light.type !== 'environment' && (
             <input
               type="color"
@@ -115,7 +111,7 @@ function LightCard({ light, skyId }: { light: WorldLight; skyId: string }) {
               title="Ground colour"
             />
           )}
-          <KitButton variant="danger" className="ml-auto" onClick={() => removeWorldLight(light.id)} title="Remove this light">&#215;</KitButton>
+          <KitButton className="ml-auto" onClick={() => removeWorldLight(light.id)} title="Remove this light">&#215;</KitButton>
         </div>
         <div className="space-y-2">
           <UnitSlider label="Brightness" value={brightness} onChange={p => updateWorldLight(light.id, { intensity: sliderToIntensity(light.type, p, skyId) })} />
@@ -133,7 +129,7 @@ function LightCard({ light, skyId }: { light: WorldLight; skyId: string }) {
             </>
           )}
         </div>
-      </div>
+      </KitCard>
     </LightTooltipWrap>
   )
 }
@@ -157,8 +153,8 @@ function LightsSection() {
     <div className="space-y-2">
       {sceneLights.map(light => <LightCard key={light.id} light={light} skyId={skyId} />)}
       {placedLights.map(light => <LightCard key={light.id} light={light} skyId={skyId} />)}
-      {worldLights.length === 0 && <div className={`py-2 text-center ${LOOK.quiet}`}>No lights. The world is dark.</div>}
-      <div className={`pt-1 ${LOOK.quiet}`}>Add a light</div>
+      {worldLights.length === 0 && <div className={`py-2 text-center ${TEXT}`}>No lights. The world is dark.</div>}
+      <div className={`pt-1 ${TEXT}`}>Add a light</div>
       <div className="grid grid-cols-3 gap-1.5">
         {adds.map(add => (
           <LightTooltipWrap key={add.type} type={add.type} className="relative">
@@ -178,43 +174,16 @@ function BackgroundSection() {
   return (
     <div className="grid grid-cols-2 gap-1.5">
       {SKY_BACKGROUNDS.map(sky => {
-        const active = skyId === sky.id
-        const preview = sky.path && sky.path.endsWith('.jpg') ? sky.path : null
-        return (
-          <button
-            key={sky.id}
-            onClick={() => setSky(sky.id)}
-            className={`${LOOK.pick} ${active ? LOOK.pickOn : LOOK.pickOff}`}
-          >
-            {preview ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt="" loading="lazy" className="h-12 w-full object-cover" />
-            ) : (
-              <div className="flex h-12 w-full items-center justify-center bg-gradient-to-b from-indigo-950/80 to-black/60 text-xl">
-                {'preset' in sky ? '🏙️' : sky.path ? '🌌' : '✨'}
-              </div>
-            )}
-            <div className={`px-2 py-1 text-[11px] ${active ? 'text-white' : 'text-white/80'}`}>{sky.name}</div>
-          </button>
-        )
+        const picture = sky.path && sky.path.endsWith('.jpg') ? sky.path : skyPlaceholder('preset' in sky ? '🏙️' : sky.path ? '🌌' : '✨')
+        return <KitPickTile key={sky.id} picture={picture} label={sky.name} selected={skyId === sky.id} accent="#818cf8" title={sky.name} onClick={() => setSky(sky.id)} />
       })}
     </div>
   )
 }
 
-function GroundThumb({ preset }: { preset: GroundPreset }) {
-  const [failed, setFailed] = useState(false)
+function groundPicture(preset: GroundPreset): string {
   const src = preset.customTextureUrl || (preset.assetName ? getTextureUrls(preset.assetName).diffuse : null)
-  return (
-    <div className="h-14 w-full overflow-hidden" style={{ backgroundColor: preset.color }}>
-      {src && !failed ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" onError={() => setFailed(true)} />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center text-xl">{preset.icon}</div>
-      )}
-    </div>
-  )
+  return src || skyPlaceholder(preset.icon)
 }
 
 function GroundSection() {
@@ -228,24 +197,21 @@ function GroundSection() {
 
   return (
     <div className="space-y-2">
-      <div className={LOOK.text}>Click a ground to cover the whole world with it, or the brush to paint it by hand.</div>
+      <div className={TEXT}>Click a ground to cover the whole world with it, or the brush to paint it by hand.</div>
       <div className="grid grid-cols-3 gap-1.5">
         {presets.map(preset => {
           const active = groundPresetId === preset.id
           return (
-            <div key={preset.id} className={`group relative ${LOOK.pick} ${active ? LOOK.pickOn : LOOK.pickOff}`}>
-              <button onClick={() => setGroundPreset(preset.id)} className="block w-full text-left" title={preset.description || preset.name}>
-                <GroundThumb preset={preset} />
-                <div className={`truncate px-1.5 py-1 text-[11px] ${active ? 'text-white' : 'text-white/80'}`}>{preset.name}</div>
-              </button>
+            <div key={preset.id} className="relative">
+              <KitPickTile picture={groundPicture(preset)} label={preset.name} selected={active} accent="#34d399" title={preset.description || preset.name} onClick={() => setGroundPreset(preset.id)} className="w-full" />
               {preset.id !== 'none' && (
-                <button
+                <KitButton
+                  className="absolute right-1 top-1"
                   onClick={() => { setTerrainBrushMode('texture'); setTerrainBrushPanelOpen(true); enterPaintMode(preset.id) }}
-                  className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-md border border-white/20 bg-black/60 text-[12px] opacity-80 hover:opacity-100"
                   title={`Paint ${preset.name} by hand`}
                 >
                   🖌️
-                </button>
+                </KitButton>
               )}
             </div>
           )
@@ -269,11 +235,11 @@ function ElevationSection() {
         ⛰️ Shape the land
       </KitButton>
       <div className="grid grid-cols-3 gap-1.5 text-center">
-        <div className={LOOK.card}><div className={LOOK.quiet}>Brush</div><div className="text-[12px] text-white">{direction}</div></div>
-        <div className={LOOK.card}><div className={LOOK.quiet}>Radius</div><div className="text-[12px] text-white">{radius.toFixed(1)} m</div></div>
-        <div className={LOOK.card}><div className={LOOK.quiet}>Strength</div><div className="text-[12px] text-white">{intensity.toFixed(1)}/s</div></div>
+        <KitCard title="Brush"><div className="text-[13px]">{direction}</div></KitCard>
+        <KitCard title="Radius"><div className="text-[13px]">{radius.toFixed(1)} m</div></KitCard>
+        <KitCard title="Strength"><div className="text-[13px]">{intensity.toFixed(1)}/s</div></KitCard>
       </div>
-      <div className={LOOK.quiet}>{shaped ? 'This world has hills and valleys.' : 'This world is flat.'}</div>
+      <div className={TEXT}>{shaped ? 'This world has hills and valleys.' : 'This world is flat.'}</div>
     </div>
   )
 }
@@ -292,21 +258,20 @@ export function EnvironmentTab({ footer }: { footer?: ReactNode }) {
         {ENVIRONMENT_SECTIONS.map(item => {
           const active = section === item.key
           return (
-            <div key={item.key} className={active ? LOOK.chosen : LOOK.notChosen}>
               <KitTileButton
+                key={item.key}
+                selected={active}
                 picture={item.picture}
                 icon={item.icon}
                 label={item.label}
                 sub={item.hint}
                 accent={item.accent}
                 title={item.hint}
-                aria-pressed={active}
                 data-environment-section={item.key}
                 onClick={() => choose(item.key)}
                 className="w-full"
                 style={{ minHeight: 96 }}
               />
-            </div>
           )
         })}
       </div>

@@ -12,6 +12,7 @@
 
 'use client'
 
+import { KitButton } from '@/components/ui-kit'
 import { useState, useRef, useCallback, useEffect, useMemo, Suspense } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, useGLTF } from '@react-three/drei'
@@ -457,7 +458,7 @@ export function formatBytes(bytes: number): string {
   return bytes + ' B'
 }
 
-function StatsPanel({ stats, fileSize, accentColor = '#38BDF8' }: { stats: ModelStats; fileSize: number | null; accentColor?: string }) {
+function StatsPanel({ stats, fileSize }: { stats: ModelStats; fileSize: number | null; accentColor?: string }) {
   const statRows: { label: string; value: string; icon: string }[] = [
     { label: 'Triangles', value: formatNumber(stats.triangles), icon: '\u25B3' },
     { label: 'Vertices', value: formatNumber(stats.vertices), icon: '\u25CF' },
@@ -480,15 +481,13 @@ function StatsPanel({ stats, fileSize, accentColor = '#38BDF8' }: { stats: Model
   }
 
   return (
-    <div className="px-2 py-1.5 border-t border-white/5" style={{ background: 'rgba(20, 20, 20, 0.5)' }}>
-      <div className="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-1">
-        Mesh Stats
-      </div>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+    <div className="px-3 py-2 border-t border-white/10" style={{ background: 'rgba(0, 0, 0, 0.55)' }}>
+      {/* Readable (owner, 2026-11-19 at 13:40: grey on grey, the name far from its value): white on dark, value right after its label. */}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
         {statRows.map(row => (
-          <div key={row.label} className="flex items-center justify-between">
-            <span className="text-[9px] text-gray-500 font-mono">{row.icon} {row.label}</span>
-            <span className="text-[9px] font-mono font-medium" style={{ color: accentColor }}>{row.value}</span>
+          <div key={row.label} className="flex items-baseline gap-2 min-w-0">
+            <span className="w-[70px] shrink-0 text-[11px] text-white/65">{row.label}</span>
+            <span className="text-[12px] font-semibold text-white tabular-nums truncate">{row.value}</span>
           </div>
         ))}
       </div>
@@ -496,14 +495,14 @@ function StatsPanel({ stats, fileSize, accentColor = '#38BDF8' }: { stats: Model
       {/* Animation clip durations */}
       {stats.clips.length > 0 && (
         <div className="mt-1 pt-1 border-t border-white/5">
-          <div className="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-0.5">
-            Clips ({stats.clips.length})
+          <div className="text-[11px] text-white/65 mb-0.5">
+            Animations ({stats.clips.length})
           </div>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
             {stats.clips.map(clip => (
-              <div key={clip.name} className="flex items-center justify-between">
-                <span className="text-[9px] text-gray-500 font-mono truncate mr-1">{clip.name.length > 14 ? clip.name.slice(0, 14) + '..' : clip.name}</span>
-                <span className="text-[9px] font-mono shrink-0" style={{ color: accentColor }}>{clip.duration.toFixed(1)}s</span>
+              <div key={clip.name} className="flex items-baseline gap-2 min-w-0">
+                <span className="text-[11px] text-white/80 truncate">{clip.name}</span>
+                <span className="text-[11px] text-white tabular-nums shrink-0">{clip.duration.toFixed(1)}s</span>
               </div>
             ))}
           </div>
@@ -691,20 +690,11 @@ export function ModelPreviewPanel({ asset, onBack, onPlace, accentColor = '#38BD
         <AnimationControlsPanel animInfo={animInfo} accentColor={accentColor} />
       )}
 
-      {/* ░▒▓█ PLACE IN WORLD ░▒▓█ */}
+      {/* ░▒▓█ PLACE IN WORLD — the big button ░▒▓█ */}
       <div className="px-2 py-2 flex-shrink-0 mt-auto">
-        <button
-          onClick={() => onPlace(asset)}
-          className="w-full py-2 rounded-lg font-mono text-[11px] font-bold tracking-wide transition-all duration-300 hover:scale-[1.01]"
-          style={{
-            background: `linear-gradient(135deg, ${accentColor}22, ${accentColor}11)`,
-            border: `1px solid ${accentColor}44`,
-            color: accentColor,
-            boxShadow: `0 0 20px ${accentColor}11`,
-          }}
-        >
-          &#9654; Place in World
-        </button>
+        <KitButton variant="primary" className="w-full" onClick={() => onPlace(asset)}>
+          Place in world
+        </KitButton>
       </div>
     </div>
   )

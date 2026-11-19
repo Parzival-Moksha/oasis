@@ -37,6 +37,8 @@ import { getLiveObjectTransform } from '../../lib/live-object-transforms'
 import { PORTAL_GATE_VARIANT_DEFS, type PortalGateVariant } from '../../lib/portal-gates'
 import { portalThumbPath } from '../../lib/portal-thumbnails'
 import { EnvironmentTab } from './wizard/EnvironmentTab'
+import { CatalogCategories } from './wizard/CatalogCategories'
+import { requestCatalogThumbnails } from '../../hooks/useUnifiedThumbnailQueue'
 import {
   buildAudioPlacementPending,
   buildImagePlacementPending,
@@ -1306,6 +1308,16 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
 
   // ░▒▓ Catalog thumbnail generator — manual trigger for 100+ GLB renders ▓▒░
   const catalogThumbGen = useCatalogThumbnailGenerator()
+  void catalogThumbGen
+  // First sight of the catalog: any model with no picture on disk gets one rendered, the category in view first.
+  useEffect(() => {
+    if (!isOpen || mode !== 'assets' || assetSubTab !== 'catalog') return
+    requestCatalogThumbnails(ASSET_CATALOG.filter(a => assetCategory === 'all' || a.category === assetCategory).map(a => a.id))
+  }, [isOpen, mode, assetSubTab, assetCategory])
+  // Conjured, Crafted and Images left the catalog; an old link to them lands on the catalog.
+  useEffect(() => {
+    if (assetSubTab === 'conjured' || assetSubTab === 'crafted' || assetSubTab === 'images') setAssetSubTab('catalog')
+  }, [assetSubTab])
 
   // ░▒▓ Clear preview + exit paint mode when switching tabs ▓▒░
   useEffect(() => {
@@ -1722,6 +1734,9 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
         width: size.width,
         height: size.height,
         backgroundColor: `rgba(0, 0, 0, ${opacity})`,
+        // Placing: the console fades so the world behind it shows where the thing will land (owner, 10:22).
+        opacity: placementPending ? 0.4 : 1,
+        transition: 'opacity 180ms ease-out',
         borderColor: activeCount > 0 ? `${forgeColor}66` : 'rgba(100, 100, 100, 0.3)',
         boxShadow: activeCount > 0
           ? `0 0 30px ${forgeColor}33, 0 0 60px ${forgeColor}11`
@@ -2127,7 +2142,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                 setPreviewAsset(null)
               }}
               accentColor="#EAB308"
-              canvasHeight={400}
+              canvasHeight={260}
             />
           ) : previewConjured ? (
             /* ░▒▓█ 3D PREVIEW — Conjured GLB model █▓▒░ */
@@ -2180,69 +2195,31 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
             />
           ) : (
           <>
-            {/* ═══════════════════════════════════════════════════════════════════
-                SUB-TAB BAR — Catalog / Conjured / Crafted
-                ─═̷─═̷─ Three galleries under one roof ─═̷─═̷─
-                ═══════════════════════════════════════════════════════════════════ */}
-            <div className="flex items-center gap-1 mb-2">
-              {([
-                { key: 'catalog' as const, label: 'Catalog', count: ASSET_CATALOG.length, color: 'yellow' },
-                { key: 'portals' as const, label: 'Portals', count: PORTAL_GATE_VARIANT_DEFS.length, color: 'cyan' },
-                { key: 'spatial' as const, label: 'Functional', count: SPATIAL_WEB_ASSET_TEMPLATES.length, color: 'cyan' },
-                { key: 'conjured' as const, label: 'Conjured', count: conjuredAssets.filter(a => a.status === 'ready').length, color: 'orange' },
-                { key: 'crafted' as const, label: 'Crafted', count: sceneLibrary.length, color: 'blue' },
-                { key: 'images' as const, label: 'Images', count: generatedImages.length, color: 'pink' },
-              ]).map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => setAssetSubTab(tab.key)}
-                  className={`text-[10px] px-2 py-0.5 rounded font-mono transition-colors ${
-                    assetSubTab === tab.key
-                      ? `bg-${tab.color}-500/20 text-${tab.color}-300 border border-${tab.color}-500/40`
-                      : 'text-gray-400 border border-gray-700/30 hover:text-gray-200 hover:border-gray-600/50'
-                  }`}
-                  style={assetSubTab === tab.key ? {
-                    background: tab.color === 'yellow' ? 'rgba(234,179,8,0.15)' : tab.color === 'orange' ? 'rgba(249,115,22,0.15)' : tab.color === 'pink' ? 'rgba(236,72,153,0.15)' : tab.color === 'cyan' ? 'rgba(34,211,238,0.15)' : 'rgba(59,130,246,0.15)',
-                    color: tab.color === 'yellow' ? '#FDE047' : tab.color === 'orange' ? '#FB923C' : tab.color === 'pink' ? '#F9A8D4' : tab.color === 'cyan' ? '#67E8F9' : '#93C5FD',
-                    borderColor: tab.color === 'yellow' ? 'rgba(234,179,8,0.4)' : tab.color === 'orange' ? 'rgba(249,115,22,0.4)' : tab.color === 'pink' ? 'rgba(236,72,153,0.4)' : tab.color === 'cyan' ? 'rgba(34,211,238,0.4)' : 'rgba(59,130,246,0.4)',
-                  } : {}}
-                >
-                  {tab.label}
-                  {tab.count > 0 && (
-                    <span className="ml-1 opacity-60">{tab.count}</span>
-                  )}
-                </button>
-              ))}
+            {/* ░▒▓ ONE ROW OF SMALL CATEGORIES — the catalog's, then Portals and Functional (owner, 13:15).
+                Conjured, Crafted and Images left the catalog: they live in Conjuring, Crafting and Media. ▓▒░ */}
+            <div className="mb-2">
+              <CatalogCategories
+                items={[
+                  ...['all', ...Array.from(new Set(ASSET_CATALOG.map(a => a.category)))].map(cat => ({
+                    id: `cat:${cat}`,
+                    label: cat === 'all' ? 'all' : cat.replace(/-/g, ' '),
+                    count: cat === 'all' ? ASSET_CATALOG.length : ASSET_CATALOG.filter(a => a.category === cat).length,
+                  })),
+                  { id: 'portals', label: 'portals', count: PORTAL_GATE_VARIANT_DEFS.length, title: 'Gates to other worlds', special: true },
+                  { id: 'spatial', label: 'functional', count: SPATIAL_WEB_ASSET_TEMPLATES.length, title: 'Buttons, sliders, text and panels that work in 3D', special: true },
+                ]}
+                active={assetSubTab === 'portals' || assetSubTab === 'spatial' ? assetSubTab : `cat:${assetCategory}`}
+                onChange={id => {
+                  if (id === 'portals' || id === 'spatial') { setAssetSubTab(id); return }
+                  setAssetSubTab('catalog')
+                  setAssetCategory(id.slice(4))
+                }}
+              />
             </div>
 
             {/* ░▒▓ CATALOG SUB-TAB — Pre-made Quaternius models ▓▒░ */}
             {assetSubTab === 'catalog' && (
               <>
-                {/* Category filter pills + generate thumbs button */}
-                <div className="flex flex-wrap gap-1 mb-2 items-center">
-                  {['all', ...Array.from(new Set(ASSET_CATALOG.map(a => a.category)))].map(cat => (
-                    <button
-                      key={cat}
-                      onClick={() => setAssetCategory(cat)}
-                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono transition-colors ${
-                        assetCategory === cat
-                          ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
-                          : 'text-gray-400 border border-gray-700/30 hover:text-gray-200 hover:border-gray-600/50'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                  <div className="ml-auto">
-                    <RegenAllButton
-                      onClick={() => catalogThumbGen.generate()}
-                      running={catalogThumbGen.running}
-                      done={catalogThumbGen.done}
-                      total={catalogThumbGen.total}
-                    />
-                  </div>
-                </div>
-
                 {/* Catalog grid — unified AssetCard */}
                 <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCatalog}, minmax(0, 1fr))` }}>
                   {ASSET_CATALOG
@@ -2257,7 +2234,8 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                       fallbackThumbnailUrl={catalogFallbackThumbnail(asset.category)}
                       modelUrl={asset.path}
                       subtitle={asset.category}
-                      onClick={() => {
+                      onClick={() => enterPlacementMode({ type: 'catalog', catalogId: asset.id, name: asset.name, path: asset.path, defaultScale: asset.defaultScale })}
+                      onInfo={() => {
                         if (scrollRef.current) savedScrollTop.current = scrollRef.current.scrollTop
                         setPreviewAsset(asset)
                       }}

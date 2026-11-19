@@ -12,7 +12,12 @@
 // (not GLB files) and mounts inside AssetsTab. The two pipelines do not
 // share GPU rigs; both can run concurrently safely.
 //
-// Survives a single mount when explicitly enabled, persists for the session.
+// On by default since 2026-11-19 (the owner, walkthrough 8:37: "the little thumbnail JPEG should auto-generate
+// like on the first load. Like it should never happen."). It waits until the Wizard console's Catalog is first
+// shown (requestCatalogThumbnails), renders only the catalog models with no picture on disk, the category in
+// view first, and stays idle when nothing is missing. Off: localStorage oasis-thumbnail-queue = '0'; hosted
+// visitors never render (the hosted server gets its pictures from the package).
+// Survives a single mount, persists for the session.
 // Cancellation: if the page unloads, in-flight renders are abandoned.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
@@ -41,10 +46,33 @@ function shouldRunUnifiedThumbnailQueue(): boolean {
   try {
     const params = new URLSearchParams(window.location.search)
     if (params.get('thumbQueue') === '1') return true
-    return window.localStorage.getItem('oasis-thumbnail-queue') === '1'
+    if (params.get('thumbQueue') === '0') return false
+    if (window.localStorage.getItem('oasis-thumbnail-queue') === '0') return false
   } catch {
     return false
   }
+  return process.env.NEXT_PUBLIC_OASIS_MODE !== 'hosted'
+}
+
+// ░▒▓ First sight: the catalog asks for its pictures; the ids it shows go first ▓▒░
+const SEEN_EVENT = 'oasis:catalog-thumbnails-wanted'
+let catalogSeen = false
+let priorityIds: string[] = []
+
+/** The catalog is on screen: start rendering missing pictures, these ids first. */
+export function requestCatalogThumbnails(ids: string[]): void {
+  priorityIds = ids
+  if (catalogSeen) return
+  catalogSeen = true
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SEEN_EVENT))
+}
+
+function waitForCatalogSeen(cancelled: () => boolean): Promise<boolean> {
+  if (catalogSeen) return Promise.resolve(true)
+  return new Promise(resolve => {
+    const on = () => { window.removeEventListener(SEEN_EVENT, on); resolve(!cancelled()) }
+    window.addEventListener(SEEN_EVENT, on)
+  })
 }
 
 function createRig(): RenderRig {
@@ -125,15 +153,16 @@ export function useUnifiedThumbnailQueue() {
     let rig: RenderRig | null = null
 
     // ░▒▓ Seed from server: which catalog thumbnails already exist on disk? ▓▒░
-    async function seedExisting() {
+    // Without this list every model would look missing and be rendered again: no list, no rendering.
+    async function seedExisting(): Promise<boolean> {
       try {
         const res = await fetch(`${OASIS_BASE}/api/catalog/thumbnail`)
-        if (!res.ok) return
+        if (!res.ok) return false
         const data = await res.json() as { existing?: string[] }
-        if (Array.isArray(data.existing)) {
-          useThumbnailStore.getState().seedKnown(data.existing)
-        }
-      } catch {}
+        if (!Array.isArray(data.existing)) return false
+        useThumbnailStore.getState().seedKnown(data.existing)
+        return true
+      } catch { return false }
     }
 
     async function processOne(id: string, modelUrl: string, putUrl: string): Promise<boolean> {
@@ -183,7 +212,7 @@ export function useUnifiedThumbnailQueue() {
 
         // Conjured scan
         const conjured = useOasisStore.getState().conjuredAssets.filter(a => {
-          if (a.status !== 'ready' || !a.glbPath) return false
+          if (a.status !== 'ready' || !a.glbPath || a.thumbnailUrl) return false
           const st = s.status[a.id]
           return !st || st === 'missing' || (st === 'failed' && (failureCountsRef.current[a.id] || 0) < 2)
         })
@@ -207,7 +236,9 @@ export function useUnifiedThumbnailQueue() {
           continue
         }
 
-        // Process up to 50 before re-scanning (keeps store reactive to additions).
+        // The ids the catalog shows go first. Up to 50 before re-scanning (keeps store reactive to additions).
+        const first = new Set(priorityIds)
+        allTargets.sort((a, b) => Number(first.has(b.id)) - Number(first.has(a.id)))
         const chunk = allTargets.slice(0, 50)
         for (const t of chunk) {
           if (cancelledRef.current) break
@@ -216,7 +247,11 @@ export function useUnifiedThumbnailQueue() {
       }
     }
 
-    seedExisting().then(drainQueue)
+    void (async () => {
+      if (!(await waitForCatalogSeen(() => cancelledRef.current))) return
+      if (!(await seedExisting())) return
+      await drainQueue()
+    })()
 
     return () => {
       cancelledRef.current = true
