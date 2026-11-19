@@ -119,6 +119,8 @@ function CharacterTabView({ profile, onPickAvatar }: { profile: Profile | null; 
           <KitProgress label="Health" value={profile.hp ?? 100} max={profile.maxHp ?? 100} format={(value, max) => `${number(value)} / ${number(max)}`} accent="#ef4444" />
           <KitProgress label="Mana" value={profile.mana ?? 0} max={profile.maxMana ?? 20} format={(value, max) => `${number(value)} / ${number(max)}`} accent="#60a5fa" />
           {(profile.unspentSkillPoints ?? 0) > 0 && <div className={`${TEXT.note} mt-1`}>{profile.unspentSkillPoints} skill point{profile.unspentSkillPoints === 1 ? '' : 's'} to spend</div>}
+          {/* Quests and spending skill points still live in the old Profile panel (ProfileButton): until they move here. */}
+          <button type="button" className={`${TEXT.link} mt-1 self-start`} data-character-old-profile onClick={() => { closeCharacter(); window.dispatchEvent(new CustomEvent('oasis:open-profile')) }}>quests and stat points →</button>
           </div>
         </KitCard>
       </div>
