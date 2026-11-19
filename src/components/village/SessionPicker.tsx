@@ -23,7 +23,7 @@ import { cwdLabel, formatAgo, formatBytes } from './village-status'
 import { FolderBrowser } from './FolderBrowser'
 import { getKeychainState, keyStates, openKeychain, refreshKeychain, subscribeKeychain } from './keychain-store'
 import { showNotice } from '../forge/GlobalNotice'
-import { KitButton, KitPanel, KitTabs, KitTextField, KitTileButton, kitConfirm, useKitStyle } from '@/components/ui-kit'
+import { KitButton, KitPanel, KitSelectField, KitTabs, KitTextField, KitTileButton, kitConfirm } from '@/components/ui-kit'
 import { CUSTOM_MODEL_VALUE, cleanModelId, mergeModelLists, type ModelOption } from '../../lib/village/village-models'
 
 const PAGE = 40
@@ -52,10 +52,9 @@ const HERMES_MODES: Array<[string, string]> = [
 ]
 
 // ─── the look: Hipster's UI kit (components/ui-kit) draws every part; Settings picks Glass / Forged / Parchment / Rune.
-// Only layout lives here, plus SUMMON_CSS: a larger size for the New-session fields (the owner: "big input fields").
+// Only layout lives here; the New-session fields use the kit's large size (the owner: "big input fields").
 const ACCENT = '#a78bfa'
 const TILE = '/ui/spellbook/tiles'
-const SUMMON_CSS = `[data-summon-menu] .summon-big input, [data-summon-menu] .summon-big select { padding: 12px 14px; font-size: 15px; min-height: 46px; }`
 /** A hairline in the panel's own text colour, so it suits every kit style. */
 const HAIRLINE = '1px solid color-mix(in srgb, currentColor 14%, transparent)'
 
@@ -171,7 +170,6 @@ function SummonFrame({ onClose, tall, children }: { onClose: () => void; tall: b
       style={{ zIndex: 9600, padding: 16 }}
       onPointerDown={event => { if (event.target === event.currentTarget) onClose() }}
     >
-      <style>{SUMMON_CSS}</style>
       <KitPanel
         title="Summon an agent"
         icon={<span aria-hidden style={{ color: ACCENT, fontSize: 18 }}>✦</span>}
@@ -207,11 +205,12 @@ function KindTabs({ kind, onPick }: { kind: SummonKind; onPick: (kind: SummonKin
             icon={item.icon}
             label={item.name}
             sub={item.line}
-            badge={on ? '✓ chosen' : item.ready ? undefined : 'not yet'}
+            selected={on}
+            badge={item.ready ? undefined : 'not yet'}
             accent={ACCENT}
             title={item.ready ? `Summon a ${item.name} agent` : `${item.name}: what is missing, and the keys it would use`}
             className="!min-h-[104px]"
-            style={{ opacity: on ? 1 : item.ready ? 0.78 : 0.5 }}
+            style={item.ready || on ? undefined : { opacity: 0.6 }}
           />
         )
       })}
@@ -231,17 +230,6 @@ function HalfTabs({ half, onPick }: { half: 'new' | 'continue'; onPick: (half: '
         onChange={onPick}
       />
     </div>
-  )
-}
-
-/** The kit has no dropdown yet: its field style (kit-field) around a native select, which the kit's CSS already styles. */
-function KitSelectField({ label, title, children, ...rest }: { label: ReactNode; title?: string; children: ReactNode } & React.SelectHTMLAttributes<HTMLSelectElement>) {
-  const kit = useKitStyle()
-  return (
-    <label data-kit-style={kit} className="kit-field" title={title}>
-      <span className="kit-label">{label}</span>
-      <select {...rest}>{children}</select>
-    </label>
   )
 }
 
@@ -275,6 +263,7 @@ const stopKeys = (event: React.KeyboardEvent) => { if (event.key !== 'Escape') e
 function ModelSelect({ value, models, onChange }: { value: string; models: ModelOption[]; onChange: (model: string) => void }) {
   return (
     <KitSelectField
+      size="large"
       label="Model"
       title="The Claude model it runs on. From settings: the village's default."
       value={value}
@@ -298,7 +287,7 @@ function ModelSelect({ value, models, onChange }: { value: string; models: Model
 
 function ModeSelect({ value, modes, onChange }: { value: string; modes: Array<[string, string]>; onChange: (mode: string) => void }) {
   return (
-    <KitSelectField label="Permissions" title="What it may do without asking you first." value={value} onChange={event => onChange(event.target.value)} onKeyDown={stopKeys}>
+    <KitSelectField size="large" label="Permissions" title="What it may do without asking you first." value={value} onChange={event => onChange(event.target.value)} onKeyDown={stopKeys}>
       {modes.map(([mode, label]) => <option key={mode} value={mode}>{label}</option>)}
     </KitSelectField>
   )
@@ -308,7 +297,7 @@ function AccountField({ value, onChange }: { value: string; onChange: (account: 
   const view = useOasisStore(s => s.agentEngine.connection.server?.accounts || null)
   if (!view || shownAccounts(view).length < 2) return null
   return (
-    <KitSelectField label="Account" value={value || 'auto'} onChange={event => onChange(event.target.value)} onKeyDown={stopKeys} title="The Claude account its process runs on. Auto: the one whose week ends first.">
+    <KitSelectField size="large" label="Account" value={value || 'auto'} onChange={event => onChange(event.target.value)} onKeyDown={stopKeys} title="The Claude account its process runs on. Auto: the one whose week ends first.">
       {accountChoices(view).map(choice => <option key={choice.value} value={choice.value}>{choice.value === 'auto' ? 'Auto (the one whose week ends first)' : choice.label}</option>)}
     </KitSelectField>
   )
@@ -362,8 +351,8 @@ function NewClaude({ folder, folderNote, onBrowse, choices, setChoices, models, 
       .finally(() => setBusy(false))
   }
   return (
-    <form className="summon-big flex flex-col gap-4" data-summon-new="claude" onSubmit={event => { event.preventDefault(); submit() }}>
-      <KitTextField label="Name" value={name} autoFocus onChange={event => setName(event.target.value)} onKeyDown={stopKeys} placeholder={folder.path ? cwdLabel(folder.path) : 'a name'} />
+    <form className="flex flex-col gap-4" data-summon-new="claude" onSubmit={event => { event.preventDefault(); submit() }}>
+      <KitTextField size="large" label="Name" value={name} autoFocus onChange={event => setName(event.target.value)} onKeyDown={stopKeys} placeholder={folder.path ? cwdLabel(folder.path) : 'a name'} />
       <div className="grid grid-cols-2 gap-4 max-[700px]:grid-cols-1">
         <ModelSelect value={choices.model} models={models} onChange={model => setChoices({ model })} />
         <ModeSelect value={choices.permissionMode} modes={CLAUDE_MODES} onChange={permissionMode => setChoices({ permissionMode })} />
@@ -423,10 +412,11 @@ function NewHermes({ folder, folderNote, onBrowse, profiles, hermesHome, choices
       .finally(() => setBusy(false))
   }
   return (
-    <form className="summon-big flex flex-col gap-4" data-summon-new="hermes" onSubmit={event => { event.preventDefault(); submit() }}>
-      <KitTextField label="Name" value={name} autoFocus onChange={event => setName(event.target.value)} onKeyDown={stopKeys} placeholder="e.g. Jerry" />
+    <form className="flex flex-col gap-4" data-summon-new="hermes" onSubmit={event => { event.preventDefault(); submit() }}>
+      <KitTextField size="large" label="Name" value={name} autoFocus onChange={event => setName(event.target.value)} onKeyDown={stopKeys} placeholder="e.g. Jerry" />
       <div className="grid grid-cols-2 gap-4 max-[700px]:grid-cols-1">
           <KitSelectField
+            size="large"
             label="Profile"
             value={ssh ? '__ssh' : profile}
             onChange={event => {
@@ -445,8 +435,8 @@ function NewHermes({ folder, folderNote, onBrowse, profiles, hermesHome, choices
       </div>
       {ssh && (
         <div className="grid grid-cols-2 gap-4 max-[700px]:grid-cols-1">
-          <KitTextField label="ssh host" value={form.host} onChange={event => set({ host: event.target.value })} onKeyDown={stopKeys} placeholder="e.g. og" />
-          <KitTextField label="Address (if its name does not resolve)" value={form.address} onChange={event => set({ address: event.target.value })} onKeyDown={stopKeys} placeholder="e.g. 192.168.1.149" />
+          <KitTextField size="large" label="ssh host" value={form.host} onChange={event => set({ host: event.target.value })} onKeyDown={stopKeys} placeholder="e.g. og" />
+          <KitTextField size="large" label="Address (if its name does not resolve)" value={form.address} onChange={event => set({ address: event.target.value })} onKeyDown={stopKeys} placeholder="e.g. 192.168.1.149" />
         </div>
       )}
       <div className="text-[12px] opacity-55">
