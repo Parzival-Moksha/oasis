@@ -12,8 +12,9 @@
 //   <KitToggle checked onChange label hint />                 a switch
 //   <KitSlider label value min max step onChange format />    a slider
 //   <KitTabs tabs={[{id,label}]} active onChange />           tabs
+//   <KitPickTile picture label selected />                   a small picture to pick (skies, grounds); tiles take selected too
 //   <KitCard title>…</KitCard>  <KitProgress label value max format accent />   a box, a bar that fills
-//   <KitTextField label value onChange multiline />           a text box (title="…" on anything gives the Oasis tooltip)
+//   <KitTextField label value onChange multiline size="large" />  <KitSelectField label value onChange options />           a text box (title="…" on anything gives the Oasis tooltip)
 //   <KitDialog open title onClose actions>…</KitDialog>       a modal dialog;  await kitConfirm({ title, body, confirm, danger })
 //   <KitLookControls />                                       the shared style / see-through / blur / colour controls
 
@@ -84,7 +85,7 @@ export function KitButton({ variant = 'plain', className, children, ...rest }: {
   return <button type="button" {...rest} data-kit-style={kit} data-variant={variant} className={cx('kit-btn', className)}>{children}</button>
 }
 
-export function KitTileButton({ picture, icon, label, sub, badge, accent, className, style, ...rest }: {
+export function KitTileButton({ picture, icon, label, sub, badge, accent, selected, className, style, ...rest }: {
   /** A painted picture (e.g. /ui/spellbook/tiles/<spell>.gpt2.webp). */
   picture?: string
   icon?: ReactNode
@@ -94,10 +95,12 @@ export function KitTileButton({ picture, icon, label, sub, badge, accent, classN
   badge?: ReactNode
   /** Colour of the icon disc and the hover glow; pick it to rhyme with the picture. */
   accent?: string
+  /** The one chosen (each style draws it). */
+  selected?: boolean
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const kit = useKitStyle()
   return (
-    <button type="button" {...rest} data-kit-style={kit} className={cx('kit-tile', className)} style={{ ...(accent ? { ['--kit-accent' as string]: accent } : {}), ...style }}>
+    <button type="button" {...rest} aria-pressed={selected} data-selected={selected ? '1' : '0'} data-kit-style={kit} className={cx('kit-tile', className)} style={{ ...(accent ? { ['--kit-accent' as string]: accent } : {}), ...style }}>
       {picture && <span className="kit-tile-pic" style={{ backgroundImage: `url(${picture})` }} />}
       {badge && <span className="kit-tile-badge">{badge}</span>}
       <span className="kit-tile-text">
@@ -107,6 +110,17 @@ export function KitTileButton({ picture, icon, label, sub, badge, accent, classN
           {sub && <span className="kit-tile-sub">{sub}</span>}
         </span>
       </span>
+    </button>
+  )
+}
+
+/** A small picture to pick from a grid (a sky, a ground texture). */
+export function KitPickTile({ picture, label, selected, accent, className, style, ...rest }: { picture: string; label?: ReactNode; selected?: boolean; accent?: string } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const kit = useKitStyle()
+  return (
+    <button type="button" {...rest} aria-pressed={selected} data-selected={selected ? '1' : '0'} data-kit-style={kit} className={cx('kit-pick', className)} style={{ ...(accent ? { ['--kit-accent' as string]: accent } : {}), ...style }}>
+      <span className="kit-pick-pic" style={{ backgroundImage: `url(${picture})` }} />
+      {label && <span className="kit-pick-label">{label}</span>}
     </button>
   )
 }
@@ -178,12 +192,28 @@ export function KitTabs<T extends string>({ tabs, active, onChange }: { tabs: Ar
   )
 }
 
-export function KitTextField({ label, hint, multiline, rows = 3, ...rest }: { label?: ReactNode; hint?: ReactNode; multiline?: boolean; rows?: number } & React.InputHTMLAttributes<HTMLInputElement> & React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function KitTextField({ label, hint, multiline, rows = 3, size, ...rest }: { label?: ReactNode; hint?: ReactNode; multiline?: boolean; rows?: number; size?: 'normal' | 'large' } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> & React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const kit = useKitStyle()
   return (
-    <label data-kit-style={kit} className="kit-field">
+    <label data-kit-style={kit} data-size={size ?? 'normal'} className="kit-field">
       {label && <span className="kit-label">{label}</span>}
       {multiline ? <textarea rows={rows} {...(rest as React.TextareaHTMLAttributes<HTMLTextAreaElement>)} /> : <input {...(rest as React.InputHTMLAttributes<HTMLInputElement>)} />}
+      {hint && <span className="kit-hint">{hint}</span>}
+    </label>
+  )
+}
+
+/** A choice from a list, in the same field look. */
+export function KitSelectField({ label, hint, size, options, children, ...rest }: {
+  label?: ReactNode; hint?: ReactNode; size?: 'normal' | 'large'
+  /** Shorthand for simple lists; or pass <option> children. */
+  options?: Array<{ value: string; label: string }>
+} & Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'size'>) {
+  const kit = useKitStyle()
+  return (
+    <label data-kit-style={kit} data-size={size ?? 'normal'} className="kit-field">
+      {label && <span className="kit-label">{label}</span>}
+      <select {...rest}>{options ? options.map(o => <option key={o.value} value={o.value}>{o.label}</option>) : children}</select>
       {hint && <span className="kit-hint">{hint}</span>}
     </label>
   )

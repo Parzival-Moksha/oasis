@@ -169,4 +169,23 @@ export const KIT_CSS = `
 [data-kit-style="rune"].kit-card .kit-card-title { font-family: var(--font-cinzel), Georgia, serif; font-variant: small-caps; text-transform: none; color: #f0d199; }
 [data-kit-style="rune"].kit-progress .kit-progress-track { border-radius: 2px; background: #140e07; box-shadow: inset 0 0 0 1px #b89358; }
 [data-kit-style="rune"].kit-progress .kit-progress-fill { background: linear-gradient(90deg, #8a6a34, #f0d199); }
+
+/* ── chosen tiles, and the small picture-pick tile (skies, grounds) ─────── */
+.kit-pick { position: relative; display: flex; flex-direction: column; cursor: pointer; padding: 0; overflow: hidden; text-align: left; transition: transform 140ms cubic-bezier(0.2, 0.9, 0.3, 1.3), filter 140ms ease-out, box-shadow 140ms ease-out; }
+.kit-pick:hover:not(:disabled) { transform: scale(1.05); z-index: 1; }
+.kit-pick-pic { display: block; width: 100%; aspect-ratio: 16 / 10; background-size: cover; background-position: center; }
+.kit-pick-label { display: block; padding: 4px 6px; font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+[data-kit-style="glass"].kit-pick { border-radius: 8px; border: 1px solid rgba(255,255,255,0.18); background: rgba(0,0,0,0.35); color: #fff; }
+[data-kit-style="forged"].kit-pick { border: 1px solid rgba(201,162,86,0.55); border-radius: 4px; background: #0b0907; color: #e9d6a8; font-family: var(--font-cinzel), Georgia, serif; }
+[data-kit-style="parchment"].kit-pick { border: 1px solid #6b4a1e; border-radius: 2px; background: rgba(255,248,226,0.5); color: #34230f; }
+[data-kit-style="rune"].kit-pick { border: 1px solid #b89358; border-radius: 4px; background: #1b130b; color: #f6e7c8; }
+[data-kit-style="glass"].kit-tile[data-selected="1"], [data-kit-style="glass"].kit-pick[data-selected="1"] { border-color: var(--kit-accent, #fde68a); box-shadow: 0 0 0 2px var(--kit-accent, #fde68a), 0 0 22px -4px var(--kit-accent, #fde68a); }
+[data-kit-style="forged"].kit-tile[data-selected="1"], [data-kit-style="forged"].kit-pick[data-selected="1"] { filter: brightness(1.18) drop-shadow(0 0 10px rgba(245,201,106,0.85)); border-color: #f5c96a; }
+[data-kit-style="parchment"].kit-tile[data-selected="1"], [data-kit-style="parchment"].kit-pick[data-selected="1"] { box-shadow: 0 0 0 3px #9b2a1c; }
+[data-kit-style="rune"].kit-tile[data-selected="1"], [data-kit-style="rune"].kit-pick[data-selected="1"] { border-color: #f0d199; box-shadow: 0 0 14px -2px #f0c26e, inset 0 0 0 2px #1b130b; }
+
+/* ── large fields ── */
+.kit-field[data-size="large"] input, .kit-field[data-size="large"] textarea, .kit-field[data-size="large"] select { padding: 12px 14px; font-size: 16px; }
+.kit-field[data-size="large"] .kit-label { font-size: 12px; }
+.kit-field select option { color: #111; background: #fff; }
 `

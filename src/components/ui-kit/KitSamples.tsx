@@ -6,7 +6,7 @@
 
 import { useState } from 'react'
 import { MENU_STYLES, setMenuLook, useMenuLook, type MenuStyleId } from '@/lib/ui-kit/menu-look'
-import { KitButton, KitCard, KitPanel, KitProgress, KitSlider, KitStyleOverride, KitTabs, KitTextField, KitTileButton, KitToggle, kitConfirm } from './index'
+import { KitButton, KitCard, KitPanel, KitPickTile, KitProgress, KitSlider, KitStyleOverride, KitTabs, KitTextField, KitTileButton, KitToggle, kitConfirm } from './index'
 
 const TILES = [
   { picture: '/ui/spellbook/tiles/sky-background.gpt2.webp', icon: '☀', label: 'Background', sub: 'Skies and light', accent: '#ffb35c' },
@@ -16,6 +16,8 @@ const TILES = [
 
 function Sample({ style }: { style: MenuStyleId }) {
   const [on, setOn] = useState(true)
+  const [pick, setPick] = useState(0)
+  const [skyPick, setSkyPick] = useState(1)
   const [level, setLevel] = useState(60)
   const [tab, setTab] = useState<'one' | 'two' | 'three'>('one')
   const look = useMenuLook()
@@ -25,7 +27,12 @@ function Sample({ style }: { style: MenuStyleId }) {
       <KitPanel title={meta.label} data-kit-sample={style} style={{ minHeight: 0 }}>
         <div className="mb-2 text-[12px] opacity-70">{meta.blurb}</div>
         <div className="grid grid-cols-3 gap-2">
-          {TILES.map(tile => <KitTileButton key={tile.label} {...tile} />)}
+          {TILES.map((tile, i) => <KitTileButton key={tile.label} {...tile} selected={i === pick} onClick={() => setPick(i)} />)}
+        </div>
+        <div className="mt-2 grid grid-cols-4 gap-1.5">
+          {['sky-background', 'ground-texture', 'catalog-place', 'brush-wand'].map((id, i) => (
+            <KitPickTile key={id} picture={`/ui/spellbook/tiles/${id}.gpt2.webp`} label={id.replace(/-/g, ' ')} selected={i === skyPick} onClick={() => setSkyPick(i)} />
+          ))}
         </div>
         <div className="mt-3"><KitTabs tabs={[{ id: 'one', label: 'This world' }, { id: 'two', label: 'My worlds' }, { id: 'three', label: 'Public' }]} active={tab} onChange={setTab} /></div>
         <div className="mt-2 grid grid-cols-2 gap-x-4">

@@ -26,8 +26,8 @@ export interface MenuLook {
   color: string
 }
 
-/** Defaults from the owner's walk-through (15:17: "75% see-through, blur 5" for the console). */
-export const DEFAULT_MENU_LOOK: MenuLook = { style: 'glass', blur: 5, transparency: 75, color: '#1f2125' }
+/** Defaults from the owner's walk-through: 75% / blur 5 at 15:17, revised at 42:39 to "default 90 transparency… blur of four". */
+export const DEFAULT_MENU_LOOK: MenuLook = { style: 'glass', blur: 4, transparency: 90, color: '#1f2125' }
 export const MENU_BLUR_MAX = 24
 export const MENU_SWATCHES = ['#1f2125', '#0b0c10', '#2a2d34', '#141a2a', '#1d1430', '#122326', '#2b1518', '#1a2416', '#2a2216', '#3a3f4a']
 
