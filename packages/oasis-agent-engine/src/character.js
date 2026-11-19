@@ -40,7 +40,7 @@ export const SHOW_FILES = 'To show the owner a picture, an audio file, a video o
  */
 export const GRILL_FILE = setting('grillFile');
 export const ASK_LATER = GRILL_FILE
-  ? `Questions for the owner that are not urgent go at the bottom of ${GRILL_FILE}, under "Added by agents": one line with your name, the question and your recommendation, instead of waiting in your thread.`
+  ? `Questions for the owner that are not urgent go at the bottom of ${GRILL_FILE}, under "Added by agents", written like the questions above it: what the thing is, what a yes leads to, what a no leads to, and your recommendation, each in a plain line, with your name. Not in your thread: the owner reads them there.`
   : '';
 export const ROLE_MAX = 240;
 export const WHO_MAX = 1200;

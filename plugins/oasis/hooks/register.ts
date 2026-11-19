@@ -34,7 +34,7 @@ function oasisNote(missions: string, grill: string, canSendFiles: boolean): stri
     'The Oasis MCP server (tools named oasis) can look at that world, place and change things in it, and take screenshots.',
     ...(canSendFiles ? ['To show the owner a picture, an audio file, a video or a document, send the file with SendUserFile (it plays or opens in the thread); a file path alone is not enough.'] : []),
     ...(missions ? [`The mission board is the folder ${missions}.`] : []),
-    ...(grill ? [`Questions for the owner that are not urgent go at the bottom of ${grill}, under "Added by agents": one line with your name, the question and your recommendation, instead of waiting in this thread.`] : []),
+    ...(grill ? [`Questions for the owner that are not urgent go at the bottom of ${grill}, under "Added by agents", written like the questions above it: what the thing is, what a yes leads to, what a no leads to, and your recommendation, each in a plain line, with your name. Not in this thread: the owner reads them there.`] : []),
   ].join('\n')
 }
 

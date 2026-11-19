@@ -112,7 +112,7 @@ describe('character cards', () => {
     expect(note.length).toBeLessThan(1500)
     expect(characterNote(card, { showFiles: false })).not.toContain('SendUserFile')
     // Questions that can wait go to the owner's open list, with the agent's own recommendation.
-    expect(note).toContain('grill/open.md, under "Added by agents": one line with your name, the question and your recommendation')
+    expect(note).toContain('grill/open.md, under "Added by agents", written like the questions above it: what the thing is, what a yes leads to, what a no leads to, and your recommendation')
     expect(ENGINE_NOTE.test(characterNote(card, { showFiles: false }))).toBe(true)
     // No words of its own yet: it is told it can write them.
     expect(characterNote({ fields: { name: 'New' }, who: '' }, { tools: 'me.mjs' })).toContain('who "<a few sentences>" writes your own who-you-are')
