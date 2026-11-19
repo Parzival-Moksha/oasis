@@ -8,6 +8,8 @@ import {
   computePlayerStats,
   earnedSkillPointsForLevel,
   normalizePlayerSkills,
+  passiveManaRegen,
+  withPassiveMana,
 } from '../player-progression'
 
 describe('player progression', () => {
@@ -54,5 +56,16 @@ describe('player progression', () => {
     expect(computeManaRechargeTicks(1000, 1)).toBe(10)
     expect(computeManaRechargeTicks(1000, 2.05)).toBe(20)
     expect(computeManaRechargeTicks(10_000, 10)).toBe(500)  // clamped to 5000ms × 10/100 = 500
+  })
+
+  it('refills mana on its own, 2 a second, never past the max', () => {
+    expect(passiveManaRegen(0, 20, 1000, 1)).toBe(2)
+    expect(passiveManaRegen(5, 20, 60_000, 1)).toBe(20)
+    expect(passiveManaRegen(0, 20, 1000, 2)).toBe(4)
+    expect(passiveManaRegen(3, 20, -50, 1)).toBe(3)
+    const now = Date.parse('2026-11-19T21:00:10Z')
+    expect(withPassiveMana({ mana: 0, updatedAt: new Date('2026-11-19T21:00:00Z') }, now).mana).toBe(20)
+    expect(withPassiveMana({ mana: 0, updatedAt: new Date('2026-11-19T21:00:08Z') }, now).mana).toBe(4)
+    expect(withPassiveMana({ mana: 7 }, now).mana).toBe(7)
   })
 })

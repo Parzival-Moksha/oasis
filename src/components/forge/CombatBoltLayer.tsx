@@ -1,37 +1,32 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-// COMBAT-BOLT LAYER — the dispatcher.
+// COMBAT-BOLT LAYER — firebolt, lightning bolt, ice bolt.
 //
-// Replaces FireboltLayer at the Scene mount. Listens for:
-//   * oasis:cast-firebolt          — fired by LMB / mobile Fire button
-//   * oasis:cast-lightning-bolt    — (future direct trigger)
-//   * oasis:cast-ice-bolt          — (future direct trigger)
-// LMB-on-canvas → dispatches based on `selectedSpellId` (firebolt by default).
-// Mobile-fire-button always dispatches `oasis:cast-firebolt`; this layer
-// then re-routes to the armed spell if that spell is not firebolt.
+// One path for every spell and design:
+//   aim (bolts/aim.ts)       the crosshair ray into the real scene: where it leaves, where it goes,
+//                            what it will hit. Taken the instant the button goes down.
+//   flight (bolts/flight.ts) one projectile list for every flying design; the world surface is
+//                            known from the aim, moving actors are tested on the way.
+//   look (bolts/<spell>/*)   each design only draws: projectile, trail, impact.
+//   sound (bolts/bolt-audio) the cast in the caster's ear, the impact where it lands.
+// Mana: the cast does not wait for the server. It spends from what the client knows (mana
+// refills on its own, 2 a second), fires at once, and the server records it behind.
 //
-// For each spell, the design letter from `settings.<spell>Design` selects
-// which sub-module renders. All projectiles share:
-//   * the same projectile→hit collision pipeline (segmentSphereHit, groundHit)
-//   * the same mana-cost POST flow (currently firebolt-only endpoint — we
-//     reuse it for lightning/ice too until those routes ship; impact + XP
-//     fall through the same recordQuestTargetHit path).
-//
-// The Thunderbolt design (lightning D) is special: it skips the projectile
-// flight loop and instead bakes geometry from y=15 down to the aimed-ground
-// point, then animates the reveal.
+// Listens for oasis:cast-firebolt (LMB, mobile Fire: casts the armed spell),
+// oasis:cast-lightning-bolt and oasis:cast-ice-bolt (cast that spell).
+// Lightning A (plasma) is instant along the aim; lightning D (thunderbolt) strikes from the sky
+// at the aimed point.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 
-import { PLAYER_BASE_STATS } from '@/lib/player-progression'
+import { PLAYER_BASE_STATS, PASSIVE_MANA_INTERVAL_MS } from '@/lib/player-progression'
 import { useAudioManager } from '@/lib/audio-manager'
 import { setPlayerSpellCasting } from '@/lib/player-avatar-runtime'
 import { preloadSpellSoundManifest, resolveSpellSoundUrl } from '@/lib/spell-sounds'
-import { getAudioListener } from '@/components/CameraController'
 import { useOasisStore } from '@/store/oasisStore'
 import { getPvpEnabled, onHitAward, onRemoteBolt, sendPvpCast, sendPvpReportHit, type PvpHitAwardEvent, type PvpRemoteBolt } from '@/lib/pvp-bridge'
 import { VILLAGE_TARGET_PREFIX, damageVillageAgent } from '@/lib/village/village-combat'
@@ -39,856 +34,468 @@ import type { OasisSettings } from '@/components/scene-lib/types'
 import { isProbablyMobileDevice } from '@/lib/mobile-controls'
 
 import {
-  BOLT_ARMING_DISTANCE_M,
   BOLT_CAST_ANIMATION_MS,
   BOLT_DEFAULT_COOLDOWN_MS,
-  BOLT_DEFAULT_TTL_S,
   BOLT_EXPLOSION_TTL_S,
-  BOLT_GROUND_ARMING_DISTANCE_M,
-  aimedGroundPoint,
-  aimedTargetGroundPoint,
-  armedSegment,
   canCastBolt,
-  collectCollisionTargets,
-  groundHit,
   isQuestFireboltTarget,
   isTypingTarget,
   labelForFireboltTarget,
   randomId,
   recordQuestTargetHit,
-  resolveCastOriginAndDirection,
-  segmentSphereHit,
 } from './bolts/shared'
-import type { CollisionTarget, CombatSpellId, SpellCastResponse } from './bolts/types'
+import type { CombatSpellId, SpellCastResponse } from './bolts/types'
+import { collectActorTargets, resolveCombatAim, strikePointFor, worldImpactAlong, type CombatAim } from './bolts/aim'
+import { BOLT_MAX_RANGE_M, createBolt, segmentSphereEntry, stepBolt, type ActorTarget, type FlyingBolt, type Vec3 } from './bolts/flight'
+import { playBoltSound, preloadBoltSounds } from './bolts/bolt-audio'
 
 // Firebolt designs
 import {
-  COMET_TRAIL_SPACING_M,
-  COMET_SMOKE_TTL_S,
-  CometTailExplosionMesh,
-  CometTailHitMarkerMesh,
-  CometTailMesh,
-  CometTailSmokePuffMesh,
-  type CometTailExplosion,
-  type CometTailHitMarker,
-  type CometTailProjectile,
-  type CometTailSmokePuff,
+  COMET_TRAIL_SPACING_M, COMET_SMOKE_TTL_S,
+  CometTailExplosionMesh, CometTailHitMarkerMesh, CometTailMesh, CometTailSmokePuffMesh,
+  type CometTailExplosion, type CometTailHitMarker, type CometTailSmokePuff,
 } from './bolts/firebolt/comet-tail'
 import {
-  SOLAR_TRAIL_SPACING_M,
-  SolarFlareExplosionMesh,
-  SolarFlareMesh,
-  SolarFlareTrailMesh,
-  type SolarFlareExplosion,
-  type SolarFlareProjectile,
-  type SolarFlareTrailPuff,
+  SOLAR_TRAIL_SPACING_M, SolarFlareExplosionMesh, SolarFlareMesh, SolarFlareTrailMesh,
+  type SolarFlareExplosion, type SolarFlareTrailPuff,
 } from './bolts/firebolt/solar-flare'
 import {
-  PHOENIX_TRAIL_SPACING_M,
-  PhoenixEmberMesh,
-  PhoenixExplosionMesh,
-  PhoenixFeatherMesh,
-  type PhoenixEmber,
-  type PhoenixExplosion,
-  type PhoenixFeatherProjectile,
+  PHOENIX_TRAIL_SPACING_M, PhoenixEmberMesh, PhoenixExplosionMesh, PhoenixFeatherMesh,
+  type PhoenixEmber, type PhoenixExplosion,
 } from './bolts/firebolt/phoenix-feather'
-
 // Lightning designs
 import {
-  PlasmaFilamentImpactMesh,
-  PlasmaFilamentMesh,
-  buildPlasmaBolt,
-  type PlasmaFilamentBolt,
-  type PlasmaFilamentImpact,
+  PlasmaFilamentImpactMesh, PlasmaFilamentMesh, buildPlasmaBolt,
+  type PlasmaFilamentBolt, type PlasmaFilamentImpact,
 } from './bolts/lightning-bolt/plasma-filament'
 import {
-  TeslaCoilImpactMesh,
-  TeslaCoilMesh,
-  TeslaCoilTrailMesh,
-  type TeslaCoilImpact,
-  type TeslaCoilProjectile,
-  type TeslaCoilTrailPuff,
+  TeslaCoilImpactMesh, TeslaCoilMesh, TeslaCoilTrailMesh,
+  type TeslaCoilImpact, type TeslaCoilTrailPuff,
 } from './bolts/lightning-bolt/tesla-coil'
 import {
-  StormLanceDropletMesh,
-  StormLanceImpactMesh,
-  StormLanceMesh,
-  type StormLanceDroplet,
-  type StormLanceImpact,
-  type StormLanceProjectile,
+  StormLanceDropletMesh, StormLanceImpactMesh, StormLanceMesh,
+  type StormLanceDroplet, type StormLanceImpact,
 } from './bolts/lightning-bolt/storm-lance'
 import {
-  THUNDERBOLT_TELEGRAPH_S,
-  THUNDERBOLT_TTL_S,
-  ThunderboltImpactMesh,
-  ThunderboltMesh,
-  buildThunderbolt,
-  thunderboltPhase,
-  type ThunderboltImpact,
-  type ThunderboltStrike,
+  THUNDERBOLT_TELEGRAPH_S, THUNDERBOLT_TTL_S, ThunderboltImpactMesh, ThunderboltMesh, buildThunderbolt, thunderboltPhase,
+  type ThunderboltImpact, type ThunderboltStrike,
 } from './bolts/lightning-bolt/thunderbolt'
-
 // Ice designs
 import {
-  CRYSTAL_TRAIL_SPACING_M,
-  CrystalSpearImpactMesh,
-  CrystalSpearMesh,
-  CrystalSpearTrailFlakeMesh,
-  type CrystalSpearImpact,
-  type CrystalSpearProjectile,
-  type CrystalSpearTrailFlake,
+  CRYSTAL_TRAIL_SPACING_M, CrystalSpearImpactMesh, CrystalSpearMesh, CrystalSpearTrailFlakeMesh,
+  type CrystalSpearImpact, type CrystalSpearTrailFlake,
 } from './bolts/ice-bolt/crystal-spear'
 import {
-  FROZEN_TRAIL_SPACING_M,
-  FrozenFlameImpactMesh,
-  FrozenFlameMesh,
-  FrozenFlameSnowflakeMesh,
-  type FrozenFlameImpact,
-  type FrozenFlameProjectile,
-  type FrozenFlameSnowflake,
+  FROZEN_TRAIL_SPACING_M, FrozenFlameImpactMesh, FrozenFlameMesh, FrozenFlameSnowflakeMesh,
+  type FrozenFlameImpact, type FrozenFlameSnowflake,
 } from './bolts/ice-bolt/frozen-flame'
 import {
-  BOREAL_TRAIL_SPACING_M,
-  BorealSpiralGlyphMesh,
-  BorealSpiralImpactMesh,
-  BorealSpiralMesh,
-  type BorealSpiralGlyph,
-  type BorealSpiralImpact,
-  type BorealSpiralProjectile,
+  BOREAL_TRAIL_SPACING_M, BorealSpiralGlyphMesh, BorealSpiralImpactMesh, BorealSpiralMesh,
+  type BorealSpiralGlyph, type BorealSpiralImpact,
 } from './bolts/ice-bolt/boreal-spiral'
 
-// ─═̷─═̷─🔮 SPELL ROUTING ─═̷─═̷─🔮
-function resolveActiveSpell(): CombatSpellId | null {
-  const selected = useOasisStore.getState().selectedSpellId
-  if (selected === 'lightning-bolt') return 'lightning-bolt'
-  if (selected === 'ice-bolt') return 'ice-bolt'
-  if (selected === 'firebolt') return 'firebolt'
-  // No spell armed, or a non-combat spell selected. LMB-on-canvas must NOT
-  // silently drain mana — let the caller early-out.
+// ─═̷─═̷─🔮 SPELLS AND DESIGNS ─═̷─═̷─🔮
+type FlightKind = 'comet' | 'solar' | 'phoenix' | 'tesla' | 'storm' | 'crystal' | 'frozen' | 'boreal'
+
+/** Which flying look a spell + design letter is; null for the non-flying lightning designs (A plasma, D thunderbolt). */
+function flightKindFor(spell: CombatSpellId, design: string): FlightKind | null {
+  const d = (design || 'A').toUpperCase()
+  if (spell === 'firebolt') return d === 'B' ? 'solar' : d === 'C' ? 'phoenix' : 'comet'
+  if (spell === 'ice-bolt') return d === 'B' ? 'frozen' : d === 'C' ? 'boreal' : 'crystal'
+  if (d === 'B') return 'tesla'
+  if (d === 'C') return 'storm'
   return null
 }
 
-function castEndpointFor(spell: CombatSpellId): string {
-  // Lightning/ice routes don't exist yet (per current repo). Until they
-  // ship, route through the firebolt endpoint which handles mana cost
-  // + progression broadcast. The visual + audio differ; the cost is the same.
-  void spell
-  return '/api/profile/spells/firebolt'
+function resolveActiveSpell(): CombatSpellId | null {
+  const selected = useOasisStore.getState().selectedSpellId
+  if (selected === 'firebolt' || selected === 'lightning-bolt' || selected === 'ice-bolt') return selected
+  // No spell armed, or another one (the machine gun, a creation spell): the click is not ours.
+  return null
 }
 
-interface CommonProjectileBase {
-  id: string
-  origin: [number, number, number]
-  position: [number, number, number]
-  velocity: [number, number, number]
-  distance: number
-  age: number
-  ttl: number
-  damage: number
-  trailCarry: number
-  /** Which design owns this projectile — drives render/spawn rules. */
-  design: ActiveDesignTag
+function designFor(spell: CombatSpellId, settings: OasisSettings): string {
+  return spell === 'firebolt' ? settings.fireboltDesign : spell === 'lightning-bolt' ? settings.lightningBoltDesign : settings.iceBoltDesign
 }
 
-type ActiveDesignTag =
-  | 'firebolt-A'
-  | 'firebolt-B'
-  | 'firebolt-C'
-  | 'lightning-A'
-  | 'lightning-B'
-  | 'lightning-C'
-  | 'ice-A'
-  | 'ice-B'
-  | 'ice-C'
+type TrailFx =
+  | ({ kind: 'comet' } & CometTailSmokePuff)
+  | ({ kind: 'solar' } & SolarFlareTrailPuff)
+  | ({ kind: 'phoenix' } & PhoenixEmber)
+  | ({ kind: 'tesla' } & TeslaCoilTrailPuff)
+  | ({ kind: 'storm' } & StormLanceDroplet)
+  | ({ kind: 'crystal' } & CrystalSpearTrailFlake)
+  | ({ kind: 'frozen' } & FrozenFlameSnowflake)
+  | ({ kind: 'boreal' } & BorealSpiralGlyph)
 
-// ─═̷─═̷─🎯 COMBAT BOLT LAYER COMPONENT ─═̷─═̷─🎯
-const BOLT_SPATIAL_RANGE_M = 20
-const EXPLOSION_SPATIAL_RANGE_M = 30
-const SPATIAL_CAST_SOUND_TTL_S = BOLT_DEFAULT_TTL_S
-const SPATIAL_EXPLOSION_SOUND_TTL_S = 2.4
+type ImpactFx =
+  | ({ kind: 'comet' } & CometTailExplosion)
+  | ({ kind: 'solar' } & SolarFlareExplosion)
+  | ({ kind: 'phoenix' } & PhoenixExplosion)
+  | ({ kind: 'tesla' } & TeslaCoilImpact)
+  | ({ kind: 'storm' } & StormLanceImpact)
+  | ({ kind: 'crystal' } & CrystalSpearImpact)
+  | ({ kind: 'frozen' } & FrozenFlameImpact)
+  | ({ kind: 'boreal' } & BorealSpiralImpact)
+  | ({ kind: 'plasma' } & PlasmaFilamentImpact)
+  | ({ kind: 'thunder' } & ThunderboltImpact)
+
+const seed = () => Math.floor(Math.random() * 10000)
+const unit = (v: Vec3): Vec3 => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l] }
+
+/** Per flying look: trail spacing, a trail particle, the impact. Caps keep the counts bounded. */
+const FLIGHT: Record<FlightKind, { spacing: number; trailCap: number; trail: (p: Vec3, b: FlyingBolt) => TrailFx; impact: (p: Vec3, b: FlyingBolt) => ImpactFx }> = {
+  comet: {
+    spacing: COMET_TRAIL_SPACING_M, trailCap: 70,
+    trail: p => ({ kind: 'comet', id: randomId(), position: p, age: 0, ttl: COMET_SMOKE_TTL_S, seed: seed(), size: 0.22 + Math.random() * 0.1 }),
+    impact: p => ({ kind: 'comet', id: randomId(), position: p, age: 0, ttl: BOLT_EXPLOSION_TTL_S, seed: seed() }),
+  },
+  solar: {
+    spacing: SOLAR_TRAIL_SPACING_M, trailCap: 90,
+    trail: (p, b) => ({ kind: 'solar', id: randomId(), position: p, direction: b.velocity, age: 0, ttl: 0.45 }),
+    impact: p => ({ kind: 'solar', id: randomId(), position: p, age: 0, ttl: BOLT_EXPLOSION_TTL_S * 1.2, seed: seed() }),
+  },
+  phoenix: {
+    spacing: PHOENIX_TRAIL_SPACING_M, trailCap: 150,
+    trail: p => ({ kind: 'phoenix', id: randomId(), position: p, velocity: [(Math.random() - 0.5) * 0.6, 0.4 + Math.random() * 0.4, (Math.random() - 0.5) * 0.6], age: 0, ttl: 0.55, hue: Math.random() }),
+    impact: (p, b) => ({ kind: 'phoenix', id: randomId(), position: p, age: 0, ttl: 0.95, seed: seed(), upVec: unit(b.velocity) }),
+  },
+  tesla: {
+    spacing: 0.3, trailCap: 100,
+    trail: p => ({ kind: 'tesla', id: randomId(), position: p, age: 0, ttl: 0.55, seed: seed() }),
+    impact: p => ({ kind: 'tesla', id: randomId(), position: p, age: 0, ttl: 0.85, seed: seed(), normalUp: [0, 1, 0] }),
+  },
+  storm: {
+    spacing: 0.28, trailCap: 120,
+    trail: p => ({ kind: 'storm', id: randomId(), position: p, age: 0, ttl: 0.55, seed: seed() }),
+    impact: p => ({ kind: 'storm', id: randomId(), position: p, age: 0, ttl: 0.85, seed: seed(), normalUp: [0, 1, 0] }),
+  },
+  crystal: {
+    spacing: CRYSTAL_TRAIL_SPACING_M, trailCap: 120,
+    trail: (p, b) => ({ kind: 'crystal', id: randomId(), position: p, age: 0, ttl: 0.6, seed: Math.random() * 100, spinAxis: unit(b.velocity) }),
+    impact: p => ({ kind: 'crystal', id: randomId(), position: p, age: 0, ttl: 0.85, seed: seed() }),
+  },
+  frozen: {
+    spacing: FROZEN_TRAIL_SPACING_M, trailCap: 120,
+    trail: p => ({ kind: 'frozen', id: randomId(), position: p, age: 0, ttl: 0.9, seed: Math.random() * 100, drift: [(Math.random() - 0.5) * 0.4, 0.3 + Math.random() * 0.3, (Math.random() - 0.5) * 0.4] }),
+    impact: p => ({ kind: 'frozen', id: randomId(), position: p, age: 0, ttl: 2, seed: seed() }),
+  },
+  boreal: {
+    spacing: BOREAL_TRAIL_SPACING_M, trailCap: 60,
+    trail: (p, b) => ({ kind: 'boreal', id: randomId(), position: p, forward: b.velocity, age: 0, ttl: 0.5, variant: Math.floor(Math.random() * 4) }),
+    impact: p => ({ kind: 'boreal', id: randomId(), position: p, age: 0, ttl: 1.1, seed: seed() }),
+  },
+}
+const TRAIL_TOTAL_CAP = 160
+const IMPACT_CAP = 12
+
+// ─═̷─═̷─🔊 SOUNDS ─═̷─═̷─🔊
 const EXPLOSION_SOUND_ID = 'mixkit-explosion-hit'
+/** The cast is a whoosh: the explosion sound (the old firebolt default) belongs to the impact. */
+const CAST_WHOOSH_ID = 'mixkit-magic-sparkle-whoosh'
 
-interface SpatialSoundEvent {
-  id: string
-  url: string
-  position: [number, number, number]
-  age: number
-  ttl: number
-  maxDistance: number
-  volumeMultiplier: number
-  followId?: string
+function castSoundUrl(spell: CombatSpellId, settings: OasisSettings): string | null {
+  const id = settings.spellSounds?.[spell]
+  return resolveSpellSoundUrl(!id || id === EXPLOSION_SOUND_ID ? CAST_WHOOSH_ID : id)
 }
 
-const spatialAudioBufferCache = new Map<string, Promise<AudioBuffer | null>>()
-
-function loadSpatialAudioBuffer(url: string): Promise<AudioBuffer | null> {
-  const existing = spatialAudioBufferCache.get(url)
-  if (existing) return existing
-  const promise = new Promise<AudioBuffer | null>((resolve) => {
-    new THREE.AudioLoader().load(
-      url,
-      buffer => resolve(buffer),
-      undefined,
-      () => resolve(null),
-    )
-  })
-  spatialAudioBufferCache.set(url, promise)
-  return promise
+function playImpactSound(position: Vec3) {
+  if (!playBoltSound(resolveSpellSoundUrl(EXPLOSION_SOUND_ID), position, 0.9)) useAudioManager.getState().play('fireboltHit')
 }
 
-function SpatialSoundSource({ sound }: { sound: SpatialSoundEvent }) {
-  const groupRef = useRef<THREE.Group>(null)
+// ─═̷─═̷─💧 MANA, as the client knows it ─═̷─═̷─💧
+interface ManaView { mana: number; maxMana: number; regen: number; at: number }
 
-  useEffect(() => {
-    const listener = getAudioListener()
-    const group = groupRef.current
-    const audioState = useAudioManager.getState()
-    if (!listener || !group || audioState.muted || audioState.volume <= 0) return
-
-    let cancelled = false
-    let positional: THREE.PositionalAudio | null = null
-
-    void listener.context.resume().catch(() => {})
-    void loadSpatialAudioBuffer(sound.url).then(buffer => {
-      if (cancelled || !buffer || !groupRef.current) return
-      positional = new THREE.PositionalAudio(listener)
-      positional.setBuffer(buffer)
-      positional.setDistanceModel('linear')
-      positional.setRefDistance(0.01)
-      positional.setMaxDistance(sound.maxDistance)
-      positional.setRolloffFactor(1)
-      positional.setVolume(audioState.volume * sound.volumeMultiplier)
-      groupRef.current.add(positional)
-      positional.play()
-    })
-
-    return () => {
-      cancelled = true
-      if (positional) {
-        try {
-          if (positional.isPlaying) positional.stop()
-        } catch {}
-        group.remove(positional)
-        positional.disconnect()
-      }
-    }
-  }, [sound.id, sound.maxDistance, sound.url, sound.volumeMultiplier])
-
-  return <group ref={groupRef} position={sound.position} />
+function manaNow(view: ManaView | null, now = Date.now()): number | null {
+  if (!view) return null
+  const gained = Math.floor((now - view.at) / (PASSIVE_MANA_INTERVAL_MS / Math.max(0.1, view.regen)))
+  return Math.min(view.maxMana, view.mana + Math.max(0, gained))
 }
 
+/** Test and debug handle: the last casts (aim, origin, impact), read by the playtest. */
+interface BoltDebugEntry { spell: CombatSpellId; design: string; fromHand: boolean; origin: Vec3; direction: Vec3; aimPoint: Vec3; impactDistance: number | null; impactObjectId: string | null; impact?: Vec3 | null; impactTarget?: string | null }
+function debugLog(): BoltDebugEntry[] | null {
+  if (typeof window === 'undefined') return null
+  const host = window as unknown as { __oasisBolts?: { log: BoltDebugEntry[] } }
+  host.__oasisBolts ??= { log: [] }
+  return host.__oasisBolts.log
+}
+
+interface FxState {
+  bolts: FlyingBolt[]
+  trails: TrailFx[]
+  impacts: ImpactFx[]
+  markers: CometTailHitMarker[]
+  plasma: PlasmaFilamentBolt[]
+  strikes: ThunderboltStrike[]
+}
+const emptyFx = (): FxState => ({ bolts: [], trails: [], impacts: [], markers: [], plasma: [], strikes: [] })
+const v3 = (v: THREE.Vector3): Vec3 => [v.x, v.y, v.z]
+
+// ─═̷─═̷─🎯 THE LAYER ─═̷─═̷─🎯
 export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; settings: OasisSettings }) {
-  const { camera, gl } = useThree()
+  const { camera, gl, scene } = useThree()
+  // Everything alive lives in one ref, advanced in one frame loop; one render per frame while anything is alive.
+  const fxRef = useRef<FxState>(emptyFx())
+  const [, setFrame] = useState(0)
+  const bump = useCallback(() => setFrame(n => (n + 1) & 0xffff), [])
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
+  const enabledRef = useRef(enabled)
+  enabledRef.current = enabled
+
   const lastCastAtRef = useRef(0)
-  const castingRef = useRef(false)
   const suppressCastFollowupUntilRef = useRef(0)
   const reportedQuestTargetHitsRef = useRef<Set<string>>(new Set())
-  // ─═̷─ PvP bolt-id tracking ─═̷─
-  // Bolts cast by THIS client get their clientPredictionId stored here so
-  // that when a hit is detected against a peer player we know we are the
-  // caster and should fire `reportHit`. Bolts that arrived from a remote
-  // caster never make it into this set, so peer-side hit detection
-  // can't double-report them.
+  // PvP: ids of bolts this client cast; only the caster reports its hits.
   const localBoltIdsRef = useRef<Set<string>>(new Set())
-  const [xpHitMarkers, setXpHitMarkers] = useState<CometTailHitMarker[]>([])
-  const [spatialSounds, setSpatialSounds] = useState<SpatialSoundEvent[]>([])
-  const playSpatialExplosionSoundRef = useRef<(position: [number, number, number]) => void>(() => {
-    useAudioManager.getState().play('fireboltHit')
-  })
+  const manaRef = useRef<ManaView | null>(null)
+  const spellStatsRef = useRef<{ speed: number; damage: number; cost: number }>({ speed: PLAYER_BASE_STATS.fireboltSpeedMetersPerSecond, damage: 14, cost: PLAYER_BASE_STATS.fireboltManaCost })
+  const flashRef = useRef<{ el: HTMLDivElement | null; alpha: number }>({ el: null, alpha: 0 })
 
-  const spawnXpHitMarker = useCallback((position: [number, number, number], xp: number) => {
-    const amount = Math.max(0, Math.floor(Number.isFinite(xp) ? xp : 0))
-    if (amount <= 0) return
-    setXpHitMarkers(prev => [
-      ...prev.slice(-7),
-      {
-        id: randomId(),
-        position,
-        label: `+${amount} XP`,
-        age: 0,
-        ttl: 1.2,
-      },
-    ])
+  // ─═̷─ Hits ─═̷─
+  const addMarker = useCallback((position: Vec3, label: string, ttl: number) => {
+    const fx = fxRef.current
+    fx.markers = [...fx.markers.slice(-6), { id: randomId(), position, label, age: 0, ttl }]
   }, [])
+
+  const reportHit = useCallback((boltId: string, targetId: string, position: Vec3, local: boolean) => {
+    if (targetId.startsWith(VILLAGE_TARGET_PREFIX)) {
+      // A village agent: cosmetic HP only, nothing reaches its Claude Code process.
+      damageVillageAgent(targetId.slice(VILLAGE_TARGET_PREFIX.length), undefined, undefined, position)
+      return
+    }
+    if (targetId.startsWith('pvp:')) {
+      if (local && localBoltIdsRef.current.has(boltId)) sendPvpReportHit({ boltId, victimSessionId: targetId.slice(4) })
+      return
+    }
+    if (!local) return
+    if (isQuestFireboltTarget(targetId)) addMarker(position, labelForFireboltTarget(targetId), 1.15)
+    recordQuestTargetHit(targetId, position, reportedQuestTargetHitsRef.current)
+  }, [addMarker])
 
   const awardPvpDamageXp = useCallback((event: PvpHitAwardEvent) => {
     const amount = Math.max(0, Math.floor(Number.isFinite(event.xp) ? event.xp : event.damage))
     if (amount <= 0) return
-    spawnXpHitMarker(event.position, amount)
+    addMarker(event.position, `+${amount} XP`, 1.2)
+    bump()
     void fetch('/api/xp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'PVP_DAMAGE', amount }),
     })
       .then(response => response.ok ? response.json().catch(() => null) : null)
-      .then(data => {
-        if (data) window.dispatchEvent(new CustomEvent('oasis:xp-awarded', { detail: data }))
-      })
+      .then(data => { if (data) window.dispatchEvent(new CustomEvent('oasis:xp-awarded', { detail: data })) })
       .catch(() => {})
-  }, [spawnXpHitMarker])
+  }, [addMarker, bump])
 
-  // Hit dispatcher. PvP-player targets route to the room; everything else
-  // (objects, NPCs, quest dummies) uses the original quest-progression path.
-  const reportHit = useCallback((boltId: string, target: CollisionTarget, position: [number, number, number], setMarker:
-    | ((updater: (prev: CometTailHitMarker[]) => CometTailHitMarker[]) => void)
-    | null,
-  ) => {
-    if (target.id.startsWith(VILLAGE_TARGET_PREFIX)) {
-      // A village agent: cosmetic HP only, never anything sent to its Claude Code process.
-      damageVillageAgent(target.id.slice(VILLAGE_TARGET_PREFIX.length), undefined, undefined, position)
-      return
-    }
-    if (target.id.startsWith('pvp:')) {
-      // Only the caster reports their own bolt's hits — remote bolts that
-      // happen to pass through a peer capsule on this client should not
-      // generate a reportHit (the originating client will do that).
-      if (localBoltIdsRef.current.has(boltId)) {
-        sendPvpReportHit({ boltId, victimSessionId: target.id.slice(4) })
-      }
-      return
-    }
-    handleTargetHit(target, position, reportedQuestTargetHitsRef.current, setMarker)
-  }, [])
+  // ─═̷─ Spawning (local casts and remote PvP bolts share it) ─═̷─
+  const spawn = useCallback((spell: CombatSpellId, design: string, aim: CombatAim, speed: number, damage: number, id: string, local: boolean) => {
+    const fx = fxRef.current
+    const kind = flightKindFor(spell, design)
+    const designLetter = (design || 'A').toUpperCase()
 
-  // ─═̷─═̷─📦 PROJECTILE STATE BUCKETS — per design ─═̷─═̷─📦
-  // Comet Tail (firebolt A)
-  const [cometProjectiles, setCometProjectiles] = useState<CometTailProjectile[]>([])
-  const [cometSmoke, setCometSmoke] = useState<CometTailSmokePuff[]>([])
-  const [cometExplosions, setCometExplosions] = useState<CometTailExplosion[]>([])
-  const [cometHitMarkers, setCometHitMarkers] = useState<CometTailHitMarker[]>([])
-
-  // Solar Flare (firebolt B)
-  const [solarProjectiles, setSolarProjectiles] = useState<SolarFlareProjectile[]>([])
-  const [solarTrail, setSolarTrail] = useState<SolarFlareTrailPuff[]>([])
-  const [solarExplosions, setSolarExplosions] = useState<SolarFlareExplosion[]>([])
-
-  // Phoenix Feather (firebolt C)
-  const [phoenixProjectiles, setPhoenixProjectiles] = useState<PhoenixFeatherProjectile[]>([])
-  const [phoenixEmbers, setPhoenixEmbers] = useState<PhoenixEmber[]>([])
-  const [phoenixExplosions, setPhoenixExplosions] = useState<PhoenixExplosion[]>([])
-
-  // Plasma Filament (lightning A) — instant bolt: no flight loop
-  const [plasmaBolts, setPlasmaBolts] = useState<PlasmaFilamentBolt[]>([])
-  const [plasmaImpacts, setPlasmaImpacts] = useState<PlasmaFilamentImpact[]>([])
-
-  // Tesla Coil (lightning B)
-  const [teslaProjectiles, setTeslaProjectiles] = useState<TeslaCoilProjectile[]>([])
-  const [teslaTrail, setTeslaTrail] = useState<TeslaCoilTrailPuff[]>([])
-  const [teslaImpacts, setTeslaImpacts] = useState<TeslaCoilImpact[]>([])
-
-  // Storm Lance (lightning C)
-  const [stormProjectiles, setStormProjectiles] = useState<StormLanceProjectile[]>([])
-  const [stormDroplets, setStormDroplets] = useState<StormLanceDroplet[]>([])
-  const [stormImpacts, setStormImpacts] = useState<StormLanceImpact[]>([])
-
-  // Thunderbolt (lightning D) — non-projectile
-  const [thunderStrikes, setThunderStrikes] = useState<ThunderboltStrike[]>([])
-  const [thunderImpacts, setThunderImpacts] = useState<ThunderboltImpact[]>([])
-  const [thunderFlashAlpha, setThunderFlashAlpha] = useState<number>(0)
-  const lastThunderStrikeMomentRef = useRef<Map<string, number>>(new Map())
-
-  // Crystal Spear (ice A)
-  const [crystalProjectiles, setCrystalProjectiles] = useState<CrystalSpearProjectile[]>([])
-  const [crystalFlakes, setCrystalFlakes] = useState<CrystalSpearTrailFlake[]>([])
-  const [crystalImpacts, setCrystalImpacts] = useState<CrystalSpearImpact[]>([])
-
-  // Frozen Flame (ice B)
-  const [frozenProjectiles, setFrozenProjectiles] = useState<FrozenFlameProjectile[]>([])
-  const [frozenFlakes, setFrozenFlakes] = useState<FrozenFlameSnowflake[]>([])
-  const [frozenImpacts, setFrozenImpacts] = useState<FrozenFlameImpact[]>([])
-
-  // Boreal Spiral (ice C)
-  const [borealProjectiles, setBorealProjectiles] = useState<BorealSpiralProjectile[]>([])
-  const [borealGlyphs, setBorealGlyphs] = useState<BorealSpiralGlyph[]>([])
-  const [borealImpacts, setBorealImpacts] = useState<BorealSpiralImpact[]>([])
-
-  // ─═̷─═̷─🚀 SPAWNERS ─═̷─═̷─🚀
-  // Optional boltId lets the PvP cast path thread its clientPredictionId
-  // into the local projectile, so peer-player hit detection can use the
-  // same id when reporting to the server. Falls back to randomId() for
-  // pure single-player casts (no broadcast in flight).
-  const spawnFireboltA = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
-    const velocity = direction.clone().multiplyScalar(speed)
-    setCometProjectiles(prev => [...prev.slice(-15), {
-      id: boltId ?? randomId(),
-      origin: [origin.x, origin.y, origin.z],
-      position: [origin.x, origin.y, origin.z],
-      velocity: [velocity.x, velocity.y, velocity.z],
-      distance: 0,
-      age: 0,
-      ttl: BOLT_DEFAULT_TTL_S,
-      damage,
-      trailCarry: 0,
-    }])
-  }, [])
-
-  const spawnFireboltB = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
-    const velocity = direction.clone().multiplyScalar(speed)
-    setSolarProjectiles(prev => [...prev.slice(-15), {
-      id: boltId ?? randomId(),
-      origin: [origin.x, origin.y, origin.z],
-      position: [origin.x, origin.y, origin.z],
-      velocity: [velocity.x, velocity.y, velocity.z],
-      distance: 0,
-      age: 0,
-      ttl: BOLT_DEFAULT_TTL_S,
-      damage,
-      trailCarry: 0,
-    }])
-  }, [])
-
-  const spawnFireboltC = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
-    const velocity = direction.clone().multiplyScalar(speed)
-    setPhoenixProjectiles(prev => [...prev.slice(-15), {
-      id: boltId ?? randomId(),
-      origin: [origin.x, origin.y, origin.z],
-      position: [origin.x, origin.y, origin.z],
-      velocity: [velocity.x, velocity.y, velocity.z],
-      distance: 0,
-      age: 0,
-      ttl: BOLT_DEFAULT_TTL_S,
-      damage,
-      trailCarry: 0,
-    }])
-  }, [])
-
-  const spawnLightningA = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, damage: number, boltId?: string) => {
-    // Plasma filament: instant geometry; just check collision at cast-line.
-    const length = 28
-    const seed = Date.now() & 0xffffffff
-    const curves = buildPlasmaBolt(origin, direction, length, seed)
-    const targets = collectCollisionTargets()
-    const start = origin.clone().addScaledVector(direction, BOLT_ARMING_DISTANCE_M)
-    const end = origin.clone().addScaledVector(direction, length)
-    const hits: { id: string; position: THREE.Vector3 }[] = []
-    for (const target of targets) {
-      const targetCenter = new THREE.Vector3(target.position[0], target.position[1] + Math.min(1.4, target.radius), target.position[2])
-      const hit = segmentSphereHit(start, end, targetCenter, target.radius)
-      if (hit) hits.push({ id: target.id, position: hit })
-    }
-    // PvP hit-report for plasma filament: the projectile is instant, so we
-    // resolve here at cast time rather than in the per-frame loop.
-    if (boltId && localBoltIdsRef.current.has(boltId)) {
-      for (const hit of hits) {
-        if (hit.id.startsWith('pvp:')) {
-          sendPvpReportHit({ boltId, victimSessionId: hit.id.slice(4) })
+    if (kind) {
+      fx.bolts = [...fx.bolts.slice(-23), createBolt({
+        id, spell, design: designLetter,
+        origin: v3(aim.origin), direction: v3(aim.direction), speed, damage,
+        impactDistance: aim.impactDistance, impactObjectId: aim.impactObjectId, local,
+      })]
+    } else if (designLetter === 'D') {
+      // Thunderbolt: a telegraph ring where it will land, then the strike from the sky.
+      const ground = strikePointFor(aim)
+      useOasisStore.getState().spawnMarchOrderVfx([ground.x, ground.y, ground.z])
+      const strikeSeed = Date.now() & 0xffffffff
+      const aimedActor = aim.aimedActor
+      window.setTimeout(() => {
+        const strike: ThunderboltStrike = {
+          id, groundPoint: [ground.x, ground.y, ground.z], age: 0,
+          ttl: THUNDERBOLT_TTL_S - THUNDERBOLT_TELEGRAPH_S, damage, seed: strikeSeed,
+          segments: buildThunderbolt(ground, strikeSeed),
+          target: aimedActor ? { id: aimedActor.id, position: [aimedActor.center[0], ground.y, aimedActor.center[2]], radius: aimedActor.radius } : (aim.impactObjectId ? { id: aim.impactObjectId, position: [ground.x, ground.y, ground.z], radius: 0 } : null),
         }
-      }
-    }
-    // Village agents it touched (nearest first, up to three: it chains) take the hit. Quest targets keep
-    // their own delayed path below; this one used to report PvP players only.
-    const byId = new Map(targets.map(target => [target.id, target]))
-    const origin0 = origin.clone()
-    hits
-      .filter(hit => hit.id.startsWith(VILLAGE_TARGET_PREFIX))
-      .sort((a, b) => a.position.distanceTo(origin0) - b.position.distanceTo(origin0))
-      .slice(0, 3)
-      .forEach(hit => {
-        const target = byId.get(hit.id)
-        if (target) reportHit(boltId ?? '', target, [hit.position.x, hit.position.y, hit.position.z], null)
-      })
-    setPlasmaBolts(prev => [...prev.slice(-6), {
-      id: boltId ?? randomId(),
-      origin: [origin.x, origin.y, origin.z],
-      length,
-      direction: [direction.x, direction.y, direction.z],
-      age: 0,
-      ttl: 0.9,
-      damage,
-      seed,
-      curves,
-    }])
-    // Schedule an impact at the first hit (or at end of bolt path if none)
-    const impactPosition = hits[0]?.position ?? end.clone()
-    const groundingTargets = hits.slice(1, 4).map(h => [h.position.x, h.position.y, h.position.z] as [number, number, number])
-    window.setTimeout(() => {
-      setPlasmaImpacts(prev => [...prev.slice(-6), {
-        id: randomId(),
-        position: [impactPosition.x, Math.max(0.05, impactPosition.y), impactPosition.z],
-        age: 0,
-        ttl: 0.7,
-        seed,
-        groundingTargets,
-      }])
-      playSpatialExplosionSoundRef.current([impactPosition.x, Math.max(0.05, impactPosition.y), impactPosition.z])
-      if (hits[0] && isQuestFireboltTarget(hits[0].id)) {
-        recordQuestTargetHit(hits[0].id, [impactPosition.x, impactPosition.y, impactPosition.z], reportedQuestTargetHitsRef.current)
-      } else if (hits[0]) {
-        window.dispatchEvent(new CustomEvent('oasis:firebolt-hit', { detail: { targetId: hits[0].id, position: [impactPosition.x, impactPosition.y, impactPosition.z], worldId: useOasisStore.getState().activeWorldId } }))
-      }
-    }, 400)
-  }, [reportHit])
-
-  const spawnLightningB = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
-    const velocity = direction.clone().multiplyScalar(speed)
-    setTeslaProjectiles(prev => [...prev.slice(-15), {
-      id: boltId ?? randomId(),
-      origin: [origin.x, origin.y, origin.z],
-      position: [origin.x, origin.y, origin.z],
-      velocity: [velocity.x, velocity.y, velocity.z],
-      distance: 0,
-      age: 0,
-      ttl: BOLT_DEFAULT_TTL_S,
-      damage,
-      trailCarry: 0,
-    }])
-  }, [])
-
-  const spawnLightningC = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
-    const velocity = direction.clone().multiplyScalar(speed)
-    setStormProjectiles(prev => [...prev.slice(-15), {
-      id: boltId ?? randomId(),
-      origin: [origin.x, origin.y, origin.z],
-      position: [origin.x, origin.y, origin.z],
-      velocity: [velocity.x, velocity.y, velocity.z],
-      distance: 0,
-      age: 0,
-      ttl: BOLT_DEFAULT_TTL_S,
-      damage,
-      trailCarry: 0,
-    }])
-  }, [])
-
-  const spawnLightningD = useCallback((damage: number, boltId?: string) => {
-    // Crosshair on a target: strike at its feet (not on the ground behind it, where the aim ray lands).
-    const aimed = aimedTargetGroundPoint(camera, 35)
-    const groundPoint = aimed?.point ?? aimedGroundPoint(camera, 35)
-    if (!groundPoint) return
-    // Telegraph: arrow-loop VFX at the ground point.
-    useOasisStore.getState().spawnMarchOrderVfx([groundPoint.x, groundPoint.y, groundPoint.z])
-    const seed = Date.now() & 0xffffffff
-    // Wait for telegraph before generating the bolt.
-    window.setTimeout(() => {
-      const segments = buildThunderbolt(groundPoint, seed)
-      const targets = collectCollisionTargets()
-      // Match ground-point against targets (so the bolt's impact can credit
-      // them like other bolts do).
-      let hitTarget: CollisionTarget | null = null
-      // Horizontal distance: a target's centre is chest-high, the strike point is on the ground.
-      let best = Infinity
-      for (const target of targets) {
-        const flat = Math.hypot(target.position[0] - groundPoint.x, target.position[2] - groundPoint.z)
-        if (flat <= target.radius + 0.5 && flat < best) {
-          best = flat
-          hitTarget = target
+        ;(strike as ThunderboltStrike & { local?: boolean }).local = local
+        fxRef.current.strikes = [...fxRef.current.strikes.slice(-3), strike]
+        bump()
+      }, THUNDERBOLT_TELEGRAPH_S * 1000)
+    } else {
+      // Plasma filament: instant, along the aim, up to what it meets (40 m at most). Chains through up to three actors.
+      const length = Math.min(40, aim.impactDistance ?? 40)
+      const strikeSeed = Date.now() & 0xffffffff
+      const actors = collectActorTargets(local)
+      const o = v3(aim.origin)
+      const d = v3(aim.direction)
+      const actorHits = actors
+        .map(actor => ({ actor, t: segmentSphereEntry(o, d, length, actor.center, actor.radius) }))
+        .filter((h): h is { actor: ActorTarget; t: number } => h.t !== null && h.t > 0.3)
+        .sort((a, b) => a.t - b.t)
+        .slice(0, 3)
+      const end = aim.origin.clone().addScaledVector(aim.direction, actorHits[0]?.t ?? length)
+      fx.plasma = [...fx.plasma.slice(-6), {
+        id, origin: o, length: actorHits[0]?.t ?? length, direction: d, age: 0, ttl: 0.9, damage, seed: strikeSeed,
+        curves: buildPlasmaBolt(aim.origin, aim.direction, actorHits[0]?.t ?? length, strikeSeed),
+      }]
+      const hitsSomething = actorHits.length > 0 || aim.impactDistance !== null
+      window.setTimeout(() => {
+        if (hitsSomething) {
+          const pos: Vec3 = [end.x, end.y, end.z]
+          fxRef.current.impacts = [...fxRef.current.impacts.slice(-IMPACT_CAP), {
+            kind: 'plasma', id: randomId(), position: pos, age: 0, ttl: 0.7, seed: strikeSeed,
+            groundingTargets: actorHits.slice(1).map(h => h.actor.center),
+          }]
+          playImpactSound(pos)
+          if (actorHits.length > 0) for (const h of actorHits) reportHit(id, h.actor.id, h.actor.center, local)
+          else if (aim.impactObjectId) reportHit(id, aim.impactObjectId, pos, local)
+          bump()
         }
-      }
-      // PvP hit-report for thunderbolt: ground-point-based; check after the
-      // telegraph delay so the victim's authoritative position is fresh.
-      if (boltId && hitTarget && hitTarget.id.startsWith('pvp:') && localBoltIdsRef.current.has(boltId)) {
-        sendPvpReportHit({ boltId, victimSessionId: hitTarget.id.slice(4) })
-      }
-      const strike: ThunderboltStrike = {
-        id: boltId ?? randomId(),
-        groundPoint: [groundPoint.x, groundPoint.y, groundPoint.z],
-        age: 0,
-        ttl: THUNDERBOLT_TTL_S - THUNDERBOLT_TELEGRAPH_S,
-        damage,
-        seed,
-        segments,
-        target: hitTarget ? { id: hitTarget.id, position: hitTarget.position, radius: hitTarget.radius } : null,
-      }
-      setThunderStrikes(prev => [...prev.slice(-3), strike])
-    }, THUNDERBOLT_TELEGRAPH_S * 1000)
-  }, [camera])
-
-  const spawnIceA = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
-    const velocity = direction.clone().multiplyScalar(speed)
-    setCrystalProjectiles(prev => [...prev.slice(-15), {
-      id: boltId ?? randomId(),
-      origin: [origin.x, origin.y, origin.z],
-      position: [origin.x, origin.y, origin.z],
-      velocity: [velocity.x, velocity.y, velocity.z],
-      distance: 0,
-      age: 0,
-      ttl: BOLT_DEFAULT_TTL_S,
-      damage,
-      trailCarry: 0,
-    }])
-  }, [])
-
-  const spawnIceB = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
-    const velocity = direction.clone().multiplyScalar(speed)
-    setFrozenProjectiles(prev => [...prev.slice(-15), {
-      id: boltId ?? randomId(),
-      origin: [origin.x, origin.y, origin.z],
-      position: [origin.x, origin.y, origin.z],
-      velocity: [velocity.x, velocity.y, velocity.z],
-      distance: 0,
-      age: 0,
-      ttl: BOLT_DEFAULT_TTL_S,
-      damage,
-      trailCarry: 0,
-    }])
-  }, [])
-
-  const spawnIceC = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
-    const velocity = direction.clone().multiplyScalar(speed)
-    setBorealProjectiles(prev => [...prev.slice(-15), {
-      id: boltId ?? randomId(),
-      origin: [origin.x, origin.y, origin.z],
-      position: [origin.x, origin.y, origin.z],
-      velocity: [velocity.x, velocity.y, velocity.z],
-      distance: 0,
-      age: 0,
-      ttl: BOLT_DEFAULT_TTL_S,
-      damage,
-      trailCarry: 0,
-    }])
-  }, [])
-
-  // ─═̷─═̷─🎤 CAST ─═̷─═̷─🎤
-  const queueSpatialSound = useCallback((
-    url: string | null,
-    position: [number, number, number],
-    maxDistance: number,
-    volumeMultiplier: number,
-    ttl: number,
-    followId?: string,
-  ) => {
-    if (!url) return false
-    setSpatialSounds(prev => [
-      ...prev.slice(-23),
-      {
-        id: randomId(),
-        url,
-        position,
-        age: 0,
-        ttl,
-        maxDistance,
-        volumeMultiplier,
-        followId,
-      },
-    ])
-    return true
-  }, [])
-
-  const playSpatialCastSound = useCallback((spell: CombatSpellId, boltId: string, origin: THREE.Vector3) => {
-    const url = resolveSpellSoundUrl(settings.spellSounds?.[spell])
-    if (url) {
-      queueSpatialSound(
-        url,
-        [origin.x, origin.y, origin.z],
-        BOLT_SPATIAL_RANGE_M,
-        0.85,
-        SPATIAL_CAST_SOUND_TTL_S,
-        boltId,
-      )
-      return
+      }, 120)
     }
+    bump()
+  }, [bump, reportHit])
 
-    const audio = useAudioManager.getState()
-    if (spell === 'firebolt') audio.play('fireboltVoice')
-    else if (spell === 'lightning-bolt') audio.play('fireboltCast')
-    else if (spell === 'ice-bolt') audio.play('buttonClick')
-  }, [queueSpatialSound, settings.spellSounds])
-
-  const playSpatialExplosionSound = useCallback((position: [number, number, number]) => {
-    const played = queueSpatialSound(
-      resolveSpellSoundUrl(EXPLOSION_SOUND_ID),
-      position,
-      EXPLOSION_SPATIAL_RANGE_M,
-      0.9,
-      SPATIAL_EXPLOSION_SOUND_TTL_S,
-    )
-    if (!played) useAudioManager.getState().play('fireboltHit')
-  }, [queueSpatialSound])
-
+  // ─═̷─ Mana bookkeeping (the HUD and server tell us; we spend locally) ─═̷─
   useEffect(() => {
-    playSpatialExplosionSoundRef.current = playSpatialExplosionSound
-  }, [playSpatialExplosionSound])
+    const onVitals = (event: Event) => {
+      const detail = (event as CustomEvent<{ mana?: unknown; maxMana?: unknown; manaRegenMultiplier?: unknown; stats?: { manaRegenMultiplier?: unknown; fireboltDamage?: unknown; fireboltManaCost?: unknown } }>).detail
+      if (!detail || typeof detail.mana !== 'number') return
+      const regen = typeof detail.manaRegenMultiplier === 'number' ? detail.manaRegenMultiplier
+        : typeof detail.stats?.manaRegenMultiplier === 'number' ? detail.stats.manaRegenMultiplier : manaRef.current?.regen ?? 1
+      manaRef.current = {
+        mana: detail.mana,
+        maxMana: typeof detail.maxMana === 'number' ? detail.maxMana : manaRef.current?.maxMana ?? PLAYER_BASE_STATS.mana,
+        regen,
+        at: Date.now(),
+      }
+      if (typeof detail.stats?.fireboltDamage === 'number') spellStatsRef.current.damage = detail.stats.fireboltDamage
+      if (typeof detail.stats?.fireboltManaCost === 'number') spellStatsRef.current.cost = detail.stats.fireboltManaCost
+    }
+    window.addEventListener('oasis:player-vitals', onVitals)
+    return () => window.removeEventListener('oasis:player-vitals', onVitals)
+  }, [])
 
-  const castBolt = useCallback(async (forcedSpell?: CombatSpellId) => {
-    if (!enabled || castingRef.current || !canCastBolt()) return
+  // ─═̷─ The cast ─═̷─
+  const castBolt = useCallback((forcedSpell?: CombatSpellId) => {
+    if (!enabledRef.current || !canCastBolt()) return
     const now = performance.now()
     if (now - lastCastAtRef.current < BOLT_DEFAULT_COOLDOWN_MS) return
-    // Bail when no combat spell is armed — prevents LMB from firing firebolt
-    // while a non-combat spell (catalog-place, brush-wand, text-to-pic, etc)
-    // is selected. Without this, mana drains silently and the player thinks
-    // their click did nothing or got eaten by an unrelated panel.
     const spell = forcedSpell ?? resolveActiveSpell()
     if (!spell) return
-    lastCastAtRef.current = now
-    castingRef.current = true
-    try {
-      // POST mana cost (routes through firebolt endpoint until lightning/ice
-      // endpoints exist — same cost, same XP).
-      const response = await fetch(castEndpointFor(spell), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ worldId: useOasisStore.getState().activeWorldId }),
-      })
-      const data = await response.json().catch(() => ({})) as SpellCastResponse
-      if (!response.ok || !data.ok) {
-        window.dispatchEvent(new CustomEvent('oasis:firebolt-failed', { detail: data }))
-        return
-      }
-      const speed = typeof data.spell?.speedMetersPerSecond === 'number'
-        ? data.spell.speedMetersPerSecond
-        : PLAYER_BASE_STATS.fireboltSpeedMetersPerSecond
-      const damage = typeof data.spell?.damage === 'number' ? data.spell.damage : 14
-
-      const { origin, direction } = resolveCastOriginAndDirection(camera)
-      const visualBoltId = randomId()
-
-      playSpatialCastSound(spell, visualBoltId, origin)
-
-      setPlayerSpellCasting(true)
-      window.setTimeout(() => setPlayerSpellCasting(false), BOLT_CAST_ANIMATION_MS)
-
-      // ─═̷─ PvP broadcast ─═̷─
-      // Only broadcast when we're in a PvP-enabled room. Outside PvP (or
-      // when there's no room connection at all), the cast is purely local —
-      // no extra network traffic, same as before.
-      if (getPvpEnabled()) {
-        const designLetter = spell === 'firebolt' ? settings.fireboltDesign
-          : spell === 'lightning-bolt' ? settings.lightningBoltDesign
-          : settings.iceBoltDesign
-        // Thunderbolt (lightning D) skips the projectile flight loop — but
-        // we still broadcast it so peers see the strike at the same ground
-        // point. The seed reproduces identical geometry on every client.
-        const seed = Math.floor(Math.random() * 0xffffffff)
-        localBoltIdsRef.current.add(visualBoltId)
-        // Prune the set so it doesn't grow unbounded across a long session.
-        // BOLT_DEFAULT_TTL_S is ~2.5s — keep at most the last 100 bolts.
-        if (localBoltIdsRef.current.size > 100) {
-          const oldest = localBoltIdsRef.current.values().next().value
-          if (oldest) localBoltIdsRef.current.delete(oldest)
-        }
-        sendPvpCast({
-          spell,
-          design: designLetter,
-          ox: origin.x, oy: origin.y, oz: origin.z,
-          dx: direction.x, dy: direction.y, dz: direction.z,
-          speed,
-          damage,
-          seed,
-          clientPredictionId: visualBoltId,
-        })
-      }
-
-      // Dispatch to the correct design.
-      if (spell === 'firebolt') {
-        if (settings.fireboltDesign === 'B') spawnFireboltB(origin, direction, speed, damage, visualBoltId)
-        else if (settings.fireboltDesign === 'C') spawnFireboltC(origin, direction, speed, damage, visualBoltId)
-        else spawnFireboltA(origin, direction, speed, damage, visualBoltId)
-      } else if (spell === 'lightning-bolt') {
-        if (settings.lightningBoltDesign === 'B') spawnLightningB(origin, direction, speed, damage, visualBoltId)
-        else if (settings.lightningBoltDesign === 'C') spawnLightningC(origin, direction, speed, damage, visualBoltId)
-        else if (settings.lightningBoltDesign === 'D') spawnLightningD(damage, visualBoltId)
-        else spawnLightningA(origin, direction, damage, visualBoltId)
-      } else if (spell === 'ice-bolt') {
-        if (settings.iceBoltDesign === 'B') spawnIceB(origin, direction, speed, damage, visualBoltId)
-        else if (settings.iceBoltDesign === 'C') spawnIceC(origin, direction, speed, damage, visualBoltId)
-        else spawnIceA(origin, direction, speed, damage, visualBoltId)
-      }
-
-      window.dispatchEvent(new CustomEvent('oasis:spell-cast', { detail: { spell, damage } }))
-      if (data.progression) {
-        window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: data.progression }))
-      }
-    } finally {
-      castingRef.current = false
+    const { speed, damage, cost } = spellStatsRef.current
+    const known = manaNow(manaRef.current)
+    if (known !== null && known < cost) {
+      window.dispatchEvent(new CustomEvent('oasis:firebolt-failed', { detail: { error: 'Not enough mana' } }))
+      return
     }
-  }, [
-    camera, enabled, settings.fireboltDesign, settings.lightningBoltDesign, settings.iceBoltDesign,
-    playSpatialCastSound,
-    spawnFireboltA, spawnFireboltB, spawnFireboltC,
-    spawnLightningA, spawnLightningB, spawnLightningC, spawnLightningD,
-    spawnIceA, spawnIceB, spawnIceC,
-  ])
+    lastCastAtRef.current = now
 
-  // Preload the spell-sound manifest on mount so per-spell overrides resolve
-  // on the first cast (otherwise the first cast falls back to defaults while
-  // the manifest is still in flight).
-  useEffect(() => { void preloadSpellSoundManifest() }, [])
+    // Aim now, at the click: not after a server round trip (the old cast read the camera
+    // only when the mana POST came back, so a turning player shot wherever they had turned to).
+    const s = settingsRef.current
+    const design = designFor(spell, s)
+    const aim = resolveCombatAim(camera, scene)
+    const id = randomId()
+    spawn(spell, design, aim, speed, damage, id, true)
+    const log = debugLog()
+    if (log) {
+      log.push({ spell, design, fromHand: aim.fromHand, origin: v3(aim.origin), direction: v3(aim.direction), aimPoint: v3(aim.aimPoint), impactDistance: aim.impactDistance, impactObjectId: aim.impactObjectId })
+      if (log.length > 40) log.splice(0, log.length - 40)
+    }
+
+    if (!playBoltSound(castSoundUrl(spell, s), null, 0.8)) useAudioManager.getState().play('fireboltCast')
+    setPlayerSpellCasting(true)
+    window.setTimeout(() => setPlayerSpellCasting(false), BOLT_CAST_ANIMATION_MS)
+
+    if (getPvpEnabled()) {
+      localBoltIdsRef.current.add(id)
+      if (localBoltIdsRef.current.size > 100) {
+        const oldest = localBoltIdsRef.current.values().next().value
+        if (oldest) localBoltIdsRef.current.delete(oldest)
+      }
+      sendPvpCast({
+        spell, design,
+        ox: aim.origin.x, oy: aim.origin.y, oz: aim.origin.z,
+        dx: aim.direction.x, dy: aim.direction.y, dz: aim.direction.z,
+        speed, damage, seed: Math.floor(Math.random() * 0xffffffff), clientPredictionId: id,
+      })
+    }
+    window.dispatchEvent(new CustomEvent('oasis:spell-cast', { detail: { spell, damage } }))
+
+    // Spend locally now; the server records it (and corrects us) behind.
+    if (known !== null && manaRef.current) {
+      window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: { ...manaRef.current, mana: known - cost } }))
+    }
+    void fetch('/api/profile/spells/firebolt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ worldId: useOasisStore.getState().activeWorldId, spell }),
+    })
+      .then(async response => {
+        const data = await response.json().catch(() => ({})) as SpellCastResponse
+        if (typeof data.spell?.speedMetersPerSecond === 'number') spellStatsRef.current.speed = data.spell.speedMetersPerSecond
+        if (typeof data.spell?.damage === 'number') spellStatsRef.current.damage = data.spell.damage
+        if (!response.ok || !data.ok) {
+          if (data.progression) window.dispatchEvent(new CustomEvent('oasis:firebolt-failed', { detail: data }))
+          return
+        }
+        if (data.progression) window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: data.progression }))
+      })
+      .catch(() => {})
+  }, [camera, scene, spawn])
+
+  useEffect(() => {
+    void preloadSpellSoundManifest().then(() => {
+      preloadBoltSounds([resolveSpellSoundUrl(EXPLOSION_SOUND_ID), resolveSpellSoundUrl(CAST_WHOOSH_ID)])
+    })
+  }, [])
 
   useEffect(() => onHitAward(awardPvpDamageXp), [awardPvpDamageXp])
 
-  // ─═̷─ PvP remote-bolt receive ─═̷─
-  // Subscribe to incoming bolts from peers. Spawns the same visual designs
-  // as a local cast — no mana cost, no XP (the originating client paid those).
-  // The bolt id is NOT added to localBoltIdsRef, so the hit-detection path
-  // won't try to reportHit on these.
-  useEffect(() => {
-    const unsubscribe = onRemoteBolt((bolt: PvpRemoteBolt) => {
-      const origin = new THREE.Vector3(bolt.origin[0], bolt.origin[1], bolt.origin[2])
-      const direction = new THREE.Vector3(bolt.direction[0], bolt.direction[1], bolt.direction[2]).normalize()
-      playSpatialCastSound(bolt.spell, bolt.id, origin)
+  // PvP: a peer's bolt flies the same path here (no mana, no XP: the caster paid).
+  useEffect(() => onRemoteBolt((bolt: PvpRemoteBolt) => {
+    const origin = new THREE.Vector3(...bolt.origin)
+    const direction = new THREE.Vector3(...bolt.direction).normalize()
+    const hit = worldImpactAlong(scene, origin, direction)
+    const aim: CombatAim = {
+      origin, direction,
+      aimPoint: origin.clone().addScaledVector(direction, hit?.distance ?? BOLT_MAX_RANGE_M),
+      impactDistance: hit?.distance ?? null, impactObjectId: hit?.objectId ?? null, aimedActor: null, fromHand: true,
+    }
+    playBoltSound(castSoundUrl(bolt.spell, settingsRef.current), [origin.x, origin.y, origin.z], 0.8)
+    spawn(bolt.spell, bolt.design || 'A', aim, bolt.speed, bolt.damage, bolt.id, false)
+  }), [scene, spawn])
 
-      // Dispatch to the per-design spawner. Design letter is room-validated
-      // upstream so we just defensively fall through to A on garbage values.
-      const design = (bolt.design || 'A').toUpperCase()
-      if (bolt.spell === 'firebolt') {
-        if (design === 'B') spawnFireboltB(origin, direction, bolt.speed, bolt.damage, bolt.id)
-        else if (design === 'C') spawnFireboltC(origin, direction, bolt.speed, bolt.damage, bolt.id)
-        else spawnFireboltA(origin, direction, bolt.speed, bolt.damage, bolt.id)
-      } else if (bolt.spell === 'lightning-bolt') {
-        if (design === 'B') spawnLightningB(origin, direction, bolt.speed, bolt.damage, bolt.id)
-        else if (design === 'C') spawnLightningC(origin, direction, bolt.speed, bolt.damage, bolt.id)
-        else if (design === 'D') spawnLightningD(bolt.damage, bolt.id)
-        else spawnLightningA(origin, direction, bolt.damage, bolt.id)
-      } else if (bolt.spell === 'ice-bolt') {
-        if (design === 'B') spawnIceB(origin, direction, bolt.speed, bolt.damage, bolt.id)
-        else if (design === 'C') spawnIceC(origin, direction, bolt.speed, bolt.damage, bolt.id)
-        else spawnIceA(origin, direction, bolt.speed, bolt.damage, bolt.id)
-      }
-    })
-    return unsubscribe
-  }, [
-    playSpatialCastSound,
-    spawnFireboltA, spawnFireboltB, spawnFireboltC,
-    spawnLightningA, spawnLightningB, spawnLightningC, spawnLightningD,
-    spawnIceA, spawnIceB, spawnIceC,
-  ])
-
-  // ─═̷─═̷─📡 EVENT WIRING ─═̷─═̷─📡
+  // ─═̷─ Input ─═̷─
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const onFire = () => void castBolt('firebolt')
-    const onLightning = () => void castBolt('lightning-bolt')
-    const onIce = () => void castBolt('ice-bolt')
-    // For backward-compat: the mobile Fire button still dispatches
-    // oasis:cast-firebolt. When the player has armed a non-firebolt spell,
-    // re-route at this listener so the armed spell fires from mobile/UI too.
-    const onLegacyCastFirebolt = () => void castBolt(undefined)
-    window.addEventListener('oasis:cast-firebolt', onLegacyCastFirebolt)
+    const onArmed = () => castBolt(undefined)
+    const onLightning = () => castBolt('lightning-bolt')
+    const onIce = () => castBolt('ice-bolt')
+    window.addEventListener('oasis:cast-firebolt', onArmed)
     window.addEventListener('oasis:cast-lightning-bolt', onLightning)
     window.addEventListener('oasis:cast-ice-bolt', onIce)
-    void onFire // (referenced for clarity; legacy handler resolves to armed spell)
     return () => {
-      window.removeEventListener('oasis:cast-firebolt', onLegacyCastFirebolt)
+      window.removeEventListener('oasis:cast-firebolt', onArmed)
       window.removeEventListener('oasis:cast-lightning-bolt', onLightning)
       window.removeEventListener('oasis:cast-ice-bolt', onIce)
     }
   }, [castBolt])
 
-  // LMB on canvas → cast armed spell.
   useEffect(() => {
     if (!enabled) return
     const canvas = gl.domElement
-    const isCanvasEvent = (event: Event) => {
-      const target = event.target
-      return target instanceof Node && canvas.contains(target)
-    }
+    const isCanvasEvent = (event: Event) => event.target instanceof Node && canvas.contains(event.target)
     const swallowCastFollowup = (event: Event) => {
-      if (Date.now() > suppressCastFollowupUntilRef.current) return
-      if (!isCanvasEvent(event)) return
+      if (Date.now() > suppressCastFollowupUntilRef.current || !isCanvasEvent(event)) return
       event.preventDefault()
       event.stopImmediatePropagation()
     }
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) return
-      if (!isCanvasEvent(event)) return
-      if (isTypingTarget(event.target)) return
+      if (event.button !== 0 || !isCanvasEvent(event) || isTypingTarget(event.target)) return
       if (document.pointerLockElement !== canvas && !isProbablyMobileDevice()) return
-      if (!canCastBolt()) return
-      // Only a bolt spell takes the click: another armed weapon (the machine gun) or no spell keeps it.
-      if (!resolveActiveSpell()) return
+      if (!canCastBolt() || !resolveActiveSpell()) return
       suppressCastFollowupUntilRef.current = Date.now() + 700
       event.preventDefault()
       event.stopImmediatePropagation()
-      void castBolt(undefined)
+      castBolt(undefined)
     }
     window.addEventListener('pointerdown', onPointerDown, { capture: true })
     window.addEventListener('pointerup', swallowCastFollowup, { capture: true })
@@ -900,540 +507,149 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }
   }, [castBolt, enabled, gl])
 
-  // ─═̷─═̷─🔁 ANIMATE EVERYTHING (one frame loop) ─═̷─═̷─🔁
-  useFrame((_, delta) => {
-    // ──── Comet Tail (firebolt A) — projectile loop + collision ────
-    if (cometProjectiles.length > 0) {
-      const targets = collectCollisionTargets()
-      const newExplosions: CometTailExplosion[] = []
-      const newPuffs: CometTailSmokePuff[] = []
-      const next: CometTailProjectile[] = []
-      for (const p of cometProjectiles) {
-        const result = stepProjectile(p, delta, targets, COMET_TRAIL_SPACING_M)
-        if (result.expired) {
-          newExplosions.push({ id: randomId(), position: result.endPos, age: 0, ttl: BOLT_EXPLOSION_TTL_S, seed: Math.floor(Math.random() * 10000) })
-          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, setCometHitMarkers)
-        } else {
-          next.push(result.next as CometTailProjectile)
-        }
-        for (const pp of result.puffPositions) {
-          newPuffs.push({ id: randomId(), position: pp, age: 0, ttl: COMET_SMOKE_TTL_S, seed: Math.floor(Math.random() * 10000), size: 0.22 + Math.random() * 0.1 })
-        }
-      }
-      setCometProjectiles(next)
-      if (newPuffs.length > 0) setCometSmoke(prev => [...prev.slice(-70), ...newPuffs])
-      if (newExplosions.length > 0) {
-        newExplosions.forEach(e => playSpatialExplosionSound(e.position))
-        setCometExplosions(prev => [...prev.slice(-10), ...newExplosions])
-      }
-    }
-
-    // ──── Solar Flare (firebolt B) ────
-    if (solarProjectiles.length > 0) {
-      const targets = collectCollisionTargets()
-      const newExplosions: SolarFlareExplosion[] = []
-      const newPuffs: SolarFlareTrailPuff[] = []
-      const next: SolarFlareProjectile[] = []
-      for (const p of solarProjectiles) {
-        const result = stepProjectile(p, delta, targets, SOLAR_TRAIL_SPACING_M)
-        if (result.expired) {
-          newExplosions.push({ id: randomId(), position: result.endPos, age: 0, ttl: BOLT_EXPLOSION_TTL_S * 1.2, seed: Math.floor(Math.random() * 10000) })
-          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
-        } else {
-          next.push(result.next as SolarFlareProjectile)
-        }
-        for (const pp of result.puffPositions) {
-          newPuffs.push({ id: randomId(), position: pp, direction: p.velocity, age: 0, ttl: 0.45 })
-        }
-      }
-      setSolarProjectiles(next)
-      if (newPuffs.length > 0) setSolarTrail(prev => [...prev.slice(-90), ...newPuffs])
-      if (newExplosions.length > 0) {
-        newExplosions.forEach(e => playSpatialExplosionSound(e.position))
-        setSolarExplosions(prev => [...prev.slice(-10), ...newExplosions])
-      }
-    }
-
-    // ──── Phoenix Feather (firebolt C) ────
-    if (phoenixProjectiles.length > 0) {
-      const targets = collectCollisionTargets()
-      const newExplosions: PhoenixExplosion[] = []
-      const newEmbers: PhoenixEmber[] = []
-      const next: PhoenixFeatherProjectile[] = []
-      for (const p of phoenixProjectiles) {
-        const result = stepProjectile(p, delta, targets, PHOENIX_TRAIL_SPACING_M)
-        if (result.expired) {
-          const vel = new THREE.Vector3(...p.velocity).normalize()
-          newExplosions.push({ id: randomId(), position: result.endPos, age: 0, ttl: 0.95, seed: Math.floor(Math.random() * 10000), upVec: [vel.x, vel.y, vel.z] })
-          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
-        } else {
-          next.push(result.next as PhoenixFeatherProjectile)
-        }
-        for (const pp of result.puffPositions) {
-          newEmbers.push({
-            id: randomId(),
-            position: pp,
-            velocity: [(Math.random() - 0.5) * 0.6, 0.4 + Math.random() * 0.4, (Math.random() - 0.5) * 0.6],
-            age: 0,
-            ttl: 0.55,
-            hue: Math.random(),
-          })
-        }
-      }
-      setPhoenixProjectiles(next)
-      if (newEmbers.length > 0) setPhoenixEmbers(prev => [...prev.slice(-150), ...newEmbers])
-      if (newExplosions.length > 0) {
-        newExplosions.forEach(e => playSpatialExplosionSound(e.position))
-        setPhoenixExplosions(prev => [...prev.slice(-10), ...newExplosions])
-      }
-    }
-
-    // ──── Plasma Filament (lightning A) — no flight loop ────
-    if (plasmaBolts.length > 0) {
-      setPlasmaBolts(prev => prev.map(b => ({ ...b, age: b.age + delta })).filter(b => b.age < b.ttl))
-    }
-
-    // ──── Tesla Coil (lightning B) ────
-    if (teslaProjectiles.length > 0) {
-      const targets = collectCollisionTargets()
-      const newImpacts: TeslaCoilImpact[] = []
-      const newTrail: TeslaCoilTrailPuff[] = []
-      const next: TeslaCoilProjectile[] = []
-      for (const p of teslaProjectiles) {
-        const result = stepProjectile(p, delta, targets, 0.3)
-        if (result.expired) {
-          newImpacts.push({ id: randomId(), position: result.endPos, age: 0, ttl: 0.85, seed: Math.floor(Math.random() * 10000), normalUp: [0, 1, 0] })
-          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
-        } else {
-          next.push(result.next as TeslaCoilProjectile)
-        }
-        for (const pp of result.puffPositions) {
-          newTrail.push({ id: randomId(), position: pp, age: 0, ttl: 0.55, seed: Math.floor(Math.random() * 10000) })
-        }
-      }
-      setTeslaProjectiles(next)
-      if (newTrail.length > 0) setTeslaTrail(prev => [...prev.slice(-100), ...newTrail])
-      if (newImpacts.length > 0) {
-        newImpacts.forEach(i => playSpatialExplosionSound(i.position))
-        setTeslaImpacts(prev => [...prev.slice(-10), ...newImpacts])
-      }
-    }
-
-    // ──── Storm Lance (lightning C) ────
-    if (stormProjectiles.length > 0) {
-      const targets = collectCollisionTargets()
-      const newImpacts: StormLanceImpact[] = []
-      const newDroplets: StormLanceDroplet[] = []
-      const next: StormLanceProjectile[] = []
-      for (const p of stormProjectiles) {
-        const result = stepProjectile(p, delta, targets, 0.28)
-        if (result.expired) {
-          newImpacts.push({ id: randomId(), position: result.endPos, age: 0, ttl: 0.85, seed: Math.floor(Math.random() * 10000), normalUp: [0, 1, 0] })
-          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
-        } else {
-          next.push(result.next as StormLanceProjectile)
-        }
-        for (const pp of result.puffPositions) {
-          newDroplets.push({ id: randomId(), position: pp, age: 0, ttl: 0.55, seed: Math.floor(Math.random() * 10000) })
-        }
-      }
-      setStormProjectiles(next)
-      if (newDroplets.length > 0) setStormDroplets(prev => [...prev.slice(-120), ...newDroplets])
-      if (newImpacts.length > 0) {
-        newImpacts.forEach(i => playSpatialExplosionSound(i.position))
-        setStormImpacts(prev => [...prev.slice(-10), ...newImpacts])
-      }
-    }
-
-    // ──── Thunderbolt (lightning D) — non-projectile, screen flash ────
-    if (thunderStrikes.length > 0) {
-      const newImpacts: ThunderboltImpact[] = []
-      const nextStrikes: ThunderboltStrike[] = []
-      let flashAlphaTarget = thunderFlashAlpha
-      for (const s of thunderStrikes) {
-        const newAge = s.age + delta
-        const phaseBefore = thunderboltPhase(s.age)
-        const phaseAfter = thunderboltPhase(newAge)
-        // Detect strike moment (reveal just hit ground)
-        const lastMoment = lastThunderStrikeMomentRef.current.get(s.id) || 0
-        const struckThisFrame = !lastMoment && phaseAfter.justStruck
-        if (struckThisFrame) {
-          lastThunderStrikeMomentRef.current.set(s.id, performance.now())
-          flashAlphaTarget = 0.7
-          // Spawn impact
-          newImpacts.push({
-            id: randomId(),
-            position: s.groundPoint,
-            age: 0,
-            ttl: 0.85,
-            seed: s.seed,
-          })
-          playSpatialExplosionSound(s.groundPoint)
-          if (s.target?.id.startsWith(VILLAGE_TARGET_PREFIX)) {
-            const [tx, ty, tz] = s.target.position
-            damageVillageAgent(s.target.id.slice(VILLAGE_TARGET_PREFIX.length), undefined, undefined, [tx, ty + Math.min(1.4, s.target.radius), tz])
-          } else if (s.target?.id.startsWith('pvp:')) {
-            // PvP thunderbolt hit. Only the caster reports it.
-            if (localBoltIdsRef.current.has(s.id)) {
-              sendPvpReportHit({ boltId: s.id, victimSessionId: s.target.id.slice(4) })
-            }
-          } else if (s.target && isQuestFireboltTarget(s.target.id)) {
-            recordQuestTargetHit(s.target.id, s.groundPoint, reportedQuestTargetHitsRef.current)
-          } else if (s.target) {
-            window.dispatchEvent(new CustomEvent('oasis:firebolt-hit', { detail: { targetId: s.target.id, position: s.groundPoint, worldId: useOasisStore.getState().activeWorldId } }))
-          }
-        }
-        void phaseBefore // phase change comparison reserved for future polish
-        if (newAge < s.ttl) {
-          nextStrikes.push({ ...s, age: newAge })
-        }
-      }
-      setThunderStrikes(nextStrikes)
-      if (newImpacts.length > 0) setThunderImpacts(prev => [...prev.slice(-6), ...newImpacts])
-      if (flashAlphaTarget !== thunderFlashAlpha || thunderFlashAlpha > 0) {
-        // Decay the flash alpha over ~0.35s
-        const decayed = Math.max(0, thunderFlashAlpha - delta * 2.4)
-        setThunderFlashAlpha(Math.max(decayed, flashAlphaTarget > thunderFlashAlpha ? flashAlphaTarget : decayed))
-      }
-    } else if (thunderFlashAlpha > 0) {
-      setThunderFlashAlpha(Math.max(0, thunderFlashAlpha - delta * 2.4))
-    }
-
-    // ──── Crystal Spear (ice A) ────
-    if (crystalProjectiles.length > 0) {
-      const targets = collectCollisionTargets()
-      const newImpacts: CrystalSpearImpact[] = []
-      const newFlakes: CrystalSpearTrailFlake[] = []
-      const next: CrystalSpearProjectile[] = []
-      for (const p of crystalProjectiles) {
-        const result = stepProjectile(p, delta, targets, CRYSTAL_TRAIL_SPACING_M)
-        if (result.expired) {
-          newImpacts.push({ id: randomId(), position: result.endPos, age: 0, ttl: 0.85, seed: Math.floor(Math.random() * 10000) })
-          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
-        } else {
-          next.push(result.next as CrystalSpearProjectile)
-        }
-        const velNorm = new THREE.Vector3(...p.velocity).normalize()
-        for (const pp of result.puffPositions) {
-          newFlakes.push({ id: randomId(), position: pp, age: 0, ttl: 0.6, seed: Math.random() * 100, spinAxis: [velNorm.x, velNorm.y, velNorm.z] })
-        }
-      }
-      setCrystalProjectiles(next)
-      if (newFlakes.length > 0) setCrystalFlakes(prev => [...prev.slice(-120), ...newFlakes])
-      if (newImpacts.length > 0) {
-        newImpacts.forEach(i => playSpatialExplosionSound(i.position))
-        setCrystalImpacts(prev => [...prev.slice(-10), ...newImpacts])
-      }
-    }
-
-    // ──── Frozen Flame (ice B) ────
-    if (frozenProjectiles.length > 0) {
-      const targets = collectCollisionTargets()
-      const newImpacts: FrozenFlameImpact[] = []
-      const newFlakes: FrozenFlameSnowflake[] = []
-      const next: FrozenFlameProjectile[] = []
-      for (const p of frozenProjectiles) {
-        const result = stepProjectile(p, delta, targets, FROZEN_TRAIL_SPACING_M)
-        if (result.expired) {
-          newImpacts.push({ id: randomId(), position: result.endPos, age: 0, ttl: 2, seed: Math.floor(Math.random() * 10000) })
-          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
-        } else {
-          next.push(result.next as FrozenFlameProjectile)
-        }
-        for (const pp of result.puffPositions) {
-          newFlakes.push({
-            id: randomId(),
-            position: pp,
-            age: 0,
-            ttl: 0.9,
-            seed: Math.random() * 100,
-            drift: [(Math.random() - 0.5) * 0.4, 0.3 + Math.random() * 0.3, (Math.random() - 0.5) * 0.4],
-          })
-        }
-      }
-      setFrozenProjectiles(next)
-      if (newFlakes.length > 0) setFrozenFlakes(prev => [...prev.slice(-120), ...newFlakes])
-      if (newImpacts.length > 0) {
-        newImpacts.forEach(i => playSpatialExplosionSound(i.position))
-        setFrozenImpacts(prev => [...prev.slice(-10), ...newImpacts])
-      }
-    }
-
-    // ──── Boreal Spiral (ice C) ────
-    if (borealProjectiles.length > 0) {
-      const targets = collectCollisionTargets()
-      const newImpacts: BorealSpiralImpact[] = []
-      const newGlyphs: BorealSpiralGlyph[] = []
-      const next: BorealSpiralProjectile[] = []
-      for (const p of borealProjectiles) {
-        const result = stepProjectile(p, delta, targets, BOREAL_TRAIL_SPACING_M)
-        if (result.expired) {
-          newImpacts.push({ id: randomId(), position: result.endPos, age: 0, ttl: 1.1, seed: Math.floor(Math.random() * 10000) })
-          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
-        } else {
-          next.push(result.next as BorealSpiralProjectile)
-        }
-        for (const pp of result.puffPositions) {
-          newGlyphs.push({
-            id: randomId(),
-            position: pp,
-            forward: p.velocity,
-            age: 0,
-            ttl: 0.5,
-            variant: Math.floor(Math.random() * 4),
-          })
-        }
-      }
-      setBorealProjectiles(next)
-      if (newGlyphs.length > 0) setBorealGlyphs(prev => [...prev.slice(-60), ...newGlyphs])
-      if (newImpacts.length > 0) {
-        newImpacts.forEach(i => playSpatialExplosionSound(i.position))
-        setBorealImpacts(prev => [...prev.slice(-10), ...newImpacts])
-      }
-    }
-
-    // ──── Age + retire trail particles + impacts ────
-    if (cometSmoke.length > 0) setCometSmoke(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (cometExplosions.length > 0) setCometExplosions(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (cometHitMarkers.length > 0) setCometHitMarkers(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (xpHitMarkers.length > 0) setXpHitMarkers(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (solarTrail.length > 0) setSolarTrail(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (solarExplosions.length > 0) setSolarExplosions(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (phoenixEmbers.length > 0) setPhoenixEmbers(prev => prev.map(e => {
-      const next = { ...e, age: e.age + delta }
-      next.position = [
-        e.position[0] + e.velocity[0] * delta,
-        e.position[1] + e.velocity[1] * delta,
-        e.position[2] + e.velocity[2] * delta,
-      ]
-      // Drag
-      next.velocity = [e.velocity[0] * 0.94, e.velocity[1] * 0.95 - 0.4 * delta, e.velocity[2] * 0.94]
-      return next
-    }).filter(e => e.age < e.ttl))
-    if (phoenixExplosions.length > 0) setPhoenixExplosions(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (plasmaImpacts.length > 0) setPlasmaImpacts(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (teslaTrail.length > 0) setTeslaTrail(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (teslaImpacts.length > 0) setTeslaImpacts(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (stormDroplets.length > 0) setStormDroplets(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (stormImpacts.length > 0) setStormImpacts(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (thunderImpacts.length > 0) setThunderImpacts(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (crystalFlakes.length > 0) setCrystalFlakes(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (crystalImpacts.length > 0) setCrystalImpacts(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (frozenFlakes.length > 0) setFrozenFlakes(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (frozenImpacts.length > 0) setFrozenImpacts(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (borealGlyphs.length > 0) setBorealGlyphs(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (borealImpacts.length > 0) setBorealImpacts(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
-    if (spatialSounds.length > 0) {
-      const projectilePositionFor = (id: string): [number, number, number] | null => {
-        const findMoving = (items: Array<{ id: string; position: [number, number, number] }>) => {
-          for (const item of items) if (item.id === id) return item.position
-          return null
-        }
-        const moving = findMoving(cometProjectiles)
-          ?? findMoving(solarProjectiles)
-          ?? findMoving(phoenixProjectiles)
-          ?? findMoving(teslaProjectiles)
-          ?? findMoving(stormProjectiles)
-          ?? findMoving(crystalProjectiles)
-          ?? findMoving(frozenProjectiles)
-          ?? findMoving(borealProjectiles)
-        if (moving) return moving
-        const thunder = thunderStrikes.find(strike => strike.id === id)
-        if (thunder) return thunder.groundPoint
-        return null
-      }
-
-      setSpatialSounds(prev => prev
-        .map(sound => {
-          const followed = sound.followId ? projectilePositionFor(sound.followId) : null
-          return {
-            ...sound,
-            age: sound.age + delta,
-            position: followed ?? sound.position,
-          }
-        })
-        .filter(sound => sound.age < sound.ttl))
-    }
-  })
-
-  // Reveal trigger of thunderbolt: capture spike of strike moment for the screen flash.
-  // (Handled inline in useFrame above; flash decays naturally.)
-
-  const showFlash = thunderFlashAlpha > 0
-
-  return (
-    <>
-      <group name="combat-bolt-layer">
-        {/* Comet Tail (firebolt A) */}
-        {cometSmoke.map(puff => <CometTailSmokePuffMesh key={puff.id} puff={puff} />)}
-        {cometProjectiles.map(p => <CometTailMesh key={p.id} projectile={p} />)}
-        {cometExplosions.map(e => <CometTailExplosionMesh key={e.id} explosion={e} />)}
-        {cometHitMarkers.map(m => <CometTailHitMarkerMesh key={m.id} marker={m} />)}
-        {xpHitMarkers.map(m => <CometTailHitMarkerMesh key={m.id} marker={m} />)}
-
-        {/* Solar Flare (firebolt B) */}
-        {solarTrail.map(p => <SolarFlareTrailMesh key={p.id} puff={p} />)}
-        {solarProjectiles.map(p => <SolarFlareMesh key={p.id} projectile={p} />)}
-        {solarExplosions.map(e => <SolarFlareExplosionMesh key={e.id} explosion={e} />)}
-
-        {/* Phoenix Feather (firebolt C) */}
-        {phoenixEmbers.map(e => <PhoenixEmberMesh key={e.id} ember={e} />)}
-        {phoenixProjectiles.map(p => <PhoenixFeatherMesh key={p.id} projectile={p} />)}
-        {phoenixExplosions.map(e => <PhoenixExplosionMesh key={e.id} explosion={e} />)}
-
-        {/* Plasma Filament (lightning A) */}
-        {plasmaBolts.map(b => <PlasmaFilamentMesh key={b.id} bolt={b} />)}
-        {plasmaImpacts.map(i => <PlasmaFilamentImpactMesh key={i.id} impact={i} />)}
-
-        {/* Tesla Coil (lightning B) */}
-        {teslaTrail.map(p => <TeslaCoilTrailMesh key={p.id} puff={p} />)}
-        {teslaProjectiles.map(p => <TeslaCoilMesh key={p.id} projectile={p} />)}
-        {teslaImpacts.map(i => <TeslaCoilImpactMesh key={i.id} impact={i} />)}
-
-        {/* Storm Lance (lightning C) */}
-        {stormDroplets.map(p => <StormLanceDropletMesh key={p.id} droplet={p} />)}
-        {stormProjectiles.map(p => <StormLanceMesh key={p.id} projectile={p} />)}
-        {stormImpacts.map(i => <StormLanceImpactMesh key={i.id} impact={i} />)}
-
-        {/* Thunderbolt (lightning D) */}
-        {thunderStrikes.map(s => <ThunderboltMesh key={s.id} strike={s} />)}
-        {thunderImpacts.map(i => <ThunderboltImpactMesh key={i.id} impact={i} />)}
-
-        {/* Crystal Spear (ice A) */}
-        {crystalFlakes.map(f => <CrystalSpearTrailFlakeMesh key={f.id} flake={f} />)}
-        {crystalProjectiles.map(p => <CrystalSpearMesh key={p.id} projectile={p} />)}
-        {crystalImpacts.map(i => <CrystalSpearImpactMesh key={i.id} impact={i} />)}
-
-        {/* Frozen Flame (ice B) */}
-        {frozenFlakes.map(f => <FrozenFlameSnowflakeMesh key={f.id} flake={f} />)}
-        {frozenProjectiles.map(p => <FrozenFlameMesh key={p.id} projectile={p} />)}
-        {frozenImpacts.map(i => <FrozenFlameImpactMesh key={i.id} impact={i} />)}
-
-        {/* Boreal Spiral (ice C) */}
-        {borealGlyphs.map(g => <BorealSpiralGlyphMesh key={g.id} glyph={g} />)}
-        {borealProjectiles.map(p => <BorealSpiralMesh key={p.id} projectile={p} />)}
-        {borealImpacts.map(i => <BorealSpiralImpactMesh key={i.id} impact={i} />)}
-        {spatialSounds.map(sound => <SpatialSoundSource key={sound.id} sound={sound} />)}
-      </group>
-      {/* Thunderbolt screen flash — DOM overlay driven via a side-effect that
-          owns a singleton <div> attached to document.body. Stays outside the
-          R3F render so it can use mix-blend-mode + DOM stacking. */}
-      <ThunderboltScreenFlashSink alpha={thunderFlashAlpha} visible={showFlash} />
-    </>
-  )
-}
-
-// ─═̷─═̷─🌩 SCREEN-FLASH SINK ─═̷─═̷─🌩
-// Mounts a singleton <div> on document.body and mutates its inline style
-// each frame. The component itself renders nothing into the R3F tree.
-function ThunderboltScreenFlashSink({ alpha, visible }: { alpha: number; visible: boolean }) {
-  const divRef = useRef<HTMLDivElement | null>(null)
+  // ─═̷─ Thunder flash: one DOM div, its opacity set from the frame loop (no React state) ─═̷─
   useEffect(() => {
-    if (typeof document === 'undefined') return
     const el = document.createElement('div')
     el.setAttribute('data-thunderbolt-flash', '')
     el.style.cssText = 'position:fixed;inset:0;background:rgba(255,255,240,1);opacity:0;pointer-events:none;z-index:80;mix-blend-mode:screen;'
     document.body.appendChild(el)
-    divRef.current = el
-    return () => {
-      el.remove()
-      divRef.current = null
-    }
+    flashRef.current.el = el
+    return () => { el.remove(); flashRef.current.el = null }
   }, [])
-  useEffect(() => {
-    if (!divRef.current) return
-    divRef.current.style.opacity = String(visible ? alpha : 0)
-  }, [alpha, visible])
-  return null
-}
 
-// ─═̷─═̷─🔁 SHARED PROJECTILE STEP ─═̷─═̷─🔁
-// (Re-used by every flight-based design. Returns whether the projectile
-// expired (impact / TTL), where it ended up, and any trail-puff positions.)
-function stepProjectile<TProj extends CommonProjectileBase | (Omit<CommonProjectileBase, 'design'>)>(
-  projectile: TProj,
-  delta: number,
-  targets: CollisionTarget[],
-  trailSpacingM: number,
-): {
-  expired: boolean
-  endPos: [number, number, number]
-  next: TProj
-  puffPositions: [number, number, number][]
-  impactTarget: CollisionTarget | null
-} {
-  const start = new THREE.Vector3(...projectile.position)
-  const velocity = new THREE.Vector3(...projectile.velocity)
-  const end = start.clone().addScaledVector(velocity, delta)
-  const segmentLength = start.distanceTo(end)
-  const nextDistance = (projectile.distance || 0) + segmentLength
-  const nextAge = projectile.age + delta
-  const oldTrailCarry = projectile.trailCarry || 0
-  const carriedDistance = oldTrailCarry + segmentLength
-  const puffCount = Math.floor(carriedDistance / trailSpacingM)
-  const nextTrailCarry = carriedDistance % trailSpacingM
-  const puffPositions: [number, number, number][] = []
-  for (let index = 0; index < puffCount; index += 1) {
-    const distanceAlong = (trailSpacingM - oldTrailCarry) + index * trailSpacingM
-    if (segmentLength <= 0 || distanceAlong < 0 || distanceAlong > segmentLength) continue
-    const t = distanceAlong / segmentLength
-    const position = start.clone().lerp(end, t)
-    puffPositions.push([position.x, position.y, position.z])
-  }
+  // ─═̷─═̷─🔁 ONE FRAME LOOP ─═̷─═̷─🔁
+  useFrame((_, rawDelta) => {
+    const fx = fxRef.current
+    const flash = flashRef.current
+    const alive = fx.bolts.length + fx.trails.length + fx.impacts.length + fx.markers.length + fx.plasma.length + fx.strikes.length
+    if (alive === 0 && flash.alpha <= 0) return
+    // A long frame (tab hidden, a hitch) must not teleport bolts through what they should hit.
+    const delta = Math.min(rawDelta, 0.1)
 
-  const activeSegment = armedSegment(start, end, projectile.distance || 0, nextDistance)
-  const groundSegment = armedSegment(start, end, projectile.distance || 0, nextDistance, BOLT_GROUND_ARMING_DISTANCE_M)
-  const origin = new THREE.Vector3(...projectile.origin)
-  let impact: THREE.Vector3 | null = groundSegment ? groundHit(groundSegment.start, groundSegment.end) : null
-  let impactTarget: CollisionTarget | null = null
-
-  if (!impact && activeSegment) {
-    for (const target of targets) {
-      const targetCenter = new THREE.Vector3(target.position[0], target.position[1] + Math.min(1.4, target.radius), target.position[2])
-      if (origin.distanceTo(targetCenter) < target.radius + BOLT_ARMING_DISTANCE_M + 0.2) continue
-      impact = segmentSphereHit(activeSegment.start, activeSegment.end, targetCenter, target.radius)
-      if (impact) {
-        impactTarget = target
-        break
+    // Flying bolts
+    if (fx.bolts.length > 0) {
+      const actorsLocal = collectActorTargets(true)
+      let actorsRemote: ActorTarget[] | null = null
+      const nextBolts: FlyingBolt[] = []
+      const newTrails: TrailFx[] = []
+      for (const bolt of fx.bolts) {
+        const kind = flightKindFor(bolt.spell, bolt.design) ?? 'comet'
+        const look = FLIGHT[kind]
+        const actors = bolt.local ? actorsLocal : (actorsRemote ??= collectActorTargets(false))
+        const step = stepBolt(bolt, delta, actors, look.spacing)
+        for (const p of step.trail) newTrails.push(look.trail(p, bolt))
+        if (step.bolt) nextBolts.push(step.bolt)
+        if (step.impact) {
+          // Burst a hand's breadth in front of the surface, not inside it.
+          const back = unit(bolt.velocity)
+          const p: Vec3 = step.impact.actor ? step.impact.position : [step.impact.position[0] - back[0] * 0.12, step.impact.position[1] - back[1] * 0.12, step.impact.position[2] - back[2] * 0.12]
+          fx.impacts = [...fx.impacts.slice(-IMPACT_CAP), look.impact(p, bolt)]
+          playImpactSound(p)
+          if (step.impact.targetId) reportHit(bolt.id, step.impact.targetId, p, bolt.local)
+          const log = bolt.local ? debugLog() : null
+          const entry = log?.[log.length - 1]
+          if (entry && !entry.impact) { entry.impact = p; entry.impactTarget = step.impact.targetId }
+        }
       }
+      fx.bolts = nextBolts
+      if (newTrails.length > 0) fx.trails = [...fx.trails, ...newTrails].slice(-TRAIL_TOTAL_CAP)
     }
-  }
 
-  const expired = nextAge >= projectile.ttl || end.y <= -8 || !!impact
-  const endPos: [number, number, number] = impact
-    ? [impact.x, Math.max(0.05, impact.y), impact.z]
-    : [end.x, end.y, end.z]
+    // Age trails, impacts, markers, plasma
+    if (fx.trails.length > 0) {
+      fx.trails = fx.trails.filter(t => t.age + delta < t.ttl).map(t => {
+        if (t.kind !== 'phoenix') return { ...t, age: t.age + delta }
+        return {
+          ...t,
+          age: t.age + delta,
+          position: [t.position[0] + t.velocity[0] * delta, t.position[1] + t.velocity[1] * delta, t.position[2] + t.velocity[2] * delta],
+          velocity: [t.velocity[0] * 0.94, t.velocity[1] * 0.95 - 0.4 * delta, t.velocity[2] * 0.94],
+        }
+      })
+    }
+    if (fx.impacts.length > 0) fx.impacts = fx.impacts.filter(i => i.age + delta < i.ttl).map(i => ({ ...i, age: i.age + delta }))
+    if (fx.markers.length > 0) fx.markers = fx.markers.filter(m => m.age + delta < m.ttl).map(m => ({ ...m, age: m.age + delta }))
+    if (fx.plasma.length > 0) fx.plasma = fx.plasma.filter(b => b.age + delta < b.ttl).map(b => ({ ...b, age: b.age + delta }))
 
-  const next = {
-    ...(projectile as object),
-    age: nextAge,
-    position: [end.x, end.y, end.z] as [number, number, number],
-    distance: nextDistance,
-    trailCarry: nextTrailCarry,
-  } as unknown as TProj
+    // Thunderbolt strikes: the impact lands the frame the bolt reaches the ground.
+    if (fx.strikes.length > 0) {
+      const next: ThunderboltStrike[] = []
+      for (const s of fx.strikes) {
+        const age = s.age + delta
+        if (!thunderboltPhase(s.age).justStruck && thunderboltPhase(age).justStruck) {
+          flash.alpha = 0.7
+          fx.impacts = [...fx.impacts.slice(-IMPACT_CAP), { kind: 'thunder', id: randomId(), position: s.groundPoint, age: 0, ttl: 0.85, seed: s.seed }]
+          playImpactSound(s.groundPoint)
+          const local = (s as ThunderboltStrike & { local?: boolean }).local !== false
+          if (s.target) {
+            const [tx, ty, tz] = s.target.position
+            reportHit(s.id, s.target.id, s.target.id.startsWith(VILLAGE_TARGET_PREFIX) ? [tx, ty + 1.05, tz] : s.groundPoint, local)
+          }
+        }
+        if (age < s.ttl) next.push({ ...s, age })
+      }
+      fx.strikes = next
+    }
+    if (flash.alpha > 0) {
+      flash.alpha = Math.max(0, flash.alpha - delta * 2.4)
+      if (flash.el) flash.el.style.opacity = String(flash.alpha)
+    }
 
-  return { expired, endPos, next, puffPositions, impactTarget }
+    bump()
+  })
+
+  const fx = fxRef.current
+  return (
+    <group name="combat-bolt-layer">
+      {fx.trails.map(t => <TrailView key={t.id} fx={t} />)}
+      {fx.bolts.map(b => <BoltView key={b.id} bolt={b} />)}
+      {fx.impacts.map(i => <ImpactView key={i.id} fx={i} />)}
+      {fx.markers.map(m => <CometTailHitMarkerMesh key={m.id} marker={m} />)}
+      {fx.plasma.map(b => <PlasmaFilamentMesh key={b.id} bolt={b} />)}
+      {fx.strikes.map(s => <ThunderboltMesh key={s.id} strike={s} />)}
+    </group>
+  )
 }
 
-function handleTargetHit(
-  target: CollisionTarget,
-  position: [number, number, number],
-  reportedHits: Set<string>,
-  setMarker:
-    | ((updater: (prev: CometTailHitMarker[]) => CometTailHitMarker[]) => void)
-    | null,
-) {
-  if (setMarker && isQuestFireboltTarget(target.id)) {
-    setMarker(prev => [
-      ...prev.slice(-4),
-      {
-        id: randomId(),
-        position,
-        label: labelForFireboltTarget(target.id),
-        age: 0,
-        ttl: 1.15,
-      },
-    ])
+// ─═̷─═̷─🎨 LOOKS ─═̷─═̷─🎨
+function BoltView({ bolt }: { bolt: FlyingBolt }) {
+  switch (flightKindFor(bolt.spell, bolt.design)) {
+    case 'solar': return <SolarFlareMesh projectile={bolt} />
+    case 'phoenix': return <PhoenixFeatherMesh projectile={bolt} />
+    case 'tesla': return <TeslaCoilMesh projectile={bolt} />
+    case 'storm': return <StormLanceMesh projectile={bolt} />
+    case 'crystal': return <CrystalSpearMesh projectile={bolt} />
+    case 'frozen': return <FrozenFlameMesh projectile={bolt} />
+    case 'boreal': return <BorealSpiralMesh projectile={bolt} />
+    default: return <CometTailMesh projectile={bolt} />
   }
-  recordQuestTargetHit(target.id, position, reportedHits)
 }
+
+function TrailView({ fx }: { fx: TrailFx }) {
+  switch (fx.kind) {
+    case 'comet': return <CometTailSmokePuffMesh puff={fx} />
+    case 'solar': return <SolarFlareTrailMesh puff={fx} />
+    case 'phoenix': return <PhoenixEmberMesh ember={fx} />
+    case 'tesla': return <TeslaCoilTrailMesh puff={fx} />
+    case 'storm': return <StormLanceDropletMesh droplet={fx} />
+    case 'crystal': return <CrystalSpearTrailFlakeMesh flake={fx} />
+    case 'frozen': return <FrozenFlameSnowflakeMesh flake={fx} />
+    case 'boreal': return <BorealSpiralGlyphMesh glyph={fx} />
+  }
+}
+
+function ImpactView({ fx }: { fx: ImpactFx }) {
+  switch (fx.kind) {
+    case 'comet': return <CometTailExplosionMesh explosion={fx} />
+    case 'solar': return <SolarFlareExplosionMesh explosion={fx} />
+    case 'phoenix': return <PhoenixExplosionMesh explosion={fx} />
+    case 'tesla': return <TeslaCoilImpactMesh impact={fx} />
+    case 'storm': return <StormLanceImpactMesh impact={fx} />
+    case 'crystal': return <CrystalSpearImpactMesh impact={fx} />
+    case 'frozen': return <FrozenFlameImpactMesh impact={fx} />
+    case 'boreal': return <BorealSpiralImpactMesh impact={fx} />
+    case 'plasma': return <PlasmaFilamentImpactMesh impact={fx} />
+    case 'thunder': return <ThunderboltImpactMesh impact={fx} />
+  }
+}
+

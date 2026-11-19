@@ -124,6 +124,18 @@ export function computeManaRechargeTicks(elapsedMs: number, manaRegenMultiplier:
 /** Exposed for client-side parity with the server's tick math (PlayerVitalsHud). */
 export const MANA_REGEN_BASE_INTERVAL_MS_EXPORT = MANA_REGEN_BASE_INTERVAL_MS
 
+// ░▒▓ Passive mana: it refills on its own, 2 a second (x the Focus multiplier), counted from the
+// profile's last write. No polling: the cast route adds it before it spends, the HUD shows it
+// ticking up. Holding M (the mana dance) still refills 10 a second on top.
+export const PASSIVE_MANA_INTERVAL_MS = 500
+
+export function passiveManaRegen(mana: number, maxMana: number, elapsedMs: number, manaRegenMultiplier: number): number {
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0 || mana >= maxMana) return Math.min(mana, maxMana)
+  const safeMultiplier = Math.max(0.1, Math.min(10, manaRegenMultiplier))
+  const gained = Math.floor(elapsedMs / (PASSIVE_MANA_INTERVAL_MS / safeMultiplier))
+  return Math.min(maxMana, mana + Math.max(0, gained))
+}
+
 export function summarizeSkill(skill: PlayerSkillKey, skills: PlayerSkillSet): string {
   const stats = computePlayerStats(skills)
   switch (skill) {
@@ -203,4 +215,23 @@ export function profileSkillField(skill: PlayerSkillKey): 'skillFire' | 'skillIc
     case 'conjuration': return 'skillConjuration'
     case 'mobility': return 'skillMobility'
   }
+}
+
+/** A profile row with its passive mana added since its last write (read-side; the cast route writes it). */
+export function withPassiveMana<T extends {
+  mana?: number | null
+  updatedAt?: Date | string | null
+  skillFire?: number | null
+  skillIce?: number | null
+  skillLightning?: number | null
+  skillVitality?: number | null
+  skillFocus?: number | null
+  skillConjuration?: number | null
+  skillMobility?: number | null
+}>(profile: T, nowMs = Date.now()): T {
+  const stats = computePlayerStats(profileToPlayerSkills(profile))
+  const stamp = profile.updatedAt ? new Date(profile.updatedAt).getTime() : NaN
+  const mana = profile.mana ?? PLAYER_BASE_STATS.mana
+  if (!Number.isFinite(stamp)) return profile
+  return { ...profile, mana: passiveManaRegen(mana, stats.maxMana, nowMs - stamp, stats.manaRegenMultiplier) }
 }

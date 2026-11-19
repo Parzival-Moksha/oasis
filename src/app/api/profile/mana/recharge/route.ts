@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getRequiredOasisUserId } from '@/lib/session'
 import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/lib/profile-defaults'
-import { buildPlayerProgression, computeManaRechargeTicks, MANA_REGEN_BASE_INTERVAL_MS_EXPORT } from '@/lib/player-progression'
+import { buildPlayerProgression, computeManaRechargeTicks, MANA_REGEN_BASE_INTERVAL_MS_EXPORT, withPassiveMana } from '@/lib/player-progression'
 import { levelFromXp } from '@/lib/xp'
 
 const lastRechargeTickByUser = new Map<string, number>()
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       ? body.elapsedMs
       : 1000
 
-    const profile = await ensureProfile(userId)
+    const profile = withPassiveMana(await ensureProfile(userId))
     const level = levelFromXp(profile.totalXp)
     const progression = buildPlayerProgression({ ...profile, level })
     const nowMs = Date.now()

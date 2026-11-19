@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getRequiredOasisUserId } from '@/lib/session'
 import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/lib/profile-defaults'
-import { buildPlayerProgression } from '@/lib/player-progression'
+import { buildPlayerProgression, withPassiveMana } from '@/lib/player-progression'
 import { recordSpellUse } from '@/lib/player-progression-server'
 import { levelFromXp } from '@/lib/xp'
 
@@ -27,7 +27,8 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({})) as { worldId?: unknown }
     const worldId = typeof body.worldId === 'string' ? body.worldId : undefined
-    const profile = await ensureProfile(userId)
+    // Mana refills on its own since the last write (player-progression.ts passiveManaRegen).
+    const profile = withPassiveMana(await ensureProfile(userId))
     const level = levelFromXp(profile.totalXp)
     const progression = buildPlayerProgression({ ...profile, level })
     const cost = progression.stats.fireboltManaCost

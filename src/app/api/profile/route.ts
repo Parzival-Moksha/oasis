@@ -11,7 +11,7 @@ import { levelFromXp, levelProgress, xpToNextLevel, getLevelTitle } from '@/lib/
 import { profileXp } from '@/lib/profile-xp'
 import { FREE_CREDITS } from '@/lib/conjure/types'
 import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/lib/profile-defaults'
-import { buildPlayerProgression } from '@/lib/player-progression'
+import { buildPlayerProgression, withPassiveMana } from '@/lib/player-progression'
 import { getPlayerProgressionState } from '@/lib/player-progression-server'
 import { normalizeProfileAvatarUrl } from '@/lib/profile-avatar-url'
 
@@ -36,7 +36,7 @@ async function serializeProfile(p: Awaited<ReturnType<typeof ensureProfile>>) {
   const progress = levelProgress(totalXp)
   const toNext = xpToNextLevel(level)
   const lt = getLevelTitle(level)
-  const player = buildPlayerProgression({ ...p, level })
+  const player = buildPlayerProgression({ ...withPassiveMana(p), level })
   const progression = await getPlayerProgressionState(p.userId)
 
   return {
