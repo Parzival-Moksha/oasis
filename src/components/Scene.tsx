@@ -112,6 +112,8 @@ import { VoiceTypeMic } from './forge/VoiceTypeMic'
 import { PerfHeartbeat } from './forge/PerfHeartbeat'
 import { SunShadows } from './forge/SunShadows'
 import { RenderHygiene } from './forge/RenderHygiene'
+import { FlopSaverDriver } from './forge/FlopSaverDriver'
+import { useFlopCaps } from '@/lib/use-flop-caps'
 import { GameMenu, OPEN_CONFIG_EVENT, OPEN_HELP_EVENT } from './game-menu/GameMenu'
 import { GameMenuRailButton } from './game-menu/GameMenuRailButton'
 import { GameMenuCameraDrift } from './game-menu/GameMenuCameraDrift'
@@ -119,6 +121,7 @@ import { AgentSelectionLayer } from './village/AgentSelectionLayer'
 import { GameTooltip } from './forge/GameTooltip'
 import { AnimationBrowser } from './forge/AnimationBrowser'
 import { SkyTransition } from './forge/SkyTransition'
+import { KitConfirmHost } from './ui-kit'
 import { settingsLookStyle, useSettingsLook } from '@/lib/settings-look'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
@@ -602,6 +605,7 @@ function DesktopKeyHints({ village = false, fpsFontSize = null }: { village?: bo
   const villageNearby = useOasisStore(s => Boolean(s.agentEngine.nearbyAgentId))
   const villageAgents = useOasisStore(s => s.agentEngine.order.length > 0)
   const hasSlides = useOasisStore(s => s.placedCatalogAssets.some(asset => Boolean(asset.imageUrl || asset.videoUrl)))
+  const flopLevel = useFlopCaps().level
   if (mobileOasis) return null
   if (agentScreenOpen && fpsFontSize === null) return null
   const keys = !agentScreenOpen
@@ -635,6 +639,11 @@ function DesktopKeyHints({ village = false, fpsFontSize = null }: { village?: bo
           </span>
         </>
       )}
+      {flopLevel > 0 && (
+        <span data-testid="oasis-flop-saver" className="col-span-2 text-right text-[9.5px] leading-[15px]" style={{ ...GAME_HUD_TEXT, color: '#fbbf24' }}>
+          Flop saver {flopLevel}/5
+        </span>
+      )}
       {keys && <>
       {selectedObjectId && (
         <span className="col-span-2 mb-0.5 text-right text-[8.5px]" style={{ ...GAME_HUD_TEXT, color: '#a5f3fc' }}>
@@ -658,7 +667,15 @@ function DesktopKeyHints({ village = false, fpsFontSize = null }: { village?: bo
 }
 
 function PostProcessing() {
-  const { settings } = useContext(SettingsContext)
+  const { settings: saved } = useContext(SettingsContext)
+  // Flop saver (src/lib/flop-saver.ts) holds post effects down while the frame rate is low.
+  const caps = useFlopCaps()
+  const settings = {
+    ...saved,
+    bloomEnabled: saved.bloomEnabled && caps.bloom,
+    vignetteEnabled: saved.vignetteEnabled && caps.vignette,
+    chromaticEnabled: saved.chromaticEnabled && caps.chromatic,
+  }
   const sprintActiveRef = useRef(false)
   const [sprintActive, setSprintActive] = useState(false)
   const chromaticRef = useRef<any>(null)
@@ -674,7 +691,7 @@ function PostProcessing() {
 
   useFrame(() => {
     const si = Math.max(0, sprintRef.current.intensity)
-    const isActive = !mobileOasis && si > 0.05
+    const isActive = !mobileOasis && si > 0.05 && caps.vignette
     if (isActive !== sprintActiveRef.current) {
       sprintActiveRef.current = isActive
       setSprintActive(isActive)
@@ -683,13 +700,13 @@ function PostProcessing() {
     // Imperatively update effect uniforms — no re-renders needed
     if (chromaticRef.current) {
       const base = settings.chromaticEnabled ? 0.003 : 0
-      const boost = mobileOasis ? 0 : si * 0.012
+      const boost = mobileOasis || !caps.chromatic ? 0 : si * 0.012
       const val = base + boost
       chromaticRef.current.offset = _offsetVec.current.set(val, val)
     }
     if (vignetteRef.current) {
       const baseDarkness = settings.vignetteEnabled ? 0.7 : 0
-      const boost = mobileOasis ? 0 : si * 0.4
+      const boost = mobileOasis || !caps.vignette ? 0 : si * 0.4
       const target = baseDarkness + boost
       const u = vignetteRef.current.uniforms?.get?.('darkness')
       if (u) u.value = target
@@ -2116,6 +2133,8 @@ export default function Scene() {
         <SunShadows />
         {/* Scene-wide three.js cost fixes (see-through flat meshes drawn in one pass) */}
         <RenderHygiene />
+        {/* Flop saver: effects off by tiers while the frame rate stays under 30 (Settings → Graphics) */}
+        <FlopSaverDriver />
         {/* The camera's slow drift behind the main menu (Esc). No frame callback while the menu is closed. */}
         <GameMenuCameraDrift />
         {/* The selected agent's effect and right-click-to-send. Nothing mounted while no agent is selected. */}
@@ -2492,6 +2511,8 @@ export default function Scene() {
       <GameTooltip />
       {/* Every clip we may ship, played on your avatar (Settings > Experiments > Animations). */}
       <AnimationBrowser />
+      {/* kitConfirm(): the Oasis's own yes/no dialog (src/components/ui-kit). */}
+      <KitConfirmHost />
 
       {/* OnboardingModal nuked — profile setup lives in ProfileButton */}
 
