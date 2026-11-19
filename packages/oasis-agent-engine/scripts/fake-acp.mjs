@@ -87,6 +87,8 @@ async function prompt(id, { sessionId, prompt: blocks }) {
     update(sessionId, { sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'mcp_oasis_get_world_info', kind: 'other', rawInput: {} });
     update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'World "Fake"' } }] });
     say('The world is Fake.');
+    // Like Hermes 0.23 with reasoning shown: the reasoning and the whole answer again, as one more chunk.
+    update(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '\n\n💭 **Reasoning:**\n```\n**Looking up the world**\n```\n\nThe world is Fake.' } });
   } else {
     say(`echo: ${first.slice(0, 60)}`);
   }

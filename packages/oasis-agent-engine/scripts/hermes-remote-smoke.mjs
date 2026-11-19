@@ -186,6 +186,14 @@ try {
   const p5 = prompts().slice(beforeP).map((p) => p.text).join(' | ');
   check('the waiting message goes out with the next one', /first, while it is off/.test(p5) && /second, now it is on/.test(p5), p5.slice(0, 160));
 
+  // 5b. an address for a host whose name does not resolve: HostName + the host key under its own name
+  m = c.mark();
+  const addr = await c.cmd('spawnAgent', { name: 'Og by address', runtime: 'hermes', remote: { host: 'og', address: '192.168.1.149' } });
+  await c.until(m, (e) => e.agentId === addr.id && e.kind === 'init', 15000, 'init by address');
+  const byAddr = sshCalls().slice(-1)[0].options.map((o) => o.join(' '));
+  check('an address: HostName and HostKeyAlias (the name from ssh -G)', byAddr.includes('-o HostName=192.168.1.149') && byAddr.includes('-o HostKeyAlias=og.fake.local'), byAddr.filter((o) => /Host/.test(o)).join(', '));
+  await c.cmd('kill', { agentId: addr.id });
+
   // 6. a stop while a retry waits
   m = c.mark();
   await c.cmd('send', { agentId: id, text: 'SLOW stop me' });

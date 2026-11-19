@@ -23,7 +23,7 @@
 // (a raw argv array) for anything else; else OASIS_HERMES_BIN; else the Windows installer's venv; else `hermes`.
 // `hermesHome` sets HERMES_HOME here (a profile folder or a sandbox); `remote.home` does it on the other machine.
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -64,6 +64,8 @@ export function estimateCost(model, usage) {
 /** Plain words only in what becomes a remote shell line: a host alias, paths, no quotes, spaces or operators. */
 const SAFE_HOST = /^[A-Za-z0-9._@-]{1,128}$/;
 const SAFE_PATH = /^[A-Za-z0-9_./~+-]{1,256}$/;
+/** An address to reach the host at when its name does not resolve (an IPv4 or IPv6 address, or a plain host name). */
+const SAFE_ADDRESS = /^[A-Za-z0-9.:-]{1,64}$/;
 /** Reconnect waits after a remote Hermes's line drops with work pending (s); then it waits for the next message. */
 const RECONNECT_S = (process.env.OASIS_RECONNECT_S || '5,15,30,60,120,300').split(',').map(Number).filter((n) => n > 0);
 
@@ -72,6 +74,7 @@ export function normalizeRemote(r, agentId = '') {
   if (!r || typeof r !== 'object') return null;
   if (typeof r.host !== 'string' || !SAFE_HOST.test(r.host)) throw new Error('remote.host must be an ssh host or alias (letters, digits, . _ @ -)');
   for (const k of ['hermes', 'home', 'cwd']) if (r[k] != null && (typeof r[k] !== 'string' || !SAFE_PATH.test(r[k]))) throw new Error(`remote.${k} must be a plain path`);
+  if (r.address != null && r.address !== '' && (typeof r.address !== 'string' || !SAFE_ADDRESS.test(r.address))) throw new Error('remote.address must be an IP address or a host name');
   // The same port on both machines: the engine's gate listens on it here, the Pi reaches it there (ssh -R).
   let worldPort = Number(r.worldPort);
   if (!Number.isInteger(worldPort) || worldPort < 1024 || worldPort > 65535) {
@@ -79,7 +82,7 @@ export function normalizeRemote(r, agentId = '') {
     for (const ch of String(agentId)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     worldPort = 14516 + (h % 1000);
   }
-  return { host: r.host, ...(r.hermes ? { hermes: r.hermes } : {}), ...(r.home ? { home: r.home } : {}), ...(r.cwd ? { cwd: r.cwd } : {}), worldPort };
+  return { host: r.host, ...(r.address ? { address: r.address } : {}), ...(r.hermes ? { hermes: r.hermes } : {}), ...(r.home ? { home: r.home } : {}), ...(r.cwd ? { cwd: r.cwd } : {}), worldPort };
 }
 
 /** ssh on this machine: OASIS_SSH (a path, or a JSON argv for tests), else Git's ssh on Windows (it resolves .local names; Windows OpenSSH often does not), else `ssh`. */
@@ -95,8 +98,26 @@ function sshPrefix() {
  * then become `hermes acp` (the venv's binary when it is there, else `hermes` on PATH).
  */
 export function remoteCommand(remote) {
-  const bin = remote.hermes || '~/.hermes/hermes-agent/venv/bin/hermes';
-  return `cd && H=${bin}; [ -x "$H" ] || H=hermes; ${remote.home ? `export HERMES_HOME=${remote.home}; ` : ''}printf 'OASIS_CWD %s\\n' "$PWD" >&2; exec "$H" acp`;
+  // A non-interactive ssh line has a short PATH (/usr/local/bin:/usr/bin:/bin), so absolute launchers first: Hermes
+  // 0.22+ keeps its own in <checkout>/.hermes/bin (seen on the Pi, 0.23.2), ~/.local/bin/hermes execs that one, and 0.15's
+  // venv launcher runs the old Python.
+  const bins = remote.hermes ? [remote.hermes] : ['~/.hermes/hermes-agent/.hermes/bin/hermes', '~/.local/bin/hermes', '~/.hermes/hermes-agent/venv/bin/hermes'];
+  return `cd && for H in ${bins.join(' ')} hermes; do [ -x "$H" ] && break; done; ${remote.home ? `export HERMES_HOME=${remote.home}; ` : ''}printf 'OASIS_CWD %s\\n' "$PWD" >&2; exec "$H" acp`;
+}
+
+/**
+ * When the host's name does not resolve (og.local from this PC, 2026-11-19), remote.address reaches it at an address;
+ * the host key is still checked under the name ssh knows it by (its HostName, read with `ssh -G`, no connection).
+ */
+function addressOptions(remote, prefix) {
+  if (!remote.address) return [];
+  let alias = remote.host;
+  try {
+    const out = execFileSync(prefix[0], [...prefix.slice(1), '-G', remote.host], { encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    const m = /^hostname\s+(\S+)/m.exec(out);
+    if (m) alias = m[1];
+  } catch { /* keep the alias as given */ }
+  return ['-o', `HostName=${remote.address}`, '-o', `HostKeyAlias=${alias}`];
 }
 
 /**
@@ -105,8 +126,9 @@ export function remoteCommand(remote) {
  * leads back to the engine's world gate (free tools only); a taken port there costs the world tools, not the line.
  */
 export function sshCommand(remote, { worldTools = true } = {}) {
+  const prefix = sshPrefix();
   return [
-    ...sshPrefix(), '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3', '-o', 'ConnectTimeout=20', '-o', 'ExitOnForwardFailure=no',
+    ...prefix, ...addressOptions(remote, prefix), '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3', '-o', 'ConnectTimeout=20', '-o', 'ExitOnForwardFailure=no',
     ...(worldTools ? ['-R', `127.0.0.1:${remote.worldPort}:127.0.0.1:${remote.worldPort}`] : []),
     remote.host, remoteCommand(remote),
   ];
@@ -127,9 +149,10 @@ export function hermesCommand(spec = {}) {
 }
 
 /** Hermes names MCP tools mcp_<server>_<tool>; the Oasis page knows them as mcp__<server>__<tool>. */
+/** Hermes 0.15 names them mcp_oasis_<tool>; 0.23 names a server the app hands over mcp__editor_oasis_<hash>__<tool>. */
 function toolName(title = '') {
   const head = String(title).split(':')[0].trim();
-  const m = /^mcp_oasis_(.+)$/.exec(head);
+  const m = /^mcp_oasis_(.+)$/.exec(head) || /^mcp__editor_oasis_[0-9a-f]+__(.+)$/.exec(head);
   return m ? `mcp__oasis__${m[1]}` : head || 'tool';
 }
 
@@ -500,11 +523,18 @@ export class HermesAgent {
   }
 
   onUpdate(u) {
+    // OASIS_HERMES_TRACE=1: one log line per update (kind, message id, a little text), to see what a Hermes version sends.
+    if (process.env.OASIS_HERMES_TRACE === '1') this.hub.log(`[${this.name}] update ${u.sessionUpdate}${u.messageId ? ` msg=${String(u.messageId).slice(0, 8)}` : ''} ${JSON.stringify(u.content?.text ?? u.title ?? u.status ?? '').slice(0, 80)}`);
     const history = this.replaying ? { history: true } : {};
     switch (u.sessionUpdate) {
       case 'agent_message_chunk': {
         const text = u.content?.type === 'text' ? u.content.text : '';
         if (!text) return;
+        // Hermes 0.23 with reasoning shown (display.show_reasoning) ends a streamed answer with one more chunk: a
+        // "💭 Reasoning" block and the whole answer again (seen with Og, 2026-11-19). A chunk that only repeats what
+        // was already streamed is dropped; the reasoning itself came as agent_thought_chunk, which the thread skips.
+        const sofar = this.msg?.text.trim();
+        if (sofar && sofar.length >= 12 && text.length > sofar.length && text.trimEnd().endsWith(sofar)) return;
         if (!this.msg) this.msg = { id: `hermes-${randomUUID().slice(0, 8)}`, text: '' };
         this.msg.text += text;
         if (!this.replaying) this.emit('text.delta', { messageId: this.msg.id, index: 0, text, parentToolUseId: null });

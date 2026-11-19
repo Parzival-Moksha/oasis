@@ -95,6 +95,12 @@ export function cardStamp(card) {
   return [f.name, f.role, card.who, f.look, f.world].map((x) => x || '').join('\u0001');
 }
 
+/**
+ * A card is named after its session: a Claude Code session uuid, or a Hermes 0.23 session id (`local-` and hex, seen
+ * with Og 2026-11-19; Hermes 0.15 uses uuids). Nothing else, so a name can never leave the folder.
+ */
+const CARD_ID = /^(?:[0-9a-f-]{36}|local-[0-9a-f]{16,128})$/i;
+
 export class Characters {
   /** @param {string} dir the folder of card files */
   constructor(dir) {
@@ -102,7 +108,7 @@ export class Characters {
   }
 
   fileFor(sessionId) {
-    if (typeof sessionId !== 'string' || !/^[0-9a-f-]{36}$/i.test(sessionId)) return null;
+    if (typeof sessionId !== 'string' || !CARD_ID.test(sessionId)) return null;
     return path.join(this.dir, `${sessionId.toLowerCase()}.md`);
   }
 
@@ -158,7 +164,7 @@ export class Characters {
   /** Cards in the folder: [{ sessionId, name }]. */
   list() {
     try {
-      return fs.readdirSync(this.dir).filter((f) => /^[0-9a-f-]{36}\.md$/i.test(f)).map((f) => {
+      return fs.readdirSync(this.dir).filter((f) => f.endsWith('.md') && CARD_ID.test(f.slice(0, -3))).map((f) => {
         const sessionId = f.slice(0, -3);
         return { sessionId, name: this.read(sessionId).fields.name || null };
       });

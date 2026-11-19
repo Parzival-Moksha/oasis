@@ -134,7 +134,17 @@ export function createWorldGate(url, { headers: extraHeaders = tokenHeaders } = 
     const isRequest = msg.id != null;
     if (!msg.method.startsWith('notifications/') && !METHODS.has(msg.method)) return isRequest ? [fail(msg.id, `${msg.method} is not offered here`, -32601)] : [];
     if (msg.method === 'tools/call' && !FREE_WORLD_TOOLS.has(msg.params?.name)) return isRequest ? [refusedTool(msg.id, msg.params?.name)] : [];
-    if (msg.method === 'initialize') initMsg = { jsonrpc: '2.0', method: 'initialize', params: msg.params };
+    if (msg.method === 'initialize') {
+      initMsg = { jsonrpc: '2.0', method: 'initialize', params: msg.params };
+      // A client that connects again (Hermes 0.23 does at every turn start) begins a new Oasis session: sent on the
+      // old one, the Oasis refuses it ("Server already initialized", HTTP 400). The old one is closed.
+      if (session) {
+        const old = session;
+        session = null;
+        protocol = null;
+        fetch(url, { method: 'DELETE', headers: { 'mcp-session-id': old, ...extraHeaders() } }).then((r) => r.body?.cancel().catch(() => {}), () => {});
+      }
+    }
     try {
       return await forward(msg);
     } catch (err) {

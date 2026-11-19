@@ -24,6 +24,8 @@ for (; i < args.length; i++) {
 }
 const host = args[i];
 const remote = args.slice(i + 1).join(' ');
+// `ssh -G <host>` prints the resolved config without connecting (hermes.js reads the HostName for HostKeyAlias).
+if (options.some(([o]) => o === '-G')) { process.stdout.write(`hostname ${host}.fake.local\nuser fake\n`); process.exit(0); }
 fs.appendFileSync(path.join(dir, 'ssh-calls.jsonl'), JSON.stringify({ host, remote, options, at: Date.now() }) + '\n');
 
 if (fs.existsSync(path.join(dir, 'down'))) {

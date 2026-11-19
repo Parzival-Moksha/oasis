@@ -7,7 +7,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { FREE_WORLD_TOOLS } from '../src/worldproxy.js';
+import { FREE_WORLD_TOOLS, startWorldGateServer } from '../src/worldproxy.js';
 
 const PROXY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'worldproxy.js');
 const run = (url, lines, wait = 3000) => new Promise((resolve) => {
@@ -46,7 +46,29 @@ const fake = await run(`http://127.0.0.1:${srv.address().port}/mcp`, [init, 500,
 const f = (id) => fake.find((m) => m.id === id);
 check('fake: SSE list filtered', f(2)?.result?.tools?.length === 1 && f(2).result.tools[0].name === 'get_world_info');
 check('fake: forgotten session reopened, call answered', f(3)?.result?.content?.[0]?.text === 'ok get_world_info', `inits ${inits}`);
-check('fake: the reopen answer is not passed to the client', !fake.some((m) => String(m.id).startsWith('oasis-proxy')));
+check('fake: the reopen answer is not passed to the client', !fake.some((m) => String(m.id).startsWith('oasis-gate')));
 srv.close();
+
+// 3. the HTTP gate (remote agents) against the real route: a client that connects twice (Hermes 0.23 connects again at
+// every turn start) gets its tools both times. Seen 2026-11-19: the second initialize went out on the old Oasis session
+// and the Oasis refused it ("Server already initialized"), so Og's turns failed.
+if (oasisUp) {
+  const gate = await startWorldGateServer('http://127.0.0.1:4516/api/mcp/oasis');
+  const connect = async () => {
+    const post = async (body, sid) => {
+      const r = await fetch(`http://127.0.0.1:${gate.port}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(sid ? { 'mcp-session-id': sid } : {}) }, body: JSON.stringify(body) });
+      return { sid: r.headers.get('mcp-session-id'), body: r.status === 202 ? null : await r.json() };
+    };
+    const a = await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 't', version: '0' } } });
+    await post({ jsonrpc: '2.0', method: 'notifications/initialized' }, a.sid);
+    const list = await post({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, a.sid);
+    return { init: a.body, tools: list.body?.result?.tools?.length };
+  };
+  const first = await connect();
+  const second = await connect();
+  check('gate: a second connection initializes too', !!second.init?.result?.protocolVersion, JSON.stringify(second.init?.error || ''));
+  check('gate: both connections list the free tools', first.tools === FREE_WORLD_TOOLS.size && second.tools === FREE_WORLD_TOOLS.size, `${first.tools}, ${second.tools}`);
+  await gate.close();
+}
 console.log(ok ? 'ALL PASSED' : 'FAILED');
 process.exit(ok ? 0 : 1);

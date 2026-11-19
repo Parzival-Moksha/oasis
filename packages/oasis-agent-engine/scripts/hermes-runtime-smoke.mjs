@@ -93,6 +93,8 @@ try {
   await c.until(m, mine(m, 'turn.end'), 15000, 'tool turn');
   const t = c.events.slice(m).filter((e) => e.agentId === id);
   check('tool.start and tool.end, named like the Oasis tools', t.some((e) => e.kind === 'tool.start' && e.name === 'mcp__oasis__get_world_info') && t.some((e) => e.kind === 'tool.end' && /Fake/.test(e.output)));
+  const toolText = t.filter((e) => e.kind === 'text').map((e) => e.text).join('');
+  check('a replayed answer with reasoning (Hermes 0.23) is dropped', toolText.trim() === 'The world is Fake.', JSON.stringify(toolText.slice(0, 80)));
   check('context meter', t.some((e) => e.kind === 'context' && e.maxTokens === 65536));
 
   // 2. messages during a turn: together next; a slash command alone

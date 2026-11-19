@@ -215,6 +215,8 @@ interface HermesForm {
   name: string
   where: 'here' | 'ssh'
   host: string
+  /** An address for the host when its name does not resolve from here (og.local, 2026-11-19). */
+  address?: string
   profile: string
   cwd: string
 }
@@ -241,7 +243,7 @@ function HermesAgentForm({ defaults, onDone, onError, recentFolders = [] }: { de
     if (!ready) return
     const profile = form.profile.trim()
     const args: SpawnAgentArgs = form.where === 'ssh'
-      ? { runtime: 'hermes', name: form.name.trim() || host, cwd, remote: { host } }
+      ? { runtime: 'hermes', name: form.name.trim() || host, cwd, remote: { host, ...(form.address?.trim() ? { address: form.address.trim() } : {}) } }
       : { runtime: 'hermes', name: form.name.trim() || cwdLabel(cwd), cwd, ...(profile ? { hermesHome: profile } : {}) }
     if (createCwd) args.createCwd = true
     if (defaults.permissionMode) args.permissionMode = defaults.permissionMode
@@ -271,7 +273,10 @@ function HermesAgentForm({ defaults, onDone, onError, recentFolders = [] }: { de
           <option value="ssh">on another machine (ssh)</option>
         </select>
         {form.where === 'ssh' ? (
-          <input value={form.host} onChange={event => set({ host: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder="ssh host, e.g. og" className={`w-40 ${input}`} />
+          <>
+            <input value={form.host} onChange={event => set({ host: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder="ssh host, e.g. og" className={`w-40 ${input}`} />
+            <input value={form.address || ''} onChange={event => set({ address: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder="address, if its name does not resolve" title="An IP address for the host, e.g. 192.168.1.149. Its host key is still checked under its own name." className={`w-52 ${input}`} />
+          </>
         ) : (
           <>
             <input value={form.profile} onChange={event => set({ profile: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder="profile folder (empty: Hermes's default)" title="A Hermes profile folder (HERMES_HOME): its model, its SOUL.md, its memory" className={`min-w-[180px] flex-1 ${input}`} />

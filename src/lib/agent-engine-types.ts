@@ -502,7 +502,7 @@ export interface SpawnAgentArgs {
   /** Hermes here: its home folder (a profile), HERMES_HOME. Without it, Hermes's own default profile. */
   hermesHome?: string
   /** Hermes on another machine over ssh: host (an ssh alias like `og`), and optionally its hermes binary, HERMES_HOME and folder there. */
-  remote?: { host: string; hermes?: string; home?: string; cwd?: string; worldPort?: number }
+  remote?: { host: string; address?: string; hermes?: string; home?: string; cwd?: string; worldPort?: number }
 }
 
 export type RespondBehavior = 'allow' | 'deny'
