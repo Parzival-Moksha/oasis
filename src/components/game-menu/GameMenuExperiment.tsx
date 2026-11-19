@@ -1,10 +1,12 @@
 'use client'
 
-// Settings > Experiments > Main menu: how the tiles answer the mouse, which sounds they make, and
-// the camera and Escape options. Every pick is saved at once and is live the next time the menu opens.
+// The main menu's settled options, where they belong (the owner, 2026-11-19):
+//   MenuFeelSettings: Settings > Misc > Main menu: how a tile answers a hover and a click, and how much the tiles
+//     follow the mouse. (The camera drift and Esc-from-mouse-look are always on now, no switch.)
+//   MenuSoundSettings: Settings > Sound > Menu and button sounds: the one sound set of every button in the Oasis.
 
 import { FEEL_STYLES } from '@/lib/game-menu/menu-feel'
-import { MENU_SOUNDS, useGameMenu, type MenuPrefs } from '@/lib/game-menu/menu-store'
+import { MENU_SOUNDS, useGameMenu } from '@/lib/game-menu/menu-store'
 import { playMenuSound } from '@/lib/game-menu/menu-sounds'
 
 function Choice({ active, label, blurb, onClick, tag }: { active: boolean; label: string; blurb: string; onClick: () => void; tag: string }) {
@@ -24,40 +26,57 @@ function Choice({ active, label, blurb, onClick, tag }: { active: boolean; label
   )
 }
 
-function Toggle({ on, label, blurb, onChange, tag }: { on: boolean; label: string; blurb: string; onChange: (next: boolean) => void; tag: string }) {
+const HEADING = 'text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono'
+
+export function MenuFeelSettings() {
+  const prefs = useGameMenu(s => s.prefs)
+  const setPrefs = useGameMenu(s => s.setPrefs)
   return (
-    <label className="flex cursor-pointer items-start gap-2 rounded-md border border-white/10 bg-black/30 px-2.5 py-2" data-menu-toggle={tag}>
-      <input type="checkbox" checked={on} onChange={e => onChange(e.target.checked)} className="mt-0.5 accent-fuchsia-400" />
-      <span>
-        <span className="block text-[11px] font-bold text-white">{label}</span>
-        <span className="block text-[10px] leading-snug text-white/55">{blurb}</span>
-      </span>
-    </label>
+    <section data-settings-section="main-menu">
+      <div className={HEADING}>Main menu (M or Esc)</div>
+      <div className="mb-1 text-[10px] text-white/50">How a tile answers a hover and a click</div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
+        {FEEL_STYLES.map(style => (
+          <Choice key={style.id} tag={`feel-${style.id}`} active={prefs.feel === style.id} label={style.label} blurb={style.blurb} onClick={() => setPrefs({ feel: style.id })} />
+        ))}
+      </div>
+      <label className="mt-3 block" data-menu-follow>
+        <span className="flex justify-between text-[11px] text-gray-300">
+          <span>Tiles follow the mouse</span>
+          <span className="tabular-nums text-fuchsia-200">{prefs.tiltAmount === 0 ? 'off' : `${prefs.tiltAmount.toFixed(1)}×`}</span>
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={8}
+          step={0.1}
+          value={prefs.tiltAmount}
+          onChange={event => { const tiltAmount = Number(event.target.value); setPrefs({ tiltAmount, tilt: tiltAmount > 0 }) }}
+          className="w-full accent-fuchsia-400"
+          aria-label="Tiles follow the mouse"
+        />
+        <span className="block text-[10px] text-gray-500">The tiles lean and the title turns towards the pointer. 1× was the first version; 0 is still.</span>
+      </label>
+      <button
+        type="button"
+        data-menu-action="open-menu"
+        onClick={() => useGameMenu.getState().openMenu({ fromMouseLook: false })}
+        className="mt-2 w-full rounded border border-fuchsia-300/40 bg-fuchsia-300/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-100 transition hover:bg-fuchsia-300/20"
+      >
+        Open the menu to feel it
+      </button>
+    </section>
   )
 }
 
-export function GameMenuExperiment() {
+export function MenuSoundSettings() {
   const prefs = useGameMenu(s => s.prefs)
   const setPrefs = useGameMenu(s => s.setPrefs)
-  const set = (patch: Partial<MenuPrefs>) => setPrefs(patch)
-
   return (
-    <section data-experiment="game-menu">
-      <h3 className="text-[11px] font-black uppercase tracking-[0.16em] text-fuchsia-200">Main menu</h3>
-      <p className="mt-1 text-[11px] leading-relaxed text-white/60">
-        Escape, when nothing else is open, lays the menu over the world. Pick how a tile answers a
-        hover and a click, then open the menu to feel it.
-      </p>
-
-      <div className="mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">Hover and click</div>
-      <div className="mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2">
-        {FEEL_STYLES.map(style => (
-          <Choice key={style.id} tag={`feel-${style.id}`} active={prefs.feel === style.id} label={style.label} blurb={style.blurb} onClick={() => set({ feel: style.id })} />
-        ))}
-      </div>
-
-      <div className="mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">Sound · every menu, panel and button in the Oasis</div>
-      <div className="mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2">
+    <section data-settings-section="menu-sounds">
+      <div className={HEADING}>Menu and button sounds</div>
+      <div className="mb-1 text-[10px] text-white/50">One set for every menu, panel and button: a sound on hover, a softer one when you leave, one on click.</div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
         {MENU_SOUNDS.map(sound => (
           <Choice
             key={sound.id}
@@ -66,28 +85,14 @@ export function GameMenuExperiment() {
             label={sound.label}
             blurb={sound.blurb}
             onClick={() => {
-              set({ sound: sound.id })
+              setPrefs({ sound: sound.id })
               playMenuSound(sound.id, 'hover')
-              window.setTimeout(() => playMenuSound(sound.id, 'click'), 260)
+              window.setTimeout(() => playMenuSound(sound.id, 'leave'), 220)
+              window.setTimeout(() => playMenuSound(sound.id, 'click'), 480)
             }}
           />
         ))}
       </div>
-
-      <div className="mt-3 grid gap-2">
-        <Toggle tag="tilt" on={prefs.tilt} onChange={tilt => set({ tilt })} label="Follow the mouse" blurb="Tiles lean towards the pointer; the title turns and the grid shifts a little against it." />
-        <Toggle tag="drift" on={prefs.drift} onChange={drift => set({ drift })} label="Camera drifts behind the menu" blurb="About 1 m/s along an arc around a point 10 m ahead, back in 0.9 s when the menu closes. Off: the camera stays put." />
-        <Toggle tag="mouselook" on={prefs.openFromMouseLook} onChange={openFromMouseLook => set({ openFromMouseLook })} label="Escape out of mouse-look opens the menu" blurb="One press frees the mouse and opens the menu. Off: the first press only frees the mouse, the second opens the menu." />
-      </div>
-
-      <button
-        type="button"
-        data-menu-action="open-menu"
-        onClick={() => useGameMenu.getState().openMenu({ fromMouseLook: false })}
-        className="mt-3 w-full rounded border border-fuchsia-300/40 bg-fuchsia-300/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-100 transition hover:bg-fuchsia-300/20"
-      >
-        Open the menu
-      </button>
     </section>
   )
 }

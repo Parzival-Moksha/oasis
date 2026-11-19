@@ -9,6 +9,7 @@ import { useContext, useState, useSyncExternalStore } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent, getFootstepVolume, setFootstepVolume, subscribeFootstepVolume } from '@/lib/audio-manager'
 import { SpellSoundsSelector } from './SpellSoundsSelector'
+import { MenuSoundSettings } from '@/components/game-menu/GameMenuExperiment'
 import {
   DEFAULT_VOICE_TYPING_ENGINE,
   getVoiceTypingEngine,
@@ -168,6 +169,7 @@ export function SoundTab() {
   return (
     <div className="space-y-3">
       <VoiceTypingSection />
+      <MenuSoundSettings />
       <section>
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Volume Mixers</div>
         <div className="space-y-2">

@@ -22,6 +22,8 @@ export interface MenuPrefs {
   sound: MenuSoundId
   /** Tiles lean towards the mouse and the title and grid shift a little against it. */
   tilt: boolean
+  /** How much they follow the mouse: 1 was the first version; default 1.7, at most 8 (the owner, 2026-11-19). */
+  tiltAmount: number
   /** The camera drifts behind the menu. Off: it stays where it was. */
   drift: boolean
   /** Escape out of mouse-look opens the menu at once (one press instead of two). */
@@ -32,6 +34,7 @@ export const DEFAULT_MENU_PREFS: MenuPrefs = {
   feel: DEFAULT_FEEL,
   sound: 'glass',
   tilt: true,
+  tiltAmount: 1.7,
   drift: true,
   openFromMouseLook: true,
 }
@@ -46,8 +49,10 @@ export function sanitizeMenuPrefs(raw: unknown): MenuPrefs {
     feel: FEEL_STYLES.some(s => s.id === r.feel) ? (r.feel as FeelId) : DEFAULT_MENU_PREFS.feel,
     sound: MENU_SOUNDS.some(s => s.id === r.sound) ? (r.sound as MenuSoundId) : DEFAULT_MENU_PREFS.sound,
     tilt: bool(r.tilt, DEFAULT_MENU_PREFS.tilt),
-    drift: bool(r.drift, DEFAULT_MENU_PREFS.drift),
-    openFromMouseLook: bool(r.openFromMouseLook, DEFAULT_MENU_PREFS.openFromMouseLook),
+    tiltAmount: typeof r.tiltAmount === 'number' && Number.isFinite(r.tiltAmount) ? Math.min(8, Math.max(0, r.tiltAmount)) : DEFAULT_MENU_PREFS.tiltAmount,
+    // Always on now (the owner: "that doesn't even need to be in the settings").
+    drift: true,
+    openFromMouseLook: true,
   }
 }
 

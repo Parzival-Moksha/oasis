@@ -4,15 +4,13 @@
 
 import { useSyncExternalStore } from 'react'
 
-export type RailLookId = 'forged' | 'parchment' | 'obsidian' | 'rune' | 'arcade' | 'neon' | 'classic'
+export type RailLookId = 'forged' | 'parchment' | 'rune' | 'arcade' | 'classic'
 
 export const RAIL_LOOKS: Array<{ id: RailLookId; label: string; blurb: string }> = [
   { id: 'forged', label: 'Forged', blurb: 'Painted stone plates in gem-set iron, one gem colour each. The spell book\'s own material.' },
   { id: 'parchment', label: 'Parchment', blurb: 'Painted parchment plaques in carved frames, ink lettering.' },
-  { id: 'obsidian', label: 'Obsidian', blurb: 'Dark glass plaques, an icon each, condensed capitals.' },
   { id: 'rune', label: 'Rune', blurb: 'Bronze-edged tablets with a serif face. Fantasy RPG.' },
   { id: 'arcade', label: 'Arcade', blurb: 'Pixel letters, hard edges, a block shadow.' },
-  { id: 'neon', label: 'Neon', blurb: 'Glowing outlines, nothing filled in.' },
   { id: 'classic', label: 'Classic', blurb: 'The cut-corner buttons the Oasis had until now.' },
 ]
 

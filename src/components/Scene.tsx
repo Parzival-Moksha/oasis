@@ -2195,8 +2195,9 @@ export default function Scene() {
         />
       )}
 
-      {/* Main game rail */}
-      <div className="fixed left-4 top-4 z-[190] flex flex-col gap-2 select-none max-[700px]:left-2 max-[700px]:top-2 max-[700px]:gap-1.5">
+      {/* Main game rail. Above the agent panels (9400 and up), so Settings, World and Profile open over them;
+          below the main menu (20000). */}
+      <div className="fixed left-4 top-4 z-[10400] flex flex-col gap-2 select-none max-[700px]:left-2 max-[700px]:top-2 max-[700px]:gap-1.5">
         {/* Always on screen: Menu, World, Spells, Agents. Profile, Settings and Help open from the main menu. */}
         <GameMenuRailButton />
         <ProfileButton hideRailButton />
@@ -2652,7 +2653,7 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
           data-rail-menu="settings"
           className="fixed bottom-4 left-[10.25rem] top-4 z-[260] flex w-[min(960px,calc(100vw-11.5rem))] overflow-hidden rounded-lg border border-white/10 font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(167,139,250,0.18)] max-[700px]:bottom-2 max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto"
           // Blur, see-through and colour from the controls in its top right (settings-look.ts).
-          style={{ opacity, ...settingsLookStyle(settingsLook) }}
+          style={settingsLookStyle(settingsLook)}
           onMouseDown={event => event.stopPropagation()}
         >
           {children}

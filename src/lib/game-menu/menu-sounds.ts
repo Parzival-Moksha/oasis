@@ -4,7 +4,7 @@
 import { useAudioManager } from '@/lib/audio-manager'
 import type { MenuSoundId } from './menu-store'
 
-export type MenuSoundEvent = 'hover' | 'click' | 'open' | 'close'
+export type MenuSoundEvent = 'hover' | 'leave' | 'click' | 'open' | 'close'
 
 let context: AudioContext | null = null
 
@@ -70,6 +70,7 @@ type Recipe = (ctx: AudioContext, out: AudioNode, t: number) => void
 const RECIPES: Record<Exclude<MenuSoundId, 'classic' | 'off'>, Record<MenuSoundEvent, Recipe>> = {
   glass: {
     hover: (c, o, t) => { tone(c, o, t, { type: 'sine', from: 1320, to: 1480, length: 0.09, gain: 0.16 }); tone(c, o, t, { type: 'sine', from: 2640, length: 0.05, gain: 0.04 }) },
+    leave: (c, o, t) => tone(c, o, t, { type: 'sine', from: 1980, to: 2100, length: 0.05, gain: 0.045 }),
     click: (c, o, t) => {
       tone(c, o, t, { type: 'sine', from: 150, to: 70, length: 0.12, gain: 0.5 })
       tone(c, o, t, { type: 'sine', from: 880, length: 0.22, gain: 0.22, at: 0.02 })
@@ -80,6 +81,7 @@ const RECIPES: Record<Exclude<MenuSoundId, 'classic' | 'off'>, Record<MenuSoundE
   },
   arcade: {
     hover: (c, o, t) => tone(c, o, t, { type: 'square', from: 660, length: 0.045, gain: 0.07 }),
+    leave: (c, o, t) => tone(c, o, t, { type: 'square', from: 990, length: 0.03, gain: 0.025 }),
     click: (c, o, t) => {
       tone(c, o, t, { type: 'square', from: 523, length: 0.06, gain: 0.1 })
       tone(c, o, t, { type: 'square', from: 784, length: 0.07, gain: 0.1, at: 0.06 })
@@ -89,7 +91,9 @@ const RECIPES: Record<Exclude<MenuSoundId, 'classic' | 'off'>, Record<MenuSoundE
     close: (c, o, t) => { [659, 523, 392].forEach((f, i) => tone(c, o, t, { type: 'square', from: f, length: 0.05, gain: 0.07, at: i * 0.045 })) },
   },
   thud: {
-    hover: (c, o, t) => noise(c, o, t, 0.03, 0.22, 2400),
+    // An octave deeper than the first version (the owner, 2026-11-19): twice as long, half the brightness.
+    hover: (c, o, t) => { noise(c, o, t, 0.06, 0.26, 1200); tone(c, o, t, { type: 'sine', from: 140, to: 95, length: 0.07, gain: 0.18 }) },
+    leave: (c, o, t) => noise(c, o, t, 0.025, 0.07, 3600),
     click: (c, o, t) => {
       noise(c, o, t, 0.035, 0.5, 1800)
       tone(c, o, t, { type: 'sine', from: 190, to: 62, length: 0.16, gain: 0.7 })
@@ -127,7 +131,8 @@ export function playMenuSound(style: MenuSoundId, event: MenuSoundEvent): void {
   if (style === 'classic') {
     playingClassic = true
     try {
-      manager.play(event === 'hover' ? 'buttonHover' : event === 'click' ? 'buttonClick' : event === 'open' ? 'panelOpen' : 'panelClose')
+      if (event === 'leave') { manager.playUrl('/audio/kenney_interface-sounds/Audio/tick_002.ogg', 0.05); return }
+    manager.play(event === 'hover' ? 'buttonHover' : event === 'click' ? 'buttonClick' : event === 'open' ? 'panelOpen' : 'panelClose')
     } finally {
       playingClassic = false
     }

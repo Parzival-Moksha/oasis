@@ -314,8 +314,9 @@ function GameMenuScreen({ closing }: { closing: boolean }) {
       sway.current.y = stepSpring(sway.current.y, ty, 60, 14, dt)
       const sx = sway.current.x.x
       const sy = sway.current.y.x
-      if (stageRef.current) stageRef.current.style.transform = `translate3d(${(-sx * 10).toFixed(2)}px, ${(-sy * 7).toFixed(2)}px, 0)`
-      if (titleTiltRef.current) titleTiltRef.current.style.transform = `rotateX(${(-sy * 9 + 6).toFixed(2)}deg) rotateY(${(sx * 16).toFixed(2)}deg)`
+      const k = prefsRef.current.tiltAmount
+      if (stageRef.current) stageRef.current.style.transform = `translate3d(${(-sx * 10 * k).toFixed(2)}px, ${(-sy * 7 * k).toFixed(2)}px, 0)`
+      if (titleTiltRef.current) titleTiltRef.current.style.transform = `rotateX(${(-sy * 9 * Math.min(k, 3) + 6).toFixed(2)}deg) rotateY(${(sx * 16 * Math.min(k, 3)).toFixed(2)}deg)`
       if (Math.abs(sx - tx) > 0.002 || Math.abs(sy - ty) > 0.002 || Math.abs(sway.current.x.v) + Math.abs(sway.current.y.v) > 0.01) moving = true
       loop.current.raf = moving && !closingRef.current ? requestAnimationFrame(frame) : 0
     }
@@ -397,7 +398,7 @@ function GameMenuScreen({ closing }: { closing: boolean }) {
     onPointerMove: (event: React.PointerEvent<HTMLButtonElement>) => {
       if (!prefsRef.current.tilt) return
       const { px, py } = localPoint(event, event.currentTarget.parentElement ?? event.currentTarget)
-      Object.assign(inputs.current[index], followTilt(px, py))
+      Object.assign(inputs.current[index], followTilt(px, py, 9 * prefsRef.current.tiltAmount))
       kick()
     },
     onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {

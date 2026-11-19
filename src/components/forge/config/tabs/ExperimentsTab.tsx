@@ -7,7 +7,6 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { IntroOverlayExperiment } from '@/components/forge/splash/IntroOverlayExperiment'
-import { GameMenuExperiment } from '@/components/game-menu/GameMenuExperiment'
 import { AnimationsExperiment } from '../AnimationsExperiment'
 import { RailLookExperiment } from '@/components/game-menu/RailLookExperiment'
 
@@ -16,7 +15,6 @@ export function ExperimentsTab() {
     <div className="space-y-6 text-white">
       <AnimationsExperiment />
       <RailLookExperiment />
-      <GameMenuExperiment />
       <IntroOverlayExperiment />
     </div>
   )

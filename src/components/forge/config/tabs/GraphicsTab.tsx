@@ -302,14 +302,7 @@ export function GraphicsTab({ menuOpacity, onMenuOpacityChange }: SharedTabProps
           accent="accent-orange-500"
           onChange={v => updateSetting('uiOpacity', Math.round(v * 20) / 20)}
         />
-        <Slider
-          label="Settings Menu Opacity"
-          value={menuOpacity}
-          min={0.5} max={1.0} step={0.05}
-          display={`${Math.round(menuOpacity * 100)}%`}
-          accent="accent-purple-500"
-          onChange={v => onMenuOpacityChange(Math.round(v * 20) / 20)}
-        />
+        {/* Settings' own see-through, blur and colour sit in its top right (SettingsLookControls). */}
       </section>
     </div>
   )

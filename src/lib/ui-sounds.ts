@@ -39,7 +39,11 @@ export function startUiSounds(): () => void {
   const onOut = (event: MouseEvent) => {
     if (!hovered) return
     const to = event.relatedTarget as Node | null
-    if (!to || !hovered.contains(to)) hovered = null
+    if (!to || !hovered.contains(to)) {
+      hovered = null
+      // Hover off: a softer, higher note (real games have both).
+      if (!soundingElement(to)) playMenuSound(style(), 'leave')
+    }
   }
   const onClick = (event: Event) => {
     if (soundingElement(event.target)) playMenuSound(style(), 'click')
