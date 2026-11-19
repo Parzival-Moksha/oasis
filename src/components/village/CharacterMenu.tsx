@@ -46,6 +46,7 @@ import { isTypingTarget } from './village-actions'
 import { AvatarGallery } from '../forge/AvatarGallery'
 import { ClaudeTokenScore } from '../forge/ClaudeTokenScore'
 import { DEFAULT_PROFILE_AVATAR_3D_URL } from '../../lib/profile-defaults'
+import { getWorkVowState, subscribeWorkVow } from './work-vow-client'
 
 interface Profile {
   xp: number
@@ -74,6 +75,39 @@ const TEXT = {
   strong: 'font-bold',
   note: 'text-[13px] opacity-70',
   link: 'kit-label cursor-pointer underline-offset-2 hover:underline',
+}
+
+/** h:mm, the way the work counter shows time. */
+function clock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds / 60))
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+/**
+ * Today's counted work, live: his main number (Mission Wall's work counter). Read only: the HUD runs the
+ * counter (startWorkVow), this listens to it.
+ */
+function HoursToday() {
+  const work = useSyncExternalStore(subscribeWorkVow, getWorkVowState, getWorkVowState)
+  const today = work.snapshot?.today
+  if (!today) return null
+  const seconds = today.seconds + (work.pendingSeconds || 0)
+  const target = work.snapshot?.targetSeconds || 0
+  return (
+    <KitCard data-character-hours>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className={TEXT.label}>Worked today</div>
+          <div className={`${TEXT.title} text-[56px] leading-none tabular-nums`}>{clock(seconds)}</div>
+        </div>
+        <div className={`${TEXT.note} text-right`}>
+          {target ? (seconds >= target ? 'goal reached' : `${clock(target - seconds)} to the goal`) : ''}
+          {work.running ? <div>counting now</div> : null}
+        </div>
+      </div>
+      {target > 0 && <div className="mt-3"><KitProgress label={`Goal ${clock(target)}`} value={Math.min(seconds, target)} max={target} format={() => `${Math.min(100, Math.round((seconds / target) * 100))}%`} accent="#5ef0a8" /></div>}
+    </KitCard>
+  )
 }
 
 // ─── the Character tab ──────────────────────────────────────────────────────
@@ -127,6 +161,7 @@ function CharacterTabView({ profile, onPickAvatar }: { profile: Profile | null; 
 
       {/* Level, accounts, agents */}
       <div className="flex min-w-0 flex-col gap-3">
+        <HoursToday />
         <KitCard data-character-xp>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
