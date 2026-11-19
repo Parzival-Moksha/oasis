@@ -16,6 +16,7 @@ import { WorldVfxTab } from './tabs/WorldVfxTab'
 import { AgentsTab } from './tabs/AgentsTab'
 import { ExperimentsTab } from './tabs/ExperimentsTab'
 import { MiscTab } from './tabs/MiscTab'
+import { SettingsLookControls } from './SettingsLookControls'
 
 export interface ConfigMenuProps {
   /** Settings menu opacity slider (lives in Scene.tsx state). */
@@ -55,7 +56,7 @@ export function ConfigMenu({ menuOpacity, onMenuOpacityChange, consoleControl, i
     <div className="oasis-settings flex min-h-0 w-full max-h-[inherit] flex-col max-[700px]:w-full">
       <style>{WIDE_CSS}</style>
       {/* ─═̷─═̷─ HEADER ─═̷─═̷─ */}
-      <div className="shrink-0 bg-black/[0.92] backdrop-blur-md border-b border-white/10 px-3 pt-3 pb-2 max-[700px]:px-2 max-[700px]:pt-2">
+      <div className="shrink-0 bg-black/20 border-b border-white/10 px-3 pt-3 pb-2 max-[700px]:px-2 max-[700px]:pt-2">
         <div className="flex items-center gap-3 mb-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md border border-violet-300/35 bg-violet-300/10 text-[11px] font-black text-violet-100">
             SYS
@@ -66,6 +67,7 @@ export function ConfigMenu({ menuOpacity, onMenuOpacityChange, consoleControl, i
               {CONFIG_TABS.find(t => t.id === activeTab)?.tooltip}
             </div>
           </div>
+          <SettingsLookControls />
         </div>
 
         {/* ─═̷─═̷─ TAB ROW ─═̷─═̷─ */}

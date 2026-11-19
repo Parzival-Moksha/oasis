@@ -116,6 +116,7 @@ import { GameMenuRailButton } from './game-menu/GameMenuRailButton'
 import { GameMenuCameraDrift } from './game-menu/GameMenuCameraDrift'
 import { AgentSelectionLayer } from './village/AgentSelectionLayer'
 import { GameTooltip } from './forge/GameTooltip'
+import { settingsLookStyle, useSettingsLook } from '@/lib/settings-look'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
 import { CombatBoltLayer } from './forge/CombatBoltLayer'
@@ -2605,6 +2606,7 @@ function ImageDropZone() {
 
 function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacity: number }) {
   const [isOpen, setIsOpen] = useState(false)
+  const settingsLook = useSettingsLook()
   const menuRef = useRef<HTMLDivElement>(null)
   useUILayer('settings-menu', isOpen)
   const close = useCallback(() => setIsOpen(false), [])
@@ -2637,8 +2639,9 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
         <div
           data-ui-panel
           data-rail-menu="settings"
-          className="fixed bottom-4 left-[10.25rem] top-4 z-[260] flex w-[min(960px,calc(100vw-11.5rem))] overflow-hidden rounded-lg border border-white/10 bg-black/[0.92] font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(167,139,250,0.18)] backdrop-blur-md max-[700px]:bottom-2 max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto"
-          style={{ opacity }}
+          className="fixed bottom-4 left-[10.25rem] top-4 z-[260] flex w-[min(960px,calc(100vw-11.5rem))] overflow-hidden rounded-lg border border-white/10 font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(167,139,250,0.18)] max-[700px]:bottom-2 max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto"
+          // Blur, see-through and colour from the controls in its top right (settings-look.ts).
+          style={{ opacity, ...settingsLookStyle(settingsLook) }}
           onMouseDown={event => event.stopPropagation()}
         >
           {children}
