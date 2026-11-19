@@ -220,7 +220,7 @@ function printTable(rows, archiveBytes) {
 function emptyExceptGit(dir) {
   fs.mkdirSync(dir, { recursive: true })
   for (const entry of fs.readdirSync(dir)) {
-    if (entry === '.git' || entry === 'node_modules') continue // a checkout of the slim repository; installed packages
+    if (entry === '.git' || entry === 'node_modules' || entry === '.release') continue // a checkout of the packaged repository; installed packages; release archives
     fs.rmSync(path.join(dir, entry), { recursive: true, force: true })
   }
 }
@@ -353,10 +353,27 @@ function archiveSize(dir, files) {
  * The archive the plugin's launcher downloads on a first run: the cut itself, as one .tar.gz, with its
  * checksum written into the cut's plugins/oasis/scripts/release.json (the plugin refuses any other file).
  */
+function sha256File(file) {
+  const hash = createHash('sha256')
+  const fd = fs.openSync(file, 'r')
+  try {
+    const buffer = Buffer.alloc(4 * MIB)
+    for (;;) {
+      const read = fs.readSync(fd, buffer, 0, buffer.length, null)
+      if (!read) break
+      hash.update(buffer.subarray(0, read))
+    }
+  } finally {
+    fs.closeSync(fd)
+  }
+  return hash.digest('hex')
+}
+
 function writeRelease(files) {
   const releaseFile = path.join(OUT, 'plugins', 'oasis', 'scripts', 'release.json')
-  const release = JSON.parse(fs.readFileSync(releaseFile, 'utf8'))
-  // Beside the cut's files, in a folder its .gitignore leaves out: the archive is uploaded to a release, not committed.
+  const whole = JSON.parse(fs.readFileSync(releaseFile, 'utf8'))
+  const release = whole.editions[FULL ? 'full' : 'lite']
+  // Beside the package's files, in a folder its .gitignore leaves out: the archive is uploaded to a release, not committed.
   const dir = path.join(OUT, '.release')
   fs.mkdirSync(dir, { recursive: true })
   const archive = path.join(dir, release.asset)
@@ -370,8 +387,9 @@ function writeRelease(files) {
   } finally {
     fs.rmSync(list, { force: true })
   }
-  release.sha256 = createHash('sha256').update(fs.readFileSync(archive)).digest('hex')
-  fs.writeFileSync(releaseFile, `${JSON.stringify(release, null, 2)}\n`)
+  release.sha256 = sha256File(archive)
+  release.megabytes = Math.round(fs.statSync(archive).size / MIB)
+  fs.writeFileSync(releaseFile, `${JSON.stringify(whole, null, 2)}\n`)
   console.log(`\n  Release archive: ${archive} (${(fs.statSync(archive).size / MIB).toFixed(1)} MiB)`)
   console.log(`  sha256 ${release.sha256} (written to the cut's release.json)`)
   return fs.statSync(archive).size

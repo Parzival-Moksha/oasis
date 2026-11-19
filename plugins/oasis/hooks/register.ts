@@ -79,7 +79,7 @@ async function oasisStatus($: EngineInterface, engine: string): Promise<string> 
 }
 
 /** /oasis: show this session in the Oasis, starting and opening it when needed. Returns the line to print. */
-async function openOasis($: EngineInterface, engine: string, sessionId: string, cwd: string): Promise<string> {
+async function openOasis($: EngineInterface, engine: string, sessionId: string, cwd: string, lite = false): Promise<string> {
   // Already open in a tab? Then the engine walks that tab's camera here; no second tab.
   try {
     const res = await post($, engine, '/bridge/open', { sessionId, cwd })
@@ -96,6 +96,8 @@ async function openOasis($: EngineInterface, engine: string, sessionId: string, 
   const home = (await $.env.get('OASIS_HOME')) || ''
   const argv = ['node', `${$.plugin.root}/scripts/oasis-launch.mjs`, '--session', sessionId]
   if (home) argv.push('--home', home)
+  // /oasis lite: on a machine without the Oasis, install the small one (about 30 MB) instead of the full one.
+  if (lite) argv.push('--lite')
   try {
     const ran = await $.process.run(argv, { timeoutMs: LAUNCH_TIMEOUT_MS })
     const said = ran.stdout.trim().split(/\r?\n/).filter(Boolean)
@@ -201,7 +203,7 @@ export const register: Register = on => {
     const started = await next(e)
     engine = ((await $.env.get('OASIS_ENGINE_URL')) || engine).replace(/\/+$/, '')
     sessionId = await $.session.id()
-    await $.command.register({ name: 'oasis', description: 'Open the Oasis on this session (starts it if needed); /oasis status' })
+    await $.command.register({ name: 'oasis', description: 'Open the Oasis on this session (installs and starts it if needed); /oasis status, /oasis lite' })
     let polling = false
     $.clock.every(POLL_MS, () => {
       if (polling) return
@@ -226,8 +228,9 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'oasis' }, async ($, e) => {
-    if (e.args.trim().toLowerCase() === 'status') return { text: await oasisStatus($, engine) }
-    return { text: await openOasis($, engine, await $.session.id(), await $.session.cwd()) }
+    const asked = e.args.trim().toLowerCase()
+    if (asked === 'status') return { text: await oasisStatus($, engine) }
+    return { text: await openOasis($, engine, await $.session.id(), await $.session.cwd(), asked === 'lite') }
   })
 
   // The reply as it streams, so the Oasis shows it word by word like this window does.
