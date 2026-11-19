@@ -162,7 +162,7 @@ function spawnWith(args: SpawnAgentArgs, choices: SpawnChoices): Promise<EngineA
 
 // ─── the frame ──────────────────────────────────────────────────────────────
 
-function SummonFrame({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+function SummonFrame({ onClose, tall, children }: { onClose: () => void; tall: boolean; children: ReactNode }) {
   return (
     <div
       data-ui-panel="village-picker"
@@ -176,7 +176,7 @@ function SummonFrame({ onClose, children }: { onClose: () => void; children: Rea
         title="Summon an agent"
         icon={<span aria-hidden style={{ color: ACCENT, fontSize: 18 }}>✦</span>}
         onClose={onClose}
-        className="h-[min(760px,88vh)] w-[min(900px,100%)] max-[700px]:h-full max-[700px]:w-full"
+        className={`${tall ? 'h-[min(760px,88vh)]' : 'max-h-[88vh]'} w-[min(900px,100%)] max-[700px]:h-full max-[700px]:w-full`}
       >
         <div className="flex h-full min-h-0 flex-col gap-3">{children}</div>
       </KitPanel>
@@ -249,9 +249,9 @@ function KitSelectField({ label, title, children, ...rest }: { label: ReactNode;
 function FolderLine({ folder, note, onChange }: { folder: string; note: string; onChange: () => void }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px]" data-summon-folder>
-      <span className="opacity-55">Works in</span>
+      <span className="opacity-70">Works in</span>
       <span className="max-w-[420px] truncate font-mono opacity-80" title={folder}>{folder || '…'}</span>
-      {note && <span className="opacity-40">({note})</span>}
+      {note && <span className="opacity-60">({note})</span>}
       <button type="button" onClick={onChange} title="Pick another folder on this machine" className="rounded px-1.5 py-0.5 underline decoration-dotted underline-offset-2 opacity-70 hover:opacity-100">change</button>
     </div>
   )
@@ -752,7 +752,7 @@ export function SessionPicker() {
   }
 
   return (
-    <SummonFrame onClose={close}>
+    <SummonFrame onClose={close} tall={half === 'continue' && kind === 'claude'}>
       {!connected ? (
         <div className="rounded-xl border border-amber-300/30 bg-amber-400/10 px-4 py-3 text-[13px] text-amber-100">
           The agent engine is offline. Start it next to the Oasis with <code className="rounded bg-black/40 px-1">pnpm dev:engine</code>.
