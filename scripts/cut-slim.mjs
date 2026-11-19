@@ -152,7 +152,7 @@ function plan() {
     if (!file.startsWith('public/') || file.startsWith('public/avatars/')) continue
     if (!/\.(png|jpe?g|webp|gif|svg|hdr|glb|gltf|vrm|mp3|ogg|wav|woff2?|ttf|otf|json|bin|mjs|js|md|txt|fbx|obj|mtl)$/i.test(file)) problems.push(`unexpected kind of file under public/: ${file}`)
   }
-  return { chosen: [...chosen].sort(), avatarRows, problems, data, leftOutAvatars }
+  return { chosen: [...chosen].sort(), avatarRows, problems, data, leftOutAvatars, allFiles: files }
 }
 
 /** Catalog entries (id and file) written in src/components/scene-lib/constants.ts, one per line. */
@@ -225,7 +225,7 @@ function emptyExceptGit(dir) {
   }
 }
 
-function assetsDoc(files, avatarRows, leftOutAvatars = []) {
+function assetsDoc(files, avatarRows, leftOutAvatars = [], allFiles = []) {
   const lines = [
     '# Assets and their licences',
     '',
@@ -255,14 +255,25 @@ function assetsDoc(files, avatarRows, leftOutAvatars = []) {
     groups.set(entry.match, g)
   }
   for (const { entry, count } of groups.values()) lines.push(`| \`${entry.match}\` | ${count} | ${entry.source} | ${entry.licence} |`)
-  lines.push('', '## What is not here, and why', '', 'The workshop this is cut from holds more. These stay out of every edition:', '')
-  for (const item of fullLeftOut) lines.push(`- ${item.what} (\`${item.match}\`): ${item.why}.`)
-  if (leftOutAvatars.length) lines.push('', `Avatars left out by their own metadata: ${leftOutAvatars.join(', ')}.`)
-  lines.push('')
+  // Every file of the main repository that is left out, by name, with the reason: nothing is dropped silently.
+  const shippedSet = new Set(files)
+  lines.push('', '## What is not here, and why', '', 'The main Oasis repository holds more than this package. Each file below stays out, for the reason given. Nothing is deleted from the main repository: these files are only not passed on.', '')
+  for (const item of fullLeftOut) {
+    const out = allFiles.filter((f) => f.startsWith(item.match) && !shippedSet.has(f) && !f.includes('/thumbs/'))
+      .filter((f) => (item.match === 'public/avatars/' ? f.endsWith('.vrm') : item.match === 'public/animations/' ? f.endsWith('.fbx') : true))
+    if (!out.length) continue
+    const bytes = out.reduce((sum, f) => { try { return sum + fs.statSync(path.join(ROOT, f)).size } catch { return sum } }, 0)
+    lines.push(`### ${item.what} (${out.length} file${out.length === 1 ? '' : 's'}, ${(bytes / MIB).toFixed(1)} MiB)`, '', `Why: ${item.why}.`, '')
+    for (const f of out) {
+      const said = item.match === 'public/avatars/' ? leftOutAvatars.find((a) => a.startsWith(`${path.basename(f)} (`)) : null
+      lines.push('- ' + '`' + f + '`' + (said ? `: the file says ${said.slice(said.indexOf('(') + 1, -1)}` : ''))
+    }
+    lines.push('')
+  }
   return { text: lines.join('\n'), unknown }
 }
 
-function writeCut({ chosen, avatarRows, data, leftOutAvatars }, problems) {
+function writeCut({ chosen, avatarRows, data, leftOutAvatars, allFiles }, problems) {
   emptyExceptGit(OUT)
   const put = (file, content) => {
     const to = path.join(OUT, file)
@@ -326,7 +337,7 @@ function writeCut({ chosen, avatarRows, data, leftOutAvatars }, problems) {
     start: 'next start -p 4516 -H 127.0.0.1',
   }
   put('package.json', `${JSON.stringify(pkg, null, 2)}\n`)
-  const doc = assetsDoc(chosen, avatarRows, leftOutAvatars)
+  const doc = assetsDoc(chosen, avatarRows, leftOutAvatars, allFiles)
   put('ASSETS.md', doc.text)
   return doc.unknown
 }
@@ -371,7 +382,7 @@ function main() {
   const problems = [...cut.problems]
   if (flag('--report-only')) {
     const total = printTable(sizes(cut.chosen, (f) => cut.data.get(f).length))
-    const doc = assetsDoc(cut.chosen, cut.avatarRows)
+    const doc = assetsDoc(cut.chosen, cut.avatarRows, cut.leftOutAvatars, cut.allFiles)
     for (const file of doc.unknown) problems.push(`no licence line for ${file} (scripts/slim/cut.config.mjs, assetLicences)`)
     if (total.files > LIMIT_FILES) problems.push(`${total.files} files: over ${LIMIT_FILES}`)
     return finish(problems)
