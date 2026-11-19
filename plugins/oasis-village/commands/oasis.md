@@ -15,9 +15,9 @@ Do exactly this, and nothing else:
 2. If the argument is `status` or `stop`: when the install folder has `scripts/oasis.mjs`, run `node <install folder>/scripts/oasis.mjs status` (or `stop`) and report its output in one or two lines; when it does not, say the Oasis is not installed yet and that `/oasis-village:oasis` installs it. Then stop.
 
 3. If the install folder does not contain `scripts/oasis.mjs`, the Oasis is not installed. Tell the user in two lines what will happen, then ask them to confirm before doing it:
-   - one `git clone` of the tag `v0.5.0` of https://github.com/Parzival-Moksha/oasis-lite (about 30 MB) into that folder;
+   - one `git clone` of the tag `v0.6.0` of https://github.com/Parzival-Moksha/oasis-lite (about 30 MB) into that folder;
    - then its own start script installs its npm packages from its lockfile and builds it (a few minutes, once).
-   After they confirm, run: `git clone --depth 1 --branch v0.5.0 https://github.com/Parzival-Moksha/oasis-lite.git "<install folder>"`. Use only this address and this tag. If `git` is missing, tell the user to install git, or to download and unpack the release from https://github.com/Parzival-Moksha/oasis-lite/releases/tag/v0.5.0 into that folder, and stop.
+   After they confirm, run: `git clone --depth 1 --branch v0.6.0 https://github.com/Parzival-Moksha/oasis-lite.git "<install folder>"`. Use only this address and this tag. If `git` is missing, tell the user to install git, or to download and unpack the release from https://github.com/Parzival-Moksha/oasis-lite/releases/tag/v0.6.0 into that folder, and stop.
 
 4. Start it: `node "<install folder>/scripts/oasis.mjs" start`. The first run can take several minutes (packages, build): give the command a timeout of ten minutes, or run it in the background and wait for it. It starts the two local servers if they are not running and opens the village in the user's browser. Run it exactly as written: no other scripts, no edits to the Oasis's files.
 

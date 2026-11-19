@@ -18,6 +18,7 @@ export const include = [
   'packages/oasis-agent-engine/',
   'plugins/oasis/',
   'plugins/oasis-village/',
+  'skills/enter-the-oasis/',
   '.claude-plugin/marketplace.json',
   'pnpm-lock.yaml',
   'next.config.mjs',

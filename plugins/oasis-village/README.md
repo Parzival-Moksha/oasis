@@ -25,7 +25,7 @@ You need Node.js 20 or later and git.
 The command is a page of instructions for Claude (`commands/oasis.md`). It tells Claude to run, with your approval in the usual permission prompt, these commands and no others:
 
 - `node -e …` to find your home folder, and `node --version`.
-- **The first time only, after asking you:** `git clone --depth 1 --branch v0.5.0 https://github.com/Parzival-Moksha/oasis-lite.git` into `~/.oasis/app`. That is the Oasis's source, about 30 MB, from this project's own public repository, at a fixed tag.
+- **The first time only, after asking you:** `git clone --depth 1 --branch v0.6.0 https://github.com/Parzival-Moksha/oasis-lite.git` into `~/.oasis/app`. That is the Oasis's source, about 30 MB, from this project's own public repository, at a fixed tag.
 - `node ~/.oasis/app/scripts/oasis.mjs start` (or `status`, `stop`). The first start installs the Oasis's npm packages from its lockfile and builds it (a few minutes, once). Then it starts two servers on your machine, the page on `127.0.0.1:4516` and the agent engine on `127.0.0.1:4530`, and opens your browser.
 
 The command does not tell Claude to read or follow instructions from what it downloads: the download is an application, not directions for Claude.
