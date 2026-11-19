@@ -38,7 +38,7 @@ describe('the tier list', () => {
 
   it('caps step down in order: post effects, then bloom and world shadows, then ground and particles, then shadows and resolution', () => {
     expect(capsForLevel(0)).toMatchObject({ chromatic: true, bloom: true, maxShadows: 'all', resolution: 1, drawDistance: null })
-    expect(capsForLevel(1)).toMatchObject({ chromatic: false, vignette: false, bloom: true, maxShadowRefresh: '60' })
+    expect(capsForLevel(1)).toMatchObject({ chromatic: false, vignette: false, skyTransition: false, bloom: true, maxShadowRefresh: '60' })
     expect(capsForLevel(2)).toMatchObject({ bloom: false, maxShadows: 'avatars', maxShadowQuality: 'medium' })
     expect(capsForLevel(3)).toMatchObject({ maxGroundSharpness: 1, particles: false, labels3d: false, leaveEffects: false, maxShadows: 'avatars' })
     expect(capsForLevel(4)).toMatchObject({ maxShadows: 'off', resolution: 0.75 })

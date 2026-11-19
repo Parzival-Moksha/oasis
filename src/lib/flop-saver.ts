@@ -20,24 +20,27 @@ export const SAVER_LEVEL = 4
 
 /**
  * Every graphics effect, cheapest loss first: what it is, the tier at which flop saver turns it
- * down, and its cost as measured on the owner's machine (src/lib/flop-saver.ts log in
- * docs/missions/fps-ceiling.md). `cost` is for people reading this; the code uses `tier`.
+ * down, and what it cost when measured (19 Nov, world ghi9 at 1825 x 1056, 12 agents, headless
+ * Chrome on this machine's RTX 4060 laptop GPU; "main" is main-thread time a frame, "GPU" the
+ * card's time a frame; everything on: main 8.3 ms, GPU 3.5 ms). `cost` is for people reading
+ * this; the code uses `tier`. Log: docs/missions/fps-ceiling.md (7c_oasis).
  */
 export const FLOP_EFFECTS = [
-  { id: 'chromatic', tier: 1, name: 'Chromatic aberration (colour fringes at the edges)', cost: 'GPU: a full-screen pass; CPU: none' },
-  { id: 'vignette', tier: 1, name: 'Vignette, and the darkening and fringes while dashing', cost: 'GPU: shares the post pass; CPU: none' },
-  { id: 'shadowRefresh', tier: 1, name: 'Shadow redraw on every moving frame (capped at 60 a second)', cost: 'CPU: up to 0.8 ms a frame on a 165 Hz screen while someone walks' },
-  { id: 'bloom', tier: 2, name: 'Bloom (glow around bright things)', cost: 'GPU: several blurred passes; with nothing else on, the whole post pass goes' },
-  { id: 'shadowsAll', tier: 2, name: 'Shadows from world objects (avatars keep theirs)', cost: 'CPU: about 0.5 ms a frame over avatar-only shadows' },
-  { id: 'shadowQuality', tier: 2, name: 'Shadow map at 4096 px (2048 instead)', cost: 'GPU memory 64 MB → 16 MB, GPU fill' },
-  { id: 'groundSharpness', tier: 3, name: 'Sharper ground (detail layer, extra repeats)', cost: 'GPU: two texture reads per ground pixel' },
-  { id: 'particles', tier: 3, name: 'Decorative particles (portal sparks, swarms, motes)', cost: 'one draw call or more each' },
-  { id: 'labels3d', tier: 3, name: '3D letters on name tags and signs (flat text instead)', cost: 'thousands of triangles per word' },
-  { id: 'leaveEffects', tier: 3, name: 'Full leaving effects when an agent is dismissed (a short fade instead)', cost: 'a burst of draw calls for two or three seconds' },
-  { id: 'shadows', tier: 4, name: 'All shadows', cost: 'CPU: 0.5-1.3 ms a frame with 12 agents' },
-  { id: 'resolution75', tier: 4, name: 'Full resolution (75% instead)', cost: 'GPU: 44% fewer pixels to shade' },
-  { id: 'resolution50', tier: 5, name: 'Resolution 75% (50% instead)', cost: 'GPU: 75% fewer pixels than full' },
-  { id: 'drawDistance', tier: 5, name: 'Far view (150 m instead of 500 m)', cost: 'fewer objects drawn in open worlds' },
+  { id: 'skyTransition', tier: 1, name: 'Sky change effect (melt, rip, glitch); the sky swaps at once instead', cost: 'only while the sky changes' },
+  { id: 'chromatic', tier: 1, name: 'Chromatic aberration (colour fringes at the edges)', cost: 'tier 1 together: main 0.3 ms, GPU under 0.1 ms' },
+  { id: 'vignette', tier: 1, name: 'Vignette, and the darkening and fringes while dashing', cost: 'in tier 1 above' },
+  { id: 'shadowRefresh', tier: 1, name: 'Shadow redraw on every moving frame (capped at 60 a second)', cost: 'up to 0.8 ms main on a 165 Hz screen while someone walks' },
+  { id: 'bloom', tier: 2, name: 'Bloom (glow around bright things); with it the whole effect pipeline goes', cost: 'tier 2 together: main 1.2 ms, GPU 2.1 ms (3.5 -> 1.45)' },
+  { id: 'shadowsAll', tier: 2, name: 'Shadows from world objects (avatars keep theirs)', cost: 'main 1.2 ms over avatar-only shadows' },
+  { id: 'shadowQuality', tier: 2, name: 'Shadow map at 4096 px (2048 instead)', cost: 'GPU memory 64 MB -> 16 MB' },
+  { id: 'groundSharpness', tier: 3, name: 'Sharper ground (detail layer, extra repeats)', cost: 'main 0.3 ms; GPU under 0.1 ms' },
+  { id: 'particles', tier: 3, name: 'Decorative particles (portal sparks, swarms, motes)', cost: 'not measurable in ghi9 (two point clouds)' },
+  { id: 'labels3d', tier: 3, name: '3D letters on name tags and signs (flat text instead)', cost: 'main 0.6 ms for the 14 words in ghi9' },
+  { id: 'leaveEffects', tier: 3, name: 'Full leaving effects when an agent is dismissed (a short fade instead)', cost: 'only while one plays' },
+  { id: 'shadows', tier: 4, name: 'All shadows', cost: 'tier 4 together: main 0.4 ms, GPU 0.6 ms' },
+  { id: 'resolution75', tier: 4, name: 'Full resolution (75% instead)', cost: 'in tier 4 above (44% fewer pixels)' },
+  { id: 'resolution50', tier: 5, name: 'Resolution 75% (50% instead)', cost: 'tier 5 together: main 0.3 ms, GPU 0.2 ms' },
+  { id: 'drawDistance', tier: 5, name: 'Far view (150 m instead of 500 m)', cost: 'in tier 5 above; more in open worlds' },
 ] as const
 
 export type FlopEffectId = typeof FLOP_EFFECTS[number]['id']
@@ -59,6 +62,7 @@ export interface FlopCaps {
   particles: boolean
   labels3d: boolean
   leaveEffects: boolean
+  skyTransition: boolean
   maxShadows: ShadowMode
   maxShadowQuality: ShadowQuality
   /** The fastest shadow refresh allowed. */
@@ -81,6 +85,7 @@ export function capsForLevel(level: number): FlopCaps {
     particles: on('particles'),
     labels3d: on('labels3d'),
     leaveEffects: on('leaveEffects'),
+    skyTransition: on('skyTransition'),
     maxShadows: !on('shadows') ? 'off' : !on('shadowsAll') ? 'avatars' : 'all',
     maxShadowQuality: on('shadowQuality') ? 'high' : 'medium',
     maxShadowRefresh: on('shadowRefresh') ? 'frame' : '60',
