@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '../../lib/input-manager'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
-import type { EngineSessionMeta, SpawnAgentArgs } from '../../lib/agent-engine-types'
+import type { EngineRuntime, EngineSessionMeta, SpawnAgentArgs } from '../../lib/agent-engine-types'
 import { filterSessions, pickSuggestions } from '../../lib/village/village-sessions'
 import { useVillageSettings } from '../../lib/village/village-settings-client'
 import { VILLAGE_PICKER_LAYER, focusVillageAgent, openVillagePicker } from './village-actions'
@@ -19,6 +19,10 @@ import { CUSTOM_MODEL_VALUE, cleanModelId, mergeModelLists, type ModelOption } f
 const PAGE = 60
 const FETCH_STEP = 300
 const MODES = ['', 'default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
+/** A Hermes agent's modes (engine hermes.js, ACP session/set_mode). */
+const HERMES_MODES = ['', 'default', 'accept_edits', 'dont_ask']
+/** The Hermes form's last values, so summoning Og again is one click. */
+const HERMES_FORM_KEY = 'oasis.village.hermesSpawn'
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -63,6 +67,7 @@ function useSessionLoader(open: boolean) {
 interface SpawnDefaults {
   model: string
   permissionMode: string
+  runtime: EngineRuntime
 }
 
 function SessionRow({ session, defaults, onDone, onError }: { session: EngineSessionMeta; defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink }) {
@@ -206,6 +211,98 @@ function NewAgentForm({ defaults, onDone, onError, initialCwd = '', recentFolder
   )
 }
 
+interface HermesForm {
+  name: string
+  where: 'here' | 'ssh'
+  host: string
+  profile: string
+  cwd: string
+}
+
+const HERMES_BLANK: HermesForm = { name: '', where: 'here', host: '', profile: '', cwd: '' }
+
+function readHermesForm(): HermesForm {
+  try { return { ...HERMES_BLANK, ...JSON.parse(window.localStorage.getItem(HERMES_FORM_KEY) || '{}') } } catch { return HERMES_BLANK }
+}
+
+/**
+ * A Hermes agent (engine hermes.js): on this PC with a profile folder (its model and SOUL.md), or on another machine
+ * over ssh (an alias from ~/.ssh/config like `og`). A new Hermes session each time; its history lives in Hermes.
+ */
+function HermesAgentForm({ defaults, onDone, onError, recentFolders = [] }: { defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink; recentFolders?: string[] }) {
+  const [form, setForm] = useState<HermesForm>(readHermesForm)
+  const [browsing, setBrowsing] = useState<null | 'profile' | 'cwd'>(null)
+  const [busy, setBusy] = useState(false)
+  const set = (patch: Partial<HermesForm>) => setForm(current => ({ ...current, ...patch }))
+  const host = form.host.trim()
+  const cwd = form.cwd.trim()
+  const ready = form.where === 'ssh' ? Boolean(host) : Boolean(cwd)
+  const submit = (createCwd = false) => {
+    if (!ready) return
+    const profile = form.profile.trim()
+    const args: SpawnAgentArgs = form.where === 'ssh'
+      ? { runtime: 'hermes', name: form.name.trim() || host, cwd, remote: { host } }
+      : { runtime: 'hermes', name: form.name.trim() || cwdLabel(cwd), cwd, ...(profile ? { hermesHome: profile } : {}) }
+    if (createCwd) args.createCwd = true
+    if (defaults.permissionMode) args.permissionMode = defaults.permissionMode
+    try { window.localStorage.setItem(HERMES_FORM_KEY, JSON.stringify(form)) } catch { /* private mode */ }
+    setBusy(true)
+    onError(null)
+    getAgentEngineClient().spawnAgent(args)
+      .then(agent => onDone(agent.id))
+      .catch(error => {
+        const message = describeError(error)
+        if (!createCwd && message.startsWith('cwd does not exist')) {
+          onError({ message: `The folder ${cwd} does not exist yet.`, action: { label: 'create it and spawn', run: () => submit(true) } })
+        } else {
+          onError({ message: `Spawn failed: ${message}` })
+        }
+      })
+      .finally(() => setBusy(false))
+  }
+  const input = 'rounded-md border border-white/15 bg-black/45 px-2 py-1 text-[12px] text-white placeholder:text-white/30 focus:outline-none'
+  const browse = 'rounded-md border border-white/20 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-white/85 hover:bg-white/15'
+  return (
+    <form className="flex flex-col gap-1.5 rounded-lg border border-violet-300/25 bg-violet-500/[0.07] px-3 py-2" onSubmit={event => { event.preventDefault(); submit() }}>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <input value={form.name} onChange={event => set({ name: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder="name, e.g. Og" className={`w-32 ${input} max-[700px]:w-full`} />
+        <select value={form.where} onChange={event => set({ where: event.target.value === 'ssh' ? 'ssh' : 'here' })} className="rounded border border-white/15 bg-black/50 px-1 py-1 text-[12px] text-white">
+          <option value="here">on this PC</option>
+          <option value="ssh">on another machine (ssh)</option>
+        </select>
+        {form.where === 'ssh' ? (
+          <input value={form.host} onChange={event => set({ host: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder="ssh host, e.g. og" className={`w-40 ${input}`} />
+        ) : (
+          <>
+            <input value={form.profile} onChange={event => set({ profile: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder="profile folder (empty: Hermes's default)" title="A Hermes profile folder (HERMES_HOME): its model, its SOUL.md, its memory" className={`min-w-[180px] flex-1 ${input}`} />
+            <button type="button" onClick={() => setBrowsing('profile')} className={browse}>Browse…</button>
+          </>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <input value={form.cwd} onChange={event => set({ cwd: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder={form.where === 'ssh' ? 'folder on this PC for its desk (optional)' : 'working folder, e.g. C:\\9b_localai'} className={`min-w-[200px] flex-1 ${input}`} />
+        <button type="button" onClick={() => setBrowsing('cwd')} className={browse}>Browse…</button>
+        <button type="submit" disabled={busy || !ready} className="rounded-md border border-violet-300/40 bg-violet-400/15 px-3 py-1 text-[11px] font-bold text-violet-50 hover:bg-violet-400/30 disabled:opacity-40">
+          {busy ? '…' : 'new Hermes agent'}
+        </button>
+      </div>
+      <div className="text-[10.5px] text-white/45">
+        {form.where === 'ssh'
+          ? 'Needs `ssh <host>` to work from this PC with a key (no password) and Hermes installed there. It works in its home folder there; the world tools reach it through the same line (free tools only).'
+          : 'Hermes runs here with that profile: its model, its SOUL.md and its memory. World tools: free ones only. Its shell runs most commands without asking.'}
+      </div>
+      {browsing && (
+        <FolderBrowser
+          initialPath={(browsing === 'profile' ? form.profile : form.cwd).trim()}
+          recent={recentFolders}
+          onPick={folder => { set(browsing === 'profile' ? { profile: folder } : { cwd: folder }); setBrowsing(null) }}
+          onClose={() => setBrowsing(null)}
+        />
+      )}
+    </form>
+  )
+}
+
 /** Anorak Pro is always on offer; the 5 most recent sessions only while the village is empty. */
 function Suggestions({ sessions, defaults, onDone, onError, showRecent }: { sessions: EngineSessionMeta[]; defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink; showRecent: boolean }) {
   // Anorak Pro's home folder is this machine's (`anorakProCwd`); a machine without one gets no such entry.
@@ -263,7 +360,8 @@ export function SessionPicker() {
   const connected = useOasisStore(s => s.agentEngine.connection.status === 'open')
   const [query, setQuery] = useState('')
   const [shown, setShown] = useState(PAGE)
-  const [defaults, setDefaults] = useState<SpawnDefaults>({ model: '', permissionMode: '' })
+  const [defaults, setDefaults] = useState<SpawnDefaults>({ model: '', permissionMode: '', runtime: 'claude' })
+  const hermes = defaults.runtime === 'hermes'
   const [error, setError] = useState<PickerError | null>(null)
   useUILayer(VILLAGE_PICKER_LAYER, open)
   const { reload, loadOlder, limit } = useSessionLoader(open)
@@ -317,7 +415,18 @@ export function SessionPicker() {
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
-              <label className="flex items-center gap-1">
+              <label className="flex items-center gap-1" title="Claude Code: a Claude session. Hermes: a Hermes agent (Nous Research), here or on another machine.">
+                runtime
+                <select
+                  value={defaults.runtime}
+                  onChange={event => setDefaults(d => ({ ...d, runtime: event.target.value === 'hermes' ? 'hermes' : 'claude', permissionMode: '', model: '' }))}
+                  className="rounded border border-white/15 bg-black/50 px-1 py-0.5 text-white"
+                >
+                  <option value="claude">Claude Code</option>
+                  <option value="hermes">Hermes</option>
+                </select>
+              </label>
+              {!hermes && <label className="flex items-center gap-1">
                 model
                 <select
                   value={defaults.model}
@@ -336,17 +445,19 @@ export function SessionPicker() {
                   {defaults.model && !spawnModels.some(model => model.value === defaults.model) && <option value={defaults.model}>{defaults.model}</option>}
                   <option value={CUSTOM_MODEL_VALUE}>Other model id…</option>
                 </select>
-              </label>
+              </label>}
               <label className="flex items-center gap-1">
                 permissions
                 <select value={defaults.permissionMode} onChange={event => setDefaults(d => ({ ...d, permissionMode: event.target.value }))} className="rounded border border-white/15 bg-black/50 px-1 py-0.5 text-white">
-                  {MODES.map(mode => <option key={mode} value={mode}>{mode || '(from settings)'}</option>)}
+                  {(hermes ? HERMES_MODES : MODES).map(mode => <option key={mode} value={mode}>{mode || (hermes ? '(default)' : '(from settings)')}</option>)}
                 </select>
               </label>
               <span className="text-white/35">apply to spawns below</span>
             </div>
 
-            <NewAgentForm defaults={defaults} onDone={onDone} onError={setError} recentFolders={recentFolders} />
+            {hermes
+              ? <HermesAgentForm defaults={defaults} onDone={onDone} onError={setError} recentFolders={recentFolders} />
+              : <NewAgentForm defaults={defaults} onDone={onDone} onError={setError} recentFolders={recentFolders} />}
 
             {error && (
               <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-red-300/35 bg-red-500/15 px-3 py-2 text-[12px] text-red-50">
@@ -364,6 +475,9 @@ export function SessionPicker() {
               </div>
             )}
 
+            {hermes ? (
+              <div className="text-[11px] text-white/45">A Hermes agent starts a new Hermes session (after a restart it picks the same one up again); its history lives in Hermes. Your Claude Code sessions are listed under the Claude Code runtime.</div>
+            ) : (
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
               {!query && sessions.status === 'ready' && (
                 <Suggestions sessions={sessions.items} defaults={defaults} onDone={onDone} onError={setError} showRecent={rosterEmpty} />
@@ -396,6 +510,7 @@ export function SessionPicker() {
                 </button>
               )}
             </div>
+            )}
           </>
         )}
       </div>

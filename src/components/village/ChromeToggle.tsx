@@ -19,7 +19,8 @@ const APPLIED: Record<string, string> = {
 
 export function ChromeToggle({ agent }: { agent: EngineAgentState }) {
   const [busy, setBusy] = useState(false)
-  if (!agent.owned) return null
+  // Claude in Chrome is a Claude Code feature: a Hermes agent has none.
+  if (!agent.owned || agent.runtime === 'hermes') return null
   const on = agent.chrome === true
   const label = on
     ? 'Chrome on: this agent can use your Chrome through the Claude in Chrome extension, under its permission mode like your other sessions. Click to turn off (restarts it).'

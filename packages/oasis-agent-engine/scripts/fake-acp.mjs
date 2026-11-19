@@ -7,7 +7,8 @@
 //
 // <dir> keeps sessions.json and prompts.jsonl (every prompt as received, for the test to read). What a prompt does
 // depends on its text: SLOW streams 20 ticks over 6 s (stops early on session/cancel); PERMIT asks permission for
-// `rm -rf x` and says which option came back; TOOL makes one tool call; anything else is echoed.
+// `rm -rf x` and says which option came back; TOOL makes one tool call; WORLD uses the session's HTTP MCP server for
+// real (lists its tools, calls get_world_info, tries clear_world); anything else is echoed.
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -22,6 +23,24 @@ const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m }
 const update = (sessionId, u) => send({ method: 'session/update', params: { sessionId, update: u } });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const cancelled = new Set();
+const mcpOf = new Map(); // sessionId -> the HTTP MCP servers the client gave (session/new, session/load)
+
+/** A minimal streamable-HTTP MCP client: one session, JSON or SSE answers. */
+async function mcpSession(url) {
+  let sid = null; let n = 0;
+  const rpc = async (method, params, notify = false) => {
+    const body = notify ? { jsonrpc: '2.0', method, params } : { jsonrpc: '2.0', id: ++n, method, params };
+    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(sid ? { 'mcp-session-id': sid } : {}) }, body: JSON.stringify(body) });
+    sid = res.headers.get('mcp-session-id') || sid;
+    if (notify) return null;
+    const text = await res.text();
+    const json = (res.headers.get('content-type') || '').includes('event-stream') ? JSON.parse(text.split(/\r?\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5)).join('')) : JSON.parse(text);
+    return json;
+  };
+  await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'fake-acp', version: '0' } });
+  await rpc('notifications/initialized', {}, true);
+  return rpc;
+}
 const waiting = new Map(); // our request id -> resolve
 let n = 0;
 const ask = (method, params) => new Promise((resolve) => { const id = `fake-${++n}`; waiting.set(id, resolve); send({ id, method, params }); });
@@ -49,6 +68,21 @@ async function prompt(id, { sessionId, prompt: blocks }) {
       options: [{ optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' }, { optionId: 'allow_session', kind: 'allow_always', name: 'Allow for session' }, { optionId: 'deny', kind: 'reject_once', name: 'Deny' }],
     });
     say(`permission: ${r?.outcome?.optionId || r?.outcome?.outcome || 'none'}`);
+  } else if (/WORLD/.test(text)) {
+    const server = (mcpOf.get(sessionId) || []).find((m) => m.type === 'http' || m.url);
+    if (!server) say('no world tools');
+    else {
+      try {
+        // On "the remote machine" (fake-ssh.mjs) port numbers are shifted: 127.0.0.1:<port> there is <port + shift> here.
+        const shift = Number(process.env.FAKE_PORT_SHIFT) || 0;
+        const url = shift ? server.url.replace(/:(\d+)\//, (_, p) => `:${Number(p) + shift}/`) : server.url;
+        const rpc = await mcpSession(url);
+        const list = await rpc('tools/list', {});
+        const info = await rpc('tools/call', { name: 'get_world_info', arguments: {} });
+        const wipe = await rpc('tools/call', { name: 'clear_world', arguments: {} });
+        say(`world tools: ${list.result.tools.map((t) => t.name).join(',')}; world: ${info.result?.content?.[0]?.text}; clear_world refused: ${wipe.result?.isError === true}`);
+      } catch (e) { say(`world tools failed: ${e.message}`); }
+    }
   } else if (/TOOL/.test(text)) {
     update(sessionId, { sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'mcp_oasis_get_world_info', kind: 'other', rawInput: {} });
     update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'World "Fake"' } }] });
@@ -70,10 +104,12 @@ function onMessage(m) {
     case 'initialize': return send({ id, result: { protocolVersion: 1, agentInfo: { name: 'fake-acp', version: '0.0.1' }, agentCapabilities: { loadSession: true, promptCapabilities: { image: true } } } });
     case 'session/new':
       if (failOpen) return send({ id, error: { code: -32603, message: 'Internal error', data: { details: 'Model fake has a context window of 32,768 tokens, which is below the minimum 64,000.' } } });
-      { const sessionId = randomUUID(); const s = load(); s[sessionId] = []; save(s); return send({ id, result: { sessionId, ...state } }); }
+      { const sessionId = randomUUID(); const s = load(); s[sessionId] = []; save(s); mcpOf.set(sessionId, params.mcpServers || []); fs.appendFileSync(path.join(dir, 'opened.jsonl'), JSON.stringify({ how: 'new', sessionId, cwd: params.cwd, mcpServers: params.mcpServers }) + String.fromCharCode(10)); return send({ id, result: { sessionId, ...state } }); }
     case 'session/load': {
       const s = load();
       if (!s[params.sessionId]) return send({ id, error: { code: -32002, message: 'Resource not found', data: { details: `no session ${params.sessionId}` } } });
+      mcpOf.set(params.sessionId, params.mcpServers || []);
+      fs.appendFileSync(path.join(dir, 'opened.jsonl'), JSON.stringify({ how: 'load', sessionId: params.sessionId, cwd: params.cwd, mcpServers: params.mcpServers }) + String.fromCharCode(10));
       for (const h of s[params.sessionId]) update(params.sessionId, { sessionUpdate: h.role === 'user' ? 'user_message_chunk' : 'agent_message_chunk', content: { type: 'text', text: h.text } });
       return send({ id, result: state });
     }

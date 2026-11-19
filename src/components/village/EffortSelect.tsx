@@ -11,7 +11,8 @@ import { showNotice } from '../forge/GlobalNotice'
 
 export function EffortSelect({ agent }: { agent: EngineAgentState }) {
   const [busy, setBusy] = useState(false)
-  if (!agent.owned) return null
+  // A Hermes agent has no effort setting (engine hermes.js refuses setEffort).
+  if (!agent.owned || agent.runtime === 'hermes') return null
   const levels = effortLevelsFor(agent)
   if (!levels.length && !agent.effort) return null // this model has no effort setting
   const current = agent.effort || ''

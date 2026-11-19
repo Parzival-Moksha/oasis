@@ -17,6 +17,7 @@ import type {
   EngineModelInfo,
   EnginePermissionRequest,
   EngineRateLimit,
+  EngineRuntime,
   EngineServerInfo,
   EngineSessionMeta,
   EngineTodo,
@@ -186,6 +187,10 @@ export interface EngineAgentState {
   eyes: boolean | null
   /** Claude in Chrome on (engine chrome.js). null = the engine is older than the switch. */
   chrome: boolean | null
+  /** What runs it: a Claude Code session or a Hermes agent (engine hermes.js); 'claude' for engines older than runtimes. */
+  runtime: EngineRuntime
+  /** A Hermes on another machine: the ssh host it is reached on. */
+  remoteHost: string | null
   /** Voice: its avatar says the <spoken> line of each reply out loud. null = the engine is older than the switch. */
   speak: boolean | null
   /** The voice it picked for itself (engine roster); the owner's pick in its settings menu wins over it. */
@@ -353,6 +358,8 @@ export function createAgentState(
     resolvedEffort: null,
     eyes: null,
     chrome: null,
+    runtime: 'claude',
+    remoteHost: null,
     speak: null,
     voiceChoice: null,
     lastOutcomeAt: null,
@@ -424,6 +431,8 @@ export function applySnapshot(agent: EngineAgentState, snap: EngineAgentSnapshot
     resolvedEffort: snap.resolvedEffort !== undefined ? snap.resolvedEffort : agent.resolvedEffort,
     eyes: typeof snap.eyes === 'boolean' ? snap.eyes : agent.eyes,
     chrome: typeof snap.chrome === 'boolean' ? snap.chrome : agent.chrome,
+    runtime: snap.runtime === 'hermes' ? 'hermes' : snap.runtime === 'claude' ? 'claude' : agent.runtime,
+    remoteHost: snap.remote !== undefined ? snap.remote?.host || null : agent.remoteHost,
     speak: typeof snap.speak === 'boolean' ? snap.speak : agent.speak,
     voiceChoice: snap.voiceChoice !== undefined ? snap.voiceChoice || null : agent.voiceChoice,
     lastOutcomeAt: typeof snap.lastOutcome?.at === 'number' ? snap.lastOutcome.at : agent.lastOutcomeAt,

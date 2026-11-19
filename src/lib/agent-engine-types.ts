@@ -56,9 +56,18 @@ export interface EnginePermissionRequest {
 }
 
 /** Agent snapshot as broadcast in `hello` and `agents` messages (Agent / Observer / HookObserver.snapshot()). */
+/** What runs an owned agent: a Claude Code session (agent.js) or a Hermes agent over ACP (hermes.js). */
+export type EngineRuntime = 'claude' | 'hermes'
+
 export interface EngineAgentSnapshot {
   id: string
   kind: EngineAgentKind
+  /** Missing on engines older than runtimes: Claude Code. */
+  runtime?: EngineRuntime
+  /** A Hermes on another machine (ssh). */
+  remote?: { host: string } | null
+  /** The Hermes Agent version (hermes agents). */
+  hermesVersion?: string | null
   name: string
   title?: string | null
   cwd?: string | null
@@ -455,6 +464,12 @@ export interface SpawnAgentArgs {
   createCwd?: boolean
   /** Start with Claude in Chrome (off by default). */
   chrome?: boolean
+  /** 'hermes': a Hermes agent (engine hermes.js) instead of a Claude Code session. */
+  runtime?: EngineRuntime
+  /** Hermes here: its home folder (a profile), HERMES_HOME. Without it, Hermes's own default profile. */
+  hermesHome?: string
+  /** Hermes on another machine over ssh: host (an ssh alias like `og`), and optionally its hermes binary, HERMES_HOME and folder there. */
+  remote?: { host: string; hermes?: string; home?: string; cwd?: string; worldPort?: number }
 }
 
 export type RespondBehavior = 'allow' | 'deny'

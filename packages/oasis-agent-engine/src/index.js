@@ -284,7 +284,9 @@ const commands = {
   },
 
   // runtime: 'claude' (default) or 'hermes' (hermes.js: a Hermes Agent over ACP; command / hermesHome say which one and where).
-  async spawnAgent({ name, cwd, sessionId, model, permissionMode, effort, fork, force, move, createCwd, worldTools, chrome, runtime, command, hermesHome } = {}) {
+  // remote {host, hermes?, home?, cwd?, worldPort?}: a Hermes on another machine over SSH; its local cwd defaults to the home folder.
+  async spawnAgent({ name, cwd, sessionId, model, permissionMode, effort, fork, force, move, createCwd, worldTools, chrome, runtime, command, hermesHome, remote } = {}) {
+    if (runtime === 'hermes' && remote && !cwd) cwd = os.homedir();
     if (runtime && runtime !== 'claude' && runtime !== 'hermes') throw new Error(`unknown runtime ${runtime} (claude or hermes)`);
     if (!cwd) throw new Error('cwd is required');
     cwd = path.resolve(cwd);
@@ -305,7 +307,7 @@ const commands = {
       }
     }
     const agent = runtime === 'hermes'
-      ? new HermesAgent({ id: newId('agent'), name: name || path.basename(cwd), cwd, sessionId, model, permissionMode, worldTools, command, hermesHome }, hub)
+      ? new HermesAgent({ id: newId('agent'), name: name || (remote?.host ?? path.basename(cwd)), cwd, sessionId, model, permissionMode, worldTools, command, hermesHome, remote }, hub)
       : new Agent({ id: newId('agent'), name: name || path.basename(cwd), cwd, sessionId, model, permissionMode, effort, fork, worldTools, chrome: chrome === true }, hub);
     addAgent(agent);
     agent.start();

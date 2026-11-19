@@ -18,9 +18,10 @@
 // - session/cancel (a notification) stops the turn: the prompt resolves with stopReason "cancelled".
 // - The model needs at least 64K context (Hermes refuses a smaller model.context_length at session/new).
 //
-// Where it runs: `command` (an argv array) when the roster gives one, e.g. ["ssh", "og", "hermes", "acp"] for a
-// Hermes on another machine; else OASIS_HERMES_BIN; else the Windows installer's venv; else `hermes` on PATH.
-// `hermesHome` sets HERMES_HOME (a profile folder or a sandbox); without it Hermes uses its own default.
+// Where it runs: `remote` {host, hermes?, home?, cwd?, worldPort?} for a Hermes on another machine over SSH (see
+// remoteCommand below: keep-alive, no password prompt, world tools through a reverse forward, reconnects); `command`
+// (a raw argv array) for anything else; else OASIS_HERMES_BIN; else the Windows installer's venv; else `hermes`.
+// `hermesHome` sets HERMES_HOME here (a profile folder or a sandbox); `remote.home` does it on the other machine.
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -34,6 +35,7 @@ import { outcomeForRoster, restoreOutcome, statusForOutcome } from './outcome.js
 import { RESUME_TEXT, RESUMED_REASON } from './resume.js';
 import { normalizeSchedule } from './schedule.js';
 import { worldToolsUrl } from './worldtools.js';
+import { startWorldGateServer } from './worldproxy.js';
 import { registerAttachment } from './files.js';
 import { requiredToken } from './token.js';
 
@@ -47,8 +49,60 @@ const PERMISSION_MS = 60_000;
 /** A slash command (/compact, /reset, /model …) is a prompt of its own: Hermes reads what follows it as its arguments. */
 const isCommand = (text) => /^\s*\/[a-z]/i.test(text || '');
 
-/** The argv that starts `hermes acp` on this machine (see the header). */
+/** Plain words only in what becomes a remote shell line: a host alias, paths, no quotes, spaces or operators. */
+const SAFE_HOST = /^[A-Za-z0-9._@-]{1,128}$/;
+const SAFE_PATH = /^[A-Za-z0-9_./~+-]{1,256}$/;
+/** Reconnect waits after a remote Hermes's line drops with work pending (s); then it waits for the next message. */
+const RECONNECT_S = (process.env.OASIS_RECONNECT_S || '5,15,30,60,120,300').split(',').map(Number).filter((n) => n > 0);
+
+/** The roster's `remote` entry, checked. null when absent; throws when it holds something unsafe. */
+export function normalizeRemote(r, agentId = '') {
+  if (!r || typeof r !== 'object') return null;
+  if (typeof r.host !== 'string' || !SAFE_HOST.test(r.host)) throw new Error('remote.host must be an ssh host or alias (letters, digits, . _ @ -)');
+  for (const k of ['hermes', 'home', 'cwd']) if (r[k] != null && (typeof r[k] !== 'string' || !SAFE_PATH.test(r[k]))) throw new Error(`remote.${k} must be a plain path`);
+  // The same port on both machines: the engine's gate listens on it here, the Pi reaches it there (ssh -R).
+  let worldPort = Number(r.worldPort);
+  if (!Number.isInteger(worldPort) || worldPort < 1024 || worldPort > 65535) {
+    let h = 0;
+    for (const ch of String(agentId)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    worldPort = 14516 + (h % 1000);
+  }
+  return { host: r.host, ...(r.hermes ? { hermes: r.hermes } : {}), ...(r.home ? { home: r.home } : {}), ...(r.cwd ? { cwd: r.cwd } : {}), worldPort };
+}
+
+/** ssh on this machine: OASIS_SSH (a path, or a JSON argv for tests), else Git's ssh on Windows (it resolves .local names; Windows OpenSSH often does not), else `ssh`. */
+function sshPrefix() {
+  const v = process.env.OASIS_SSH;
+  if (v) { try { const a = JSON.parse(v); if (Array.isArray(a) && a.length) return a.map(String); } catch { return [v]; } }
+  const git = 'C:\\Program Files\\Git\\usr\\bin\\ssh.exe';
+  return [process.platform === 'win32' && fs.existsSync(git) ? git : 'ssh'];
+}
+
+/**
+ * The line the other machine runs: start in the home folder, say where that is (OASIS_CWD on stderr, the ACP cwd),
+ * then become `hermes acp` (the venv's binary when it is there, else `hermes` on PATH).
+ */
+export function remoteCommand(remote) {
+  const bin = remote.hermes || '~/.hermes/hermes-agent/venv/bin/hermes';
+  return `cd && H=${bin}; [ -x "$H" ] || H=hermes; ${remote.home ? `export HERMES_HOME=${remote.home}; ` : ''}printf 'OASIS_CWD %s\\n' "$PWD" >&2; exec "$H" acp`;
+}
+
+/**
+ * ssh for a remote Hermes. BatchMode: never wait for a password (a key or nothing). ServerAlive 15 s x 3: a dropped
+ * network ends the line within about 45 s, so the agent shows it and reconnects. -R: the Pi's 127.0.0.1:<worldPort>
+ * leads back to the engine's world gate (free tools only); a taken port there costs the world tools, not the line.
+ */
+export function sshCommand(remote, { worldTools = true } = {}) {
+  return [
+    ...sshPrefix(), '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3', '-o', 'ConnectTimeout=20', '-o', 'ExitOnForwardFailure=no',
+    ...(worldTools ? ['-R', `127.0.0.1:${remote.worldPort}:127.0.0.1:${remote.worldPort}`] : []),
+    remote.host, remoteCommand(remote),
+  ];
+}
+
+/** The argv that starts `hermes acp` (see the header). */
 export function hermesCommand(spec = {}) {
+  if (spec.remote) return sshCommand(spec.remote, { worldTools: spec.worldTools !== false });
   if (Array.isArray(spec.command) && spec.command.length && spec.command.every((s) => typeof s === 'string')) return spec.command;
   if (process.env.OASIS_HERMES_BIN) return [process.env.OASIS_HERMES_BIN, 'acp'];
   const candidates = process.platform === 'win32'
@@ -85,6 +139,10 @@ export class HermesAgent {
     this.model = spec.model || null;
     this.permissionMode = spec.permissionMode || null;
     this.command = Array.isArray(spec.command) ? spec.command : null;
+    this.remote = normalizeRemote(spec.remote, spec.id); // a Hermes on another machine, over SSH
+    this.remoteCwd = null; // the other machine's home folder, as its shell said (OASIS_CWD)
+    this.reconnect = { tries: 0, timer: null };
+    this.gate = null; // { port, close } while a remote agent's line is up (worldproxy.js)
     this.hermesHome = typeof spec.hermesHome === 'string' && spec.hermesHome ? spec.hermesHome : null;
     this.worldTools = spec.worldTools !== false;
     this.schedule = normalizeSchedule(spec.schedule);
@@ -161,6 +219,7 @@ export class HermesAgent {
       wakesToday: this.hub.wakesToday ? this.hub.wakesToday(this) : 0,
       scheduledRun: this.scheduledRun && !this.scheduledMixed,
       hermesVersion: this.agentVersion,
+      ...(this.remote ? { remote: { host: this.remote.host }, reconnecting: !!this.reconnect.timer } : {}),
     };
   }
 
@@ -169,7 +228,7 @@ export class HermesAgent {
       id: this.id, runtime: 'hermes', name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode,
       eyes: this.eyes, speak: this.speak,
       ...(this.speakSet ? { speakSet: true } : {}), ...(this.voiceChoice ? { voiceChoice: this.voiceChoice } : {}), ...(this.voiceOffered ? { voiceOffered: true } : {}),
-      ...(this.worldTools ? {} : { worldTools: false }), ...(this.command ? { command: this.command } : {}), ...(this.hermesHome ? { hermesHome: this.hermesHome } : {}),
+      ...(this.worldTools ? {} : { worldTools: false }), ...(this.command ? { command: this.command } : {}), ...(this.remote ? { remote: this.remote } : {}), ...(this.hermesHome ? { hermesHome: this.hermesHome } : {}),
       ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}),
       ...(this.proc?.pid ? { pid: this.proc.pid } : {}),
       ...(this.schedule ? { schedule: this.schedule } : {}), ...(this.appointments.length ? { appointments: this.appointments } : {}), ...(this.wake.lastAt || this.wake.count ? { wake: this.wake } : {}),
@@ -196,6 +255,20 @@ export class HermesAgent {
     for (const key of Object.keys(env)) if (key === 'CLAUDECODE' || key.startsWith('CLAUDE_CODE_')) delete env[key];
     if (this.hermesHome) env.HERMES_HOME = this.hermesHome;
     this.hub.log(`[${this.name}] spawn ${exe} ${args.join(' ')} (hermes, cwd ${this.cwd}${this.hermesHome ? `, HERMES_HOME ${this.hermesHome}` : ''})`);
+    clearTimeout(this.reconnect.timer);
+    this.reconnect.timer = null;
+    // A remote agent's world gate listens on its fixed port before ssh connects; the Pi only reaches it after
+    // session/new, seconds later. The last line's gate is closed first (same port).
+    if (this.remote && this.worldTools) {
+      const port = this.remote.worldPort;
+      this.gateReady = (this.gateClosing || Promise.resolve()).then(() => startWorldGateServer(worldToolsUrl(), { port })).then(
+        (g) => { this.gate = g; return g; },
+        (e) => { this.hub.log(`[${this.name}] world gate on ${port} did not start (${e.message}): no world tools on this line`); return null; },
+      );
+    }
+    this.remoteCwd = null;
+    let cwdSeen;
+    this.remoteCwdReady = new Promise((r) => { cwdSeen = r; });
     let proc;
     try {
       proc = spawn(exe, args, { cwd: this.cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: false });
@@ -214,6 +287,9 @@ export class HermesAgent {
     this.persist();
     onLines(proc.stdout, (line) => this.onLine(line));
     onLines(proc.stderr, (line) => {
+      const cwd = /^OASIS_CWD (\/\S*)\s*$/.exec(line);
+      if (cwd) { this.remoteCwd = cwd[1]; cwdSeen(cwd[1]); return; }
+      if (/remote port forwarding failed/i.test(line)) this.emit('notice', { subtype: 'world', text: `The world tools cannot reach this agent: port ${this.remote?.worldPort} is taken on ${this.remote?.host}.` });
       this.stderrTail.push(line);
       if (this.stderrTail.length > 20) this.stderrTail.shift();
       if (!/\[(INFO|DEBUG)\]/.test(line)) this.hub.log(`[${this.name}] stderr: ${line}`);
@@ -242,12 +318,15 @@ export class HermesAgent {
     const init = await this.call('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } }, 60000);
     this.agentVersion = init?.agentInfo?.version || null;
     this.canLoad = !!init?.agentCapabilities?.loadSession;
-    const mcpServers = this.worldToolsServers();
+    const mcpServers = await this.worldToolsServers();
+    // A remote Hermes works in the other machine's home folder (its shell says which), never in a path from here.
+    const cwd = this.remote ? (this.remote.cwd || await Promise.race([this.remoteCwdReady, new Promise((r) => setTimeout(() => r(null), 10000))]) || '.') : this.cwd;
+    this.acpCwd = cwd;
     let opened = null;
     if (this.sessionId && this.canLoad) {
       this.replaying = true;
       try {
-        opened = await this.call('session/load', { sessionId: this.sessionId, cwd: this.cwd, mcpServers }, 120000);
+        opened = await this.call('session/load', { sessionId: this.sessionId, cwd, mcpServers }, 120000);
         this.flushText({ history: true });
         this.emit('notice', { subtype: 'history', text: `resumed Hermes session ${this.sessionId.slice(0, 8)}` });
       } catch (e) {
@@ -259,7 +338,7 @@ export class HermesAgent {
       }
     }
     if (!opened) {
-      opened = await this.call('session/new', { cwd: this.cwd, mcpServers }, 120000);
+      opened = await this.call('session/new', { cwd, mcpServers }, 120000);
       this.sessionId = opened?.sessionId || null;
       if (!this.sessionId) throw new Error('session/new returned no sessionId');
     }
@@ -273,9 +352,10 @@ export class HermesAgent {
       await this.call('session/set_model', { sessionId: this.sessionId, modelId: this.model }).then(() => { this.resolvedModel = this.model; }, (e) => this.hub.log(`[${this.name}] set_model ${this.model} failed: ${e.message}`));
     }
     this.isReady = true;
+    this.reconnect.tries = 0;
     this.persist();
     this.emit('init', {
-      sessionId: this.sessionId, model: this.resolvedModel, permissionMode: this.effectivePermissionMode, cwd: this.cwd,
+      sessionId: this.sessionId, model: this.resolvedModel, permissionMode: this.effectivePermissionMode, cwd: this.remote ? `${this.remote.host}:${cwd}` : this.cwd,
       tools: [], mcpServers: mcpServers.map((s) => ({ name: s.name, status: 'given' })), agents: [],
       claudeCodeVersion: null, runtime: 'hermes', hermesVersion: this.agentVersion,
     });
@@ -284,9 +364,16 @@ export class HermesAgent {
     this.pump();
   }
 
-  /** The Oasis world tools, as a stdio MCP server Hermes starts: worldproxy.js offers only the free tools. */
-  worldToolsServers() {
-    if (!this.worldTools || this.command) return []; // a Hermes on another machine cannot start a proxy on this one
+  /**
+   * The Oasis world tools, free tools only (worldproxy.js): here a stdio server Hermes starts; for a remote Hermes the
+   * engine's gate, reached at 127.0.0.1:<worldPort> on the other machine through the SSH line. A raw `command` gets none.
+   */
+  async worldToolsServers() {
+    if (!this.worldTools || this.command) return [];
+    if (this.remote) {
+      const gate = await this.gateReady;
+      return gate ? [{ type: 'http', name: 'oasis', url: `http://127.0.0.1:${this.remote.worldPort}/mcp`, headers: [] }] : [];
+    }
     // Hermes may not hand its own environment to the servers it starts: the local key (token.js) goes along by name.
     const token = requiredToken();
     return [{ name: 'oasis', command: process.execPath, args: [PROXY_SCRIPT, worldToolsUrl()], env: token ? [{ name: 'OASIS_LOCAL_TOKEN', value: token }] : [] }];
@@ -322,9 +409,40 @@ export class HermesAgent {
     this.emit('exit', { code, signal, stderr: wasKilling ? undefined : this.stderrTail.slice(-5) });
     const failed = this.failReason;
     this.failReason = null;
+    if (this.gate) { const g = this.gate; this.gate = null; this.gateClosing = g.close().catch(() => {}); }
     if (failed) this.setStatus(STATUS.ERROR, failed);
     else if (wasKilling || code === 0) this.setStatus(STATUS.IDLE, wasKilling ? 'stopped' : 'exited');
+    else if (this.remote) this.lineDropped(code);
     else this.setStatus(STATUS.ERROR, why ? `hermes did not start: ${why}` : `hermes exited (code ${code}${signal ? ', ' + signal : ''})`);
+  }
+
+  /**
+   * A remote agent's line ended by itself (network, the Pi off, ssh refused). With work pending (a cut-off turn or
+   * messages in the journal) it tries again after 5 s, 15 s, 30 s, 1, 2 and 5 minutes; a turn cut off is told to carry
+   * on, and the messages go out again. Without work it waits for the next message, which starts the line again.
+   */
+  lineDropped(code) {
+    const said = this.stderrTail.filter((l) => !/^OASIS_CWD /.test(l)).slice(-1)[0] || `ssh exit ${code}`;
+    const pending = !!this.turnOpenAt || !!this.hub.journal?.queuedFor(this.id).length;
+    const n = this.reconnect.tries;
+    if (!pending || n >= RECONNECT_S.length) {
+      this.setStatus(STATUS.ERROR, `${this.remote.host} not reachable: ${clip(said, 120)}${pending ? ' (gave up; the next message tries again)' : ''}`);
+      this.reconnect.tries = 0;
+      return;
+    }
+    const wait = RECONNECT_S[n];
+    this.reconnect.tries = n + 1;
+    this.setStatus(STATUS.ERROR, `${this.remote.host} not reachable: ${clip(said, 100)}; trying again in ${wait} s (${n + 1}/${RECONNECT_S.length})`);
+    this.reconnect.timer = setTimeout(() => {
+      this.reconnect.timer = null;
+      if (this.proc || this.killing) return;
+      const resume = !!this.turnOpenAt;
+      this.start();
+      if (!this.proc) return;
+      const run = this.sendChain.then(() => this.flushLeftovers({ resume }));
+      this.sendChain = run.catch(() => {});
+    }, wait * 1000);
+    this.reconnect.timer.unref?.();
   }
 
   write(obj) {
@@ -767,6 +885,9 @@ export class HermesAgent {
   }
 
   kill({ now = false } = {}) {
+    clearTimeout(this.reconnect.timer);
+    this.reconnect.timer = null;
+    this.reconnect.tries = 0;
     if (!this.proc) { this.setStatus(STATUS.IDLE, 'stopped'); return; }
     this.killing = true;
     const proc = this.proc;

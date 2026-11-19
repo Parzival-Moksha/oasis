@@ -1,21 +1,24 @@
-// The Oasis world tools for agents that never ask before an MCP call (Hermes): a stdio MCP server that forwards to
-// the Oasis page server's HTTP MCP route and offers only the free tools of worldtools.js (looking, placing, moving,
-// lighting, screenshots). Tools that spend credits or switch or wipe the owner's world are not listed, and a call to
-// one gets an error result instead of reaching the Oasis.
+// The Oasis world tools for agents that never ask before an MCP call (Hermes): a gate in front of the Oasis page
+// server's HTTP MCP route that offers only the free tools of worldtools.js (looking, placing, moving, lighting,
+// screenshots). Tools that spend credits or switch or wipe the owner's world are not listed, and a call to one gets an
+// error result instead of reaching the Oasis.
 //
-//   node worldproxy.js <url>      (url: the Oasis MCP route, e.g. http://127.0.0.1:4516/api/mcp/oasis)
+// Two faces, one gate (createWorldGate):
+//   node worldproxy.js <url>   a stdio MCP server: a Hermes on this machine starts it (hermes.js, ACP mcpServers).
+//   startWorldGateServer(url)  an HTTP MCP endpoint on 127.0.0.1: a Hermes on another machine reaches it through the
+//                              SSH line's reverse forward (hermes.js, remote agents). One per agent, in the engine.
 //
-// Streamable HTTP client side: every stdin line (one JSON-RPC message) is POSTed; the answer comes back as JSON or as
-// an SSE stream, and each message in it goes to stdout as one line. The mcp-session-id the server hands out rides on
-// every later request; stdin closing ends the session (DELETE) and the process.
-//
-// The boundary fails closed: a batch is split and each part checked on its own; only known methods pass; every
-// tools list is filtered, whatever request it answers; a request always gets an answer (an error when the Oasis gave
-// none). When the Oasis forgets the session (2 h idle, or the page server restarted: HTTP 404), the proxy opens a new
-// one with the client's own initialize and sends the request again, once.
+// Upstream, the gate is a streamable-HTTP client with one Oasis session: every message is POSTed, the answer comes
+// back as JSON or as an SSE stream. The boundary fails closed: a batch is split and each part checked on its own;
+// only known methods pass; every tools list is filtered, whatever request it answers; a request always gets an answer
+// (an error when the Oasis gave none). When the Oasis forgets the session (2 h idle, or the page server restarted:
+// HTTP 404), the gate opens a new one with the client's own initialize and sends the request again, once. The local
+// key (token.js) rides on every request when the Oasis runs with one.
 //
 // Not a sandbox: an agent with a shell can still reach the route itself (see the README, "Hermes agents").
+import http from 'node:http';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WORLD_TOOLS_ALLOWED, WORLD_SERVER } from './worldtools.js';
 import { tokenHeaders } from './token.js';
@@ -24,35 +27,17 @@ const PREFIX = `mcp__${WORLD_SERVER}__`;
 export const FREE_WORLD_TOOLS = new Set(WORLD_TOOLS_ALLOWED.filter((t) => t.startsWith(PREFIX)).map((t) => t.slice(PREFIX.length)));
 /** Methods that may reach the Oasis. Lists and reads only, plus tools/call for a free tool. */
 const METHODS = new Set(['initialize', 'ping', 'tools/list', 'tools/call', 'resources/list', 'resources/templates/list', 'resources/read', 'prompts/list', 'prompts/get', 'completion/complete', 'logging/setLevel']);
+const BODY_MAX = 4 * 1024 * 1024;
 
-const url = process.argv[2];
-let session = null;
-let protocol = null;
-let initMsg = null; // the client's initialize, kept to open a new session when the Oasis forgets ours
-let reopening = null;
-let reN = 0;
+const fail = (id, message, code = -32000) => ({ jsonrpc: '2.0', id, error: { code, message } });
+const refusedTool = (id, name) => ({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: `${name} is not offered here: it spends credits or changes the owner's world, and this agent cannot ask him first.` }] } });
 
-const out = (msg) => process.stdout.write(JSON.stringify(msg) + '\n');
-const fail = (id, message, code = -32000) => out({ jsonrpc: '2.0', id, error: { code, message } });
-
-/** Every answer passes here: a tools list keeps only the free tools, whatever request it answers. */
+/** A tools list keeps only the free tools, whatever request it answers. */
 function filtered(msg) {
   if (msg && typeof msg === 'object' && Array.isArray(msg.result?.tools)) {
     msg.result.tools = msg.result.tools.filter((t) => FREE_WORLD_TOOLS.has(t?.name));
   }
-  if (msg?.result?.protocolVersion) protocol = msg.result.protocolVersion;
   return msg;
-}
-
-async function post(msg) {
-  // The local key (token.js), when the Oasis runs with one: from OASIS_LOCAL_TOKEN (the engine passes it), else the file.
-  const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...tokenHeaders() };
-  if (session) headers['mcp-session-id'] = session;
-  if (protocol) headers['mcp-protocol-version'] = protocol;
-  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(msg) });
-  const sid = res.headers.get('mcp-session-id');
-  if (sid) session = sid;
-  return res;
 }
 
 /** The messages in an answer (JSON or SSE). With an id, an SSE stream is read until the answer to it has come. */
@@ -80,63 +65,130 @@ async function messagesOf(res, id) {
     return found;
   }
   if (type.includes('json')) { try { return [].concat(await res.json()); } catch { return []; } }
+  await res.body?.cancel().catch(() => {});
   return [];
 }
 
-/** A new Oasis session with the client's own initialize (its answer stays here). */
-function reopen() {
-  if (!reopening) {
-    reopening = (async () => {
-      session = null;
-      const id = `oasis-proxy-reopen-${++reN}`;
-      const res = await post({ ...initMsg, id });
-      for (const m of await messagesOf(res, id)) filtered(m);
-      if (!session) throw new Error('the Oasis gave no session');
-      await post({ jsonrpc: '2.0', method: 'notifications/initialized' }).catch(() => {});
-    })().finally(() => { reopening = null; });
+/**
+ * The gate: handle(msg) takes one JSON-RPC message (or a batch) from the agent and resolves with the messages that go
+ * back to it (none for a notification). close() ends the Oasis session.
+ */
+export function createWorldGate(url, { headers: extraHeaders = tokenHeaders } = {}) {
+  let session = null;
+  let protocol = null;
+  let initMsg = null; // the client's initialize, kept to open a new session when the Oasis forgets ours
+  let reopening = null;
+  let reN = 0;
+
+  async function post(msg) {
+    const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...extraHeaders() };
+    if (session) headers['mcp-session-id'] = session;
+    if (protocol) headers['mcp-protocol-version'] = protocol;
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(msg) });
+    const sid = res.headers.get('mcp-session-id');
+    if (sid) session = sid;
+    return res;
   }
-  return reopening;
+
+  const seen = (m) => { if (m?.result?.protocolVersion) protocol = m.result.protocolVersion; return filtered(m); };
+
+  function reopen() {
+    if (!reopening) {
+      reopening = (async () => {
+        session = null;
+        const id = `oasis-gate-reopen-${++reN}`;
+        const res = await post({ ...initMsg, id });
+        for (const m of await messagesOf(res, id)) seen(m);
+        if (!session) throw new Error('the Oasis gave no session');
+        await post({ jsonrpc: '2.0', method: 'notifications/initialized' }).then((r) => r.body?.cancel().catch(() => {}), () => {});
+      })().finally(() => { reopening = null; });
+    }
+    return reopening;
+  }
+
+  async function forward(msg, again = true) {
+    if (reopening) await reopening.catch(() => {});
+    const res = await post(msg);
+    if (res.status === 404 && again && initMsg && msg.method !== 'initialize') {
+      await res.body?.cancel().catch(() => {});
+      await reopen();
+      return forward(msg, false);
+    }
+    if (res.status === 202 || res.status === 204) { await res.body?.cancel().catch(() => {}); return []; }
+    const list = await messagesOf(res, msg.id);
+    const back = [];
+    let answered = false;
+    let errorText = '';
+    for (const m of list) {
+      if (m?.id === msg.id && !m.method) answered = true;
+      if (m?.id == null && m?.error) { errorText = m.error.message || errorText; continue; } // e.g. "Unknown MCP session"
+      back.push(seen(m));
+    }
+    if (msg.id != null && !answered) back.push(fail(msg.id, `the Oasis MCP route gave no answer (HTTP ${res.status}${errorText ? `: ${errorText}` : ''})`));
+    return back;
+  }
+
+  async function handle(msg) {
+    if (Array.isArray(msg)) return (await Promise.all(msg.map(handle))).flat(); // a batch: each part on its own
+    if (!msg || typeof msg !== 'object' || typeof msg.method !== 'string') return []; // answers from the client: we ask it nothing
+    const isRequest = msg.id != null;
+    if (!msg.method.startsWith('notifications/') && !METHODS.has(msg.method)) return isRequest ? [fail(msg.id, `${msg.method} is not offered here`, -32601)] : [];
+    if (msg.method === 'tools/call' && !FREE_WORLD_TOOLS.has(msg.params?.name)) return isRequest ? [refusedTool(msg.id, msg.params?.name)] : [];
+    if (msg.method === 'initialize') initMsg = { jsonrpc: '2.0', method: 'initialize', params: msg.params };
+    try {
+      return await forward(msg);
+    } catch (err) {
+      return isRequest ? [fail(msg.id, `the Oasis is not reachable (${err.message})`)] : [];
+    }
+  }
+
+  async function close() {
+    if (session) await fetch(url, { method: 'DELETE', headers: { 'mcp-session-id': session, ...extraHeaders() } }).catch(() => {});
+    session = null;
+  }
+
+  return { handle, close };
 }
 
-async function forward(msg, again = true) {
-  if (reopening) await reopening.catch(() => {});
-  const res = await post(msg);
-  if (res.status === 404 && again && initMsg && msg.method !== 'initialize') {
-    await res.body?.cancel().catch(() => {});
-    await reopen();
-    return forward(msg, false);
-  }
-  if (res.status === 202 || res.status === 204) return;
-  const list = await messagesOf(res, msg.id);
-  let answered = false;
-  let errorText = '';
-  for (const m of list) {
-    if (m?.id === msg.id && !m.method) answered = true;
-    if (m?.id == null && m?.error) { errorText = m.error.message || errorText; continue; } // e.g. "Unknown MCP session"
-    out(filtered(m));
-  }
-  if (msg.id != null && !answered) fail(msg.id, `the Oasis MCP route gave no answer (HTTP ${res.status}${errorText ? `: ${errorText}` : ''})`);
+/**
+ * The gate as an HTTP MCP endpoint on 127.0.0.1 (any path). The agent sees one session of its own; the gate keeps
+ * its own Oasis session behind it. GET (a server-to-client stream) is not offered: 405, which MCP clients accept.
+ * -> Promise<{ port, close() }>
+ */
+export function startWorldGateServer(url, { port = 0, host = '127.0.0.1' } = {}) {
+  const gate = createWorldGate(url);
+  const sessionId = randomUUID();
+  const server = http.createServer((req, res) => {
+    if (req.method === 'DELETE') { res.writeHead(200).end(); return; }
+    if (req.method !== 'POST') { res.writeHead(405, { allow: 'POST, DELETE' }).end(); return; }
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => { size += c.length; if (size > BODY_MAX) { res.writeHead(413).end(); req.destroy(); } else chunks.push(c); });
+    req.on('end', async () => {
+      if (res.writableEnded) return;
+      let msg;
+      try { msg = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify(fail(null, 'not JSON', -32700))); return; }
+      const back = await gate.handle(msg);
+      const headers = { 'mcp-session-id': sessionId };
+      if (!back.length) { res.writeHead(202, headers).end(); return; }
+      res.writeHead(200, { ...headers, 'content-type': 'application/json' }).end(JSON.stringify(Array.isArray(msg) ? back : back.length === 1 ? back[0] : back));
+    });
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => {
+      server.off('error', reject);
+      resolve({ port: server.address().port, close: async () => { await gate.close(); await new Promise((r) => server.close(() => r())); } });
+    });
+  });
 }
 
-function onMessage(msg) {
-  if (Array.isArray(msg)) { for (const m of msg) onMessage(m); return; } // a batch: each part on its own
-  if (!msg || typeof msg !== 'object') return;
-  const isRequest = typeof msg.method === 'string' && msg.id != null;
-  if (typeof msg.method !== 'string') return; // an answer from the client (we never ask it anything)
-  if (!msg.method.startsWith('notifications/') && !METHODS.has(msg.method)) {
-    if (isRequest) fail(msg.id, `${msg.method} is not offered here`, -32601);
-    return;
-  }
-  if (msg.method === 'tools/call' && !FREE_WORLD_TOOLS.has(msg.params?.name)) {
-    if (isRequest) out({ jsonrpc: '2.0', id: msg.id, result: { isError: true, content: [{ type: 'text', text: `${msg.params?.name} is not offered here: it spends credits or changes the owner's world, and this agent cannot ask him first.` }] } });
-    return;
-  }
-  if (msg.method === 'initialize') initMsg = { jsonrpc: '2.0', method: 'initialize', params: msg.params };
-  forward(msg).catch((err) => { if (isRequest) fail(msg.id, `the Oasis is not reachable (${err.message})`); });
-}
-
+// ------------------------------------------------------------------ stdio face
 if (process.argv[1] && path.resolve(process.argv[1]).toLowerCase() === fileURLToPath(import.meta.url).toLowerCase()) {
+  const url = process.argv[2];
   if (!url) { process.stderr.write('usage: node worldproxy.js <oasis mcp url>\n'); process.exit(2); }
+  const gate = createWorldGate(url);
+  const out = (m) => process.stdout.write(JSON.stringify(m) + '\n');
   let buf = '';
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', (chunk) => {
@@ -146,11 +198,10 @@ if (process.argv[1] && path.resolve(process.argv[1]).toLowerCase() === fileURLTo
       const line = buf.slice(0, i).trim();
       buf = buf.slice(i + 1);
       if (!line) continue;
-      try { onMessage(JSON.parse(line)); } catch { /* not JSON: ignore */ }
+      let msg;
+      try { msg = JSON.parse(line); } catch { continue; }
+      gate.handle(msg).then((back) => back.forEach(out));
     }
   });
-  process.stdin.on('end', async () => {
-    if (session) await fetch(url, { method: 'DELETE', headers: { 'mcp-session-id': session, ...tokenHeaders() } }).catch(() => {});
-    process.exit(0);
-  });
+  process.stdin.on('end', async () => { await gate.close(); process.exit(0); });
 }
