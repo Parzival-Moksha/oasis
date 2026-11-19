@@ -30,10 +30,15 @@ const HOME = path.join(tmp, 'hermes-home');
 const CWD = path.join(tmp, 'desk');
 fs.mkdirSync(HOME, { recursive: true });
 fs.mkdirSync(CWD, { recursive: true });
-// Hermes refuses a model with less than 64K context at session/new.
-fs.writeFileSync(path.join(HOME, 'config.yaml'), [
+// HERMES_SMOKE_FROM=<a profile folder>: a copy of its config.yaml, SOUL.md and .env (its model and key), so the
+// test's sessions never land in the real profile. Else the local model above. Hermes refuses a model under 64K context.
+const FROM = process.env.HERMES_SMOKE_FROM;
+if (FROM) for (const f of ['config.yaml', 'SOUL.md', '.env']) { if (fs.existsSync(path.join(FROM, f))) fs.copyFileSync(path.join(FROM, f), path.join(HOME, f)); }
+else fs.writeFileSync(path.join(HOME, 'config.yaml'), [
   'model:', `  default: "${MODEL}"`, '  provider: custom', `  base_url: ${MODEL_URL}`, '  context_length: 65536', '  ollama_num_ctx: 65536', '',
 ].join('\n'));
+// HERMES_SMOKE_PHASES=3: stop after phase 3 (on a paid model: two turns, a few cents).
+const LAST = Number(process.env.HERMES_SMOKE_PHASES) || 5;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let failed = false;
 const check = (label, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${extra ? '  ' + extra : ''}`); if (!ok) failed = true; };
@@ -104,6 +109,7 @@ try {
   check('context meter from usage_update', mine.some((e) => e.kind === 'context' && e.maxTokens >= 64000));
   const answer1 = mine.filter((e) => e.kind === 'text').map((e) => e.text).join('\n');
   console.log(`      reply: ${clipLine(answer1)}`);
+  console.log(`      voice line: ${/<spoken>[\s\S]+<\/spoken>\s*$/.test(answer1.trim()) ? 'yes, at the end' : 'missing'}; cost estimate: ${end1.costUsd ?? 0}`);
   const s1 = (await c.cmd('listAgents')).find((a) => a.id === snap.id);
   check('status waiting after the turn', s1.status === 'waiting' || s1.status === 'needs-decision', `${s1.status} (${s1.statusReason})`);
   const sessionId = init.sessionId;
@@ -137,6 +143,7 @@ try {
   const key = oasisUp ? /zen|workshop|world/i : /4|four/i;
   check('it remembers turn 1', key.test(answer2), String(key));
 
+  if (LAST < 4) throw Object.assign(new Error('stop'), { stop: true });
   // ---------------------------------------------------------------- 4. a permission card nobody answers
   // Hermes asks before `rm -rf` (its dangerous-command list) and denies by itself after 60 s. The folder is empty
   // scratch inside the test desk; if Hermes ran it without asking, only that folder would go.
@@ -187,7 +194,7 @@ try {
   await c.cmd('kill', { agentId: snap.id }).catch(() => {});
   c.ws.close();
 } catch (e) {
-  check('no exception', false, e.message);
+  if (!e.stop) check('no exception', false, e.message);
 } finally {
   if (engine) await stopEngine();
   if (failed) console.log(logs.join('').split('\n').filter((l) => /Hermes smoke|error|Error/.test(l)).slice(-30).join('\n'));

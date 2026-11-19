@@ -48,6 +48,18 @@ const MODES = { default: 'default', manual: 'default', accept_edits: 'accept_edi
 const PERMISSION_MS = 60_000;
 /** A slash command (/compact, /reset, /model …) is a prompt of its own: Hermes reads what follows it as its arguments. */
 const isCommand = (text) => /^\s*\/[a-z]/i.test(text || '');
+/**
+ * List prices (USD per million tokens, in / out) of models a Hermes agent here runs on, for a cost estimate per turn:
+ * ACP reports tokens, not money. An upper bound (cache discounts are not counted). A model not listed costs 0 (local).
+ */
+const PRICES = [
+  [/deepseek-v4\.1-flash/i, 0.30, 1.20], // OpenRouter, 2026-11-19
+];
+export function estimateCost(model, usage) {
+  const price = PRICES.find(([re]) => re.test(String(model || '')));
+  if (!price || !usage) return 0;
+  return Number((((usage.inputTokens || 0) * price[1] + (usage.outputTokens || 0) * price[2]) / 1e6).toFixed(6));
+}
 
 /** Plain words only in what becomes a remote shell line: a host alias, paths, no quotes, spaces or operators. */
 const SAFE_HOST = /^[A-Za-z0-9._@-]{1,128}$/;
@@ -779,8 +791,10 @@ export class HermesAgent {
       durationApiMs: null,
       numTurns: null,
       usage: usage ? { input: usage.inputTokens ?? null, output: usage.outputTokens ?? null, cacheRead: usage.cachedReadTokens ?? null, cacheCreation: null } : null,
-      costUsd: 0, // ACP reports no price; with a local model there is none
-      totalCostUsd: 0,
+      // ACP reports tokens, not money: an estimate from list prices (PRICES), 0 for a local model.
+      costUsd: estimateCost(this.resolvedModel || this.model, usage),
+      costEstimated: true,
+      totalCostUsd: (this.spentUsd = (this.spentUsd || 0) + estimateCost(this.resolvedModel || this.model, usage)),
       contextTokens: this.lastContext?.usedTokens ?? null,
       contextWindow: this.lastContext?.maxTokens ?? null,
       model: this.resolvedModel,
