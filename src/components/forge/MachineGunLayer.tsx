@@ -15,7 +15,9 @@ import { isProbablyMobileDevice } from '@/lib/mobile-controls'
 import { setPlayerSpellCasting } from '@/lib/player-avatar-runtime'
 import { VILLAGE_TARGET_PREFIX, damageVillageAgent } from '@/lib/village/village-combat'
 import { useOasisStore } from '@/store/oasisStore'
-import { canCastBolt, collectCollisionTargets, isTypingTarget, resolveCastOriginAndDirection } from './bolts/shared'
+import { canCastBolt, isTypingTarget } from './bolts/shared'
+import { collectActorTargets, resolveCombatAim, worldImpactAlong } from './bolts/aim'
+import { segmentSphereEntry } from './bolts/flight'
 
 const ROUND_MS = 90
 const BULLET_DAMAGE = 8
@@ -76,46 +78,27 @@ function gunshot(): void {
 
 const _origin = new THREE.Vector3()
 const _dir = new THREE.Vector3()
-const _center = new THREE.Vector3()
-const _oc = new THREE.Vector3()
-
-function raySphere(origin: THREE.Vector3, dir: THREE.Vector3, center: THREE.Vector3, radius: number): number | null {
-  _oc.copy(origin).sub(center)
-  const b = _oc.dot(dir)
-  const c = _oc.lengthSq() - radius * radius
-  const h = b * b - c
-  if (h < 0) return null
-  const t = -b - Math.sqrt(h)
-  return t > 0.3 ? t : null
-}
-
 interface Shot { point: THREE.Vector3; targetId: string | null; ground: boolean }
 
-function traceShot(camera: THREE.Camera): Shot {
+/** A round along the crosshair (with a little spread): the first real mesh, terrain or ground, or an actor before it. */
+function traceShot(camera: THREE.Camera, scene: THREE.Object3D): Shot {
   camera.getWorldPosition(_origin)
   camera.getWorldDirection(_dir)
   _dir.x += (Math.random() - 0.5) * SPREAD_RAD * 2
   _dir.y += (Math.random() - 0.5) * SPREAD_RAD * 2
   _dir.z += (Math.random() - 0.5) * SPREAD_RAD * 2
   _dir.normalize()
-  let best = RANGE_M
-  let targetId: string | null = null
-  for (const target of collectCollisionTargets()) {
-    if (target.id.startsWith('pvp:')) continue
-    _center.set(target.position[0], target.position[1] + Math.min(1.4, target.radius), target.position[2])
-    const t = raySphere(_origin, _dir, _center, target.radius)
-    if (t !== null && t < best) {
+  const world = worldImpactAlong(scene, _origin, _dir, RANGE_M)
+  let best = world ? world.distance : RANGE_M
+  let targetId: string | null = world?.objectId ?? null
+  let ground = Boolean(world && !world.objectId)
+  for (const actor of collectActorTargets(true)) {
+    if (actor.id.startsWith('pvp:')) continue
+    const t = segmentSphereEntry([_origin.x, _origin.y, _origin.z], [_dir.x, _dir.y, _dir.z], best, actor.center, actor.radius)
+    if (t !== null && t > 0.3 && t < best) {
       best = t
-      targetId = target.id
-    }
-  }
-  let ground = false
-  if (_dir.y < -1e-3) {
-    const t = -_origin.y / _dir.y
-    if (t > 0.3 && t < best) {
-      best = t
-      targetId = null
-      ground = true
+      targetId = actor.id
+      ground = false
     }
   }
   return { point: _origin.clone().addScaledVector(_dir, best), targetId, ground }
@@ -127,7 +110,7 @@ interface Tracer { from: THREE.Vector3; to: THREE.Vector3; age: number; alive: b
 interface Spark { at: THREE.Vector3; age: number; alive: boolean; blood: boolean; dust: boolean }
 
 export function MachineGunLayer({ enabled }: { enabled: boolean }) {
-  const { camera, gl } = useThree()
+  const { camera, gl, scene } = useThree()
   const firingRef = useRef(false)
   const lastShotRef = useRef(0)
   const tracerRefs = useRef<Array<THREE.Mesh | null>>([])
@@ -217,8 +200,8 @@ export function MachineGunLayer({ enabled }: { enabled: boolean }) {
   })
 
   function shoot(): void {
-    const shot = traceShot(camera)
-    const { origin: muzzle } = resolveCastOriginAndDirection(camera)
+    const shot = traceShot(camera, scene)
+    const { origin: muzzle } = resolveCombatAim(camera, scene)
     const tracer = pool.tracers[pool.nextTracer]
     pool.nextTracer = (pool.nextTracer + 1) % TRACERS
     tracer.from.copy(muzzle)
