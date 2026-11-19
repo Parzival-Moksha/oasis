@@ -288,6 +288,11 @@ export class AgentEngineClient {
     return this.cmd('voiceMessage', { agentId, audio, mime, ...(durationMs ? { durationMs } : {}), ...(priority ? { priority } : {}) }, { timeoutMs })
   }
 
+  /** A new name for an agent the Oasis runs: its session, desk, voice, look and history stay (engine rename). */
+  rename(agentId: string, name: string) {
+    return this.cmd('rename', { agentId, name })
+  }
+
   /** The md reader: a text file an agent sent (the engine allows only those, .md / .markdown / .txt). */
   readFile(fileId: string) {
     return this.cmd('readFile', { fileId })

@@ -259,6 +259,9 @@ function scheduleView(a) {
 
 function newId(prefix) { return `${prefix}-${randomUUID().slice(0, 8)}`; }
 
+/** The longest name rename accepts (names show on tags, cards and Telegram lines). */
+const RENAME_MAX = 40;
+
 function getAgent(id, { owned = false } = {}) {
   const a = agents.get(id);
   if (!a) throw new Error(`unknown agent ${id}`);
@@ -411,6 +414,32 @@ ${you.note}` : text);
     }
     scheduleSnapshot();
     return { ok: true };
+  },
+  /**
+   * A new name for an agent the Oasis runs ({agentId or agent, name}). The roster, the snapshot and the character
+   * card's name line follow; Telegram and the stage find agents by their name when asked, so they follow too. The
+   * session, its seat and home, voice, skin, schedule and history are keyed on its id or session and stay.
+   * Refused when another owned agent has that name (any case).
+   */
+  rename({ agentId, agent, name }) {
+    const a = findAgent(agentId ?? agent);
+    if (!a) throw new Error(`unknown agent ${agentId ?? agent ?? ''}`);
+    if (a.kind !== 'owned') throw new Error(`${a.name} runs in another window: only agents the Oasis runs can be renamed here`);
+    const next = String(name ?? '').replace(/\s+/g, ' ').trim();
+    if (!next) throw new Error('a name is needed');
+    if (next.length > RENAME_MAX) throw new Error(`a name of at most ${RENAME_MAX} characters`);
+    const clash = ownedAgents().find((x) => x !== a && (x.name || '').trim().toLowerCase() === next.toLowerCase());
+    if (clash) throw new Error(`another agent is already called ${clash.name}`);
+    const old = a.name;
+    if (old === next) return a.snapshot();
+    // Voice on/off is read from the name when it was never set (Anorak speaks by default): keep what it has now.
+    a.speakSet = true;
+    a.name = next;
+    if (a.sessionId && characters.fileFor(a.sessionId)) characters.setFacts(a.sessionId, { name: next });
+    hub.log(`[${next}] renamed from ${old}`);
+    hub.persist();
+    scheduleSnapshot();
+    return a.snapshot();
   },
   restart({ agentId }) {
     const a = getAgent(agentId, { owned: true });

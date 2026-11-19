@@ -17,10 +17,13 @@ import { showNotice } from './GlobalNotice'
 const HEALTH_EVERY_MS = 10_000
 const RELAY_EVERY_MS = 15_000
 const CHECK_TIMEOUT_MS = 4_000
+// The Oasis server: a dev server compiling can take many seconds to answer /api/health (up, just busy: two 4 s
+// timeouts in a row read as "offline", 2026-11-19). A stopped server refuses at once, so a long wait costs nothing.
+const HEALTH_TIMEOUT_MS = 15_000
 
-async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = CHECK_TIMEOUT_MS): Promise<Response> {
   const abort = new AbortController()
-  const timer = window.setTimeout(() => abort.abort(), CHECK_TIMEOUT_MS)
+  const timer = window.setTimeout(() => abort.abort(), timeoutMs)
   try {
     return await fetch(url, { cache: 'no-store', ...init, signal: abort.signal })
   } finally {
@@ -72,7 +75,7 @@ export function ConnectionWarning({ local }: { local: boolean }) {
 
   usePoll(async () => {
     try {
-      const res = await fetchWithTimeout('/api/health')
+      const res = await fetchWithTimeout('/api/health', undefined, HEALTH_TIMEOUT_MS)
       setServerFailures(res.ok ? 0 : n => n + 1)
     } catch {
       setServerFailures(n => n + 1)
