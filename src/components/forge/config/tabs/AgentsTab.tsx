@@ -11,6 +11,7 @@ import { SettingsContext } from '@/components/scene-lib/contexts'
 import { DESK_SCREEN_LIMIT, isDeskScreensMode, type DeskScreensMode } from '@/lib/village/desk-screens'
 import { isVillageSoundOn, setVillageSoundOn, subscribeVillageSound } from '@/components/village/village-sound'
 import { TAG_SIZE, TAG_STYLES, getTagSettings, getTagSettingsVersion, setTagSettings, subscribeTagSettings } from '@/lib/village/tag-style'
+import { LEAVE_EFFECTS, getVillageLooks, getVillageLooksVersion, setVillageLooks, subscribeVillageLooks } from '@/lib/village/village-looks'
 import { isVillageVoiceOn, setVillageVoiceOn, subscribeVillageVoice } from '@/components/village/village-companion'
 import { WakeUpSettings } from './WakeUpSettings'
 import { AccountsSettings } from './AccountsSettings'
@@ -54,6 +55,8 @@ export function AgentsTab() {
   const voicesOn = useSyncExternalStore(subscribeVillageVoice, isVillageVoiceOn, () => true)
   useSyncExternalStore(subscribeTagSettings, getTagSettingsVersion, () => 0)
   const tagSettings = getTagSettings()
+  useSyncExternalStore(subscribeVillageLooks, getVillageLooksVersion, () => 0)
+  const looks = getVillageLooks()
 
   return (
     <div className="space-y-4">
@@ -103,6 +106,44 @@ export function AgentsTab() {
         />
         <div>
         </div>
+      </section>
+      <section>
+        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Agents in the village</div>
+        <SwitchRow
+          data="village-desks"
+          on={looks.desks}
+          onToggle={() => setVillageLooks({ desks: !looks.desks })}
+          title="Desks"
+          hint={looks.desks ? 'Each agent on the ring has its desk.' : 'No desks: the agents stand in the ring; their screens and markers stay.'}
+        />
+        <div className="py-1.5">
+          <div className="flex items-center justify-between gap-3 mb-1.5">
+            <span className="text-sm text-gray-300">When an agent leaves</span>
+            <div className="flex overflow-hidden rounded-md border border-white/15" role="radiogroup" aria-label="When an agent leaves">
+              {LEAVE_EFFECTS.map(choice => (
+                <button
+                  key={choice.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={looks.leave === choice.id}
+                  data-leave-effect={choice.id}
+                  onClick={() => setVillageLooks({ leave: choice.id })}
+                  className={`px-3 py-1 text-xs font-semibold transition-colors ${looks.leave === choice.id ? 'bg-cyan-600 text-white' : 'bg-transparent text-gray-400 hover:bg-white/10 hover:text-white'}`}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="text-[10px] text-gray-500">{LEAVE_EFFECTS.find(choice => choice.id === looks.leave)?.hint} Dismiss an agent (its panel, or Delete) to see it.</div>
+        </div>
+        <SwitchRow
+          data="village-leave-sound"
+          on={looks.leaveSound}
+          onToggle={() => setVillageLooks({ leaveSound: !looks.leaveSound })}
+          title="Sound when an agent leaves"
+          hint={looks.leaveSound ? 'A rising whine for the spin, a click and hum for the CRT, a poof.' : 'Silent.'}
+        />
       </section>
       <section>
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Village</div>

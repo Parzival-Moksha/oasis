@@ -21,6 +21,8 @@ export interface PlaceInput {
   things: PlaceThing[]
   /** Other agents' desks. */
   neighbours: PlaceThing[]
+  /** No desk furniture (the default since 2026-11-19): its place on the ring is just a place. */
+  noDesk?: boolean
   /** It has a home here instead of a desk (village-homes.ts), and the ground around it to build on. */
   home?: { buildRadius: number; objects: number; lights: number } | null
 }
@@ -80,9 +82,9 @@ export function describePlace(input: PlaceInput): string {
     parts.push(`You have no desk: you live at your own home here,${where} (x ${input.anchor[0].toFixed(1)}, z ${input.anchor[2].toFixed(1)}). The ground within ${home.buildRadius} m of it is yours to build on with the free world tools, at most ${home.objects} objects and ${home.lights} lights of your own (the Oasis must stay fast). To move: node me.mjs home here | <x> <z> | clear.`)
   } else if (input.plaza) {
     const distance = Math.round(flat(input.anchor, input.plaza))
-    parts.push(`Your desk is ${distance} m from the centre of the village plaza, which is ${relativeDirection(input.anchor, input.rotationY, input.plaza)}.`)
+    parts.push(`${input.noDesk ? 'Your place on the village ring' : 'Your desk'} is ${distance} m from the centre of the village plaza, which is ${relativeDirection(input.anchor, input.rotationY, input.plaza)}.`)
   } else {
-    parts.push('You have a desk in the village.')
+    parts.push(input.noDesk ? 'You have a place on the village ring.' : 'You have a desk in the village.')
   }
   const neighbours = listThings(input, input.neighbours, NEAR_NEIGHBOURS, MAX_NEIGHBOURS)
   if (neighbours.length) parts.push(`Next to you: ${neighbours.join(', ')}.`)

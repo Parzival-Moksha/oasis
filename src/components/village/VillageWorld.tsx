@@ -71,6 +71,7 @@ import { VillageVoice } from './VillageVoice'
 import { VillageTag, VillageTagDriver, deskScreenHeight, useVillageTagReach, villageTagReach } from './VillageTags'
 import { isStageWorldName, stationAtAnchor } from '../../lib/village/village-stage'
 import { getTagSettings } from '../../lib/village/tag-style'
+import { getVillageLooks, subscribeVillageLooks } from '../../lib/village/village-looks'
 import { getVillageHome, getVillageHomesVersion, subscribeVillageHomes, useVillageHomesSync } from './village-homes'
 import { readableAccent, tagMarker } from '../../lib/village/village-tags'
 import { getAgentAccent, getPanelLookVersion, subscribePanelLook } from '../../lib/village/panel-look'
@@ -635,6 +636,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
   const blocked = useInputManager(s => isVillageFocusBlocked(s.inputState))
   const color = statusColor(status)
   const extras = useStationExtras(agentId)
+  const desks = useSyncExternalStore(subscribeVillageLooks, () => getVillageLooks().desks, () => false)
   // The desk screen floats over the tag: its bottom edge stays above everything the tag can show (its keys,
   // status, name and marker), at the size chosen in Settings and for this body's height.
   const tagReach = useVillageTagReach(agentId)
@@ -709,7 +711,8 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
     <>
       {/* The desk: it and its screen stay where they are, also while the agent walks with you. */}
       {!bare && <group position={placement.position} rotation-y={placement.rotationY}>
-        {!homed && <group name="village-desk"><VillageDesk color={color} working={status === 'working'} observed={observed} /></group>}
+        {/* Desk furniture only when asked for (Settings > Agents, off by default: "time to ditch it"). */}
+        {!homed && desks && <group name="village-desk"><VillageDesk color={color} working={status === 'working'} observed={observed} /></group>}
         {/* Click target enclosing the desk and the avatar's place at it (in front of the VRM's own proxy box). */}
         <mesh position={STATION.hitCenter} {...hitHandlers}>
           <boxGeometry args={STATION.hitSize} />
