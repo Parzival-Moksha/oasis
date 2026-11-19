@@ -18,6 +18,8 @@
 import * as THREE from 'three'
 import type { VRM } from '@pixiv/three-vrm'
 import { loadAnimationClip, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation, getClipTravel } from './forge/animation-library'
+import { buildAuthoredClip, isAuthoredClip } from './forge/authored-clips'
+import { locomotionClipId } from './forge/locomotion-set'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -101,7 +103,16 @@ export class AnimationController {
     this.loadingClips.add(animId)
 
     try {
-      const rawClip = await loadAnimationClip(animId)
+      if (isAuthoredClip(animId)) {
+        const built = buildAuthoredClip(animId, this.vrm)
+        this.loadingClips.delete(animId)
+        if (!built) return null
+        this.clips.set(animId, built)
+        return built
+      }
+      // walk / run / sprint come from the set picked in Settings > Experiments (Mixamo or the free Quaternius loops)
+      const sourceId = locomotionClipId(animId)
+      const rawClip = await loadAnimationClip(sourceId)
       if (!rawClip) {
         console.warn(`[AnimController] Failed to load clip: ${animId}`)
         this.loadingClips.delete(animId)
@@ -109,9 +120,9 @@ export class AnimationController {
       }
 
       // UAL clips use UE skeleton → need UE→VRM retargeting. Mixamo clips use Mixamo→VRM.
-      const retargeted = isUALAnimation(animId)
-        ? retargetUALClipForVRM(rawClip, this.vrm, `${this.vrmCacheKey}__${animId}`)
-        : retargetClipForVRM(rawClip, this.vrm, `${this.vrmCacheKey}__${animId}`)
+      const retargeted = isUALAnimation(sourceId)
+        ? retargetUALClipForVRM(rawClip, this.vrm, `${this.vrmCacheKey}__${sourceId}`)
+        : retargetClipForVRM(rawClip, this.vrm, `${this.vrmCacheKey}__${sourceId}`)
       if (!retargeted || retargeted.tracks.length === 0) {
         console.warn(`[AnimController] Retarget produced empty clip: ${animId}`)
         this.loadingClips.delete(animId)
@@ -135,6 +146,17 @@ export class AnimationController {
       console.error(`[AnimController] Error loading ${animId}:`, err)
       this.loadingClips.delete(animId)
       return null
+    }
+  }
+
+  /** Load these clips again (the walk set changed): the next transition uses the new ones. */
+  reloadClips(ids: string[]): void {
+    for (const id of ids) {
+      this.clips.delete(id)
+      void this.loadClip(id).then(() => {
+        // The state that is playing now picks the new clip up at once.
+        if (this.currentState === id) { const state = this.currentState; this.currentState = 'idle'; this.transitionTo(state) }
+      })
     }
   }
 

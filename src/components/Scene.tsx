@@ -117,6 +117,7 @@ import { GameMenuRailButton } from './game-menu/GameMenuRailButton'
 import { GameMenuCameraDrift } from './game-menu/GameMenuCameraDrift'
 import { AgentSelectionLayer } from './village/AgentSelectionLayer'
 import { GameTooltip } from './forge/GameTooltip'
+import { AnimationBrowser } from './forge/AnimationBrowser'
 import { settingsLookStyle, useSettingsLook } from '@/lib/settings-look'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
@@ -2485,6 +2486,8 @@ export default function Scene() {
       <GameMenu />
       {/* Every `title` tooltip in the Oasis's own material instead of the browser's grey box. */}
       <GameTooltip />
+      {/* Every clip we may ship, played on your avatar (Settings > Experiments > Animations). */}
+      <AnimationBrowser />
 
       {/* OnboardingModal nuked — profile setup lives in ProfileButton */}
 
@@ -2617,8 +2620,13 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
   // The main menu's Config tile.
   useEffect(() => {
     const open = () => setIsOpen(true)
+    const close = () => setIsOpen(false)
     window.addEventListener(OPEN_CONFIG_EVENT, open)
-    return () => window.removeEventListener(OPEN_CONFIG_EVENT, open)
+    window.addEventListener('oasis:close-config', close)
+    return () => {
+      window.removeEventListener(OPEN_CONFIG_EVENT, open)
+      window.removeEventListener('oasis:close-config', close)
+    }
   }, [])
 
   useEffect(() => {

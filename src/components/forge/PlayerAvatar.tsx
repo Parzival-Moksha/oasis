@@ -219,6 +219,26 @@ export function PlayerAvatar({
   const danceByKeyRef = useRef(false)
   const rootFacingRef = useRef<number | null>(null)
   useEffect(() => () => stopDanceMusic(), [])
+  // The animation browser (Settings > Experiments): play any clip on this avatar, turned to face the camera.
+  useEffect(() => {
+    const onPreview = (event: Event) => {
+      const detail = (event as CustomEvent<{ animId: string | null; faceCamera?: boolean }>).detail
+      const controller = animControllerRef.current
+      if (!controller) return
+      controller.rootMotionEnabled = false
+      if (!detail?.animId) { controller.transitionTo('idle'); return }
+      if (detail.faceCamera) facingAngle.current = cameraAzimuth.current
+      const id = detail.animId
+      void controller.preloadClip(id).then(ok => { if (ok) animControllerRef.current?.transitionTo('custom', id) })
+    }
+    const onLocomotion = () => animControllerRef.current?.reloadClips(['walk', 'run', 'sprint'])
+    window.addEventListener('oasis:player-preview-animation', onPreview)
+    window.addEventListener('oasis:locomotion-set-changed', onLocomotion)
+    return () => {
+      window.removeEventListener('oasis:player-preview-animation', onPreview)
+      window.removeEventListener('oasis:locomotion-set-changed', onLocomotion)
+    }
+  }, [])
   const spellAnimationActiveRef = useRef(false)
   const manaRechargeAnimationActiveRef = useRef(false)
   const portalRollTimeoutRef = useRef<number | null>(null)
