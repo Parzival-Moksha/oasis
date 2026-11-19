@@ -254,7 +254,7 @@ export function AgentSettingsButton({ agent, large = false }: { agent: Pick<Engi
           <div className={HEADING}>All agent chats</div>
           <label className="mb-2 block">
             <span className="flex justify-between"><span>Transparency</span><span className="text-white/55">{Math.round((1 - look.opacity) * 100)}%</span></span>
-            <input type="range" min={0} max={85} value={Math.round((1 - look.opacity) * 100)} onChange={event => setPanelLook({ opacity: 1 - Number(event.target.value) / 100 })} className="w-full accent-sky-300" />
+            <input type="range" min={0} max={95} value={Math.round((1 - look.opacity) * 100)} onChange={event => setPanelLook({ opacity: 1 - Number(event.target.value) / 100 })} className="w-full accent-sky-300" />
           </label>
           <label className="block">
             <span className="flex justify-between"><span>Blur</span><span className="text-white/55">{look.blur}px</span></span>

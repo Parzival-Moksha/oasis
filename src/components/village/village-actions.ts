@@ -9,6 +9,9 @@ import { useOasisStore } from '../../store/oasisStore'
 import { useInputManager, type InputState } from '../../lib/input-manager'
 import { selectNextAgentForN } from '../../store/slices/agentEngineSlice'
 import { isStageWorldName } from '../../lib/village/village-stage'
+import { getSelectedVillageAgent } from '../../lib/village/agent-selection'
+import { dismissVillageAgent } from './village-leave'
+import { isVillageConfirmOpen } from './VillageConfirm'
 import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { getPlayerAvatarPose, markThirdPersonCameraRestored, requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
 import { showNotice } from '../forge/GlobalNotice'
@@ -651,6 +654,18 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
   const input = useInputManager.getState()
   // Same gate as the world's own N key, plus the village session view itself (ui-focused while its panel is open).
   const inSessionView = input.inputState === 'ui-focused' && Boolean(village.focusedAgentId)
+  // A dialog is open (the kit's): its keys are its own (Enter presses its button, Esc closes it).
+  if (isVillageConfirmOpen()) return false
+  // Delete: dismiss the agent whose panel is open, else the one selected (a click on it), through the same dialog
+  // and leaving effect as the panel's Dismiss button.
+  if ((event.code === 'Delete' || event.key === 'Delete') && !event.repeat && !event.ctrlKey && !event.altKey && !event.metaKey && !isTypingTarget(event.target)) {
+    const target = village.focusedAgentId || getSelectedVillageAgent()
+    if (target && village.agents[target]) {
+      const wasFocused = village.focusedAgentId === target
+      void dismissVillageAgent(target, () => { if (wasFocused) leaveVillageFocus() })
+      return true
+    }
+  }
   const action = villageKeyAction({
     code: event.code,
     ctrl: event.ctrlKey,

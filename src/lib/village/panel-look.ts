@@ -14,18 +14,20 @@ export interface PanelLook {
   blur: number
 }
 
-export const DEFAULT_LOOK: PanelLook = { opacity: 0.92, blur: 14 }
+// The owner (2026-11-19, 42:27): 90% see-through and blur 4 for the agent panel and screen by default.
+export const DEFAULT_LOOK: PanelLook = { opacity: 0.1, blur: 4 }
 export const DEFAULT_PANEL_COLOR = '#070c18'
 export const PANEL_SWATCHES = ['#070c18', '#1a0b2e', '#062019', '#2a0f0f', '#0d1f33', '#24180a', '#141414', '#2b1a33']
 
-const LOOK_KEY = 'oasis.village.panelLook.v1'
+// v2: the new default (2026-11-19) for everyone; a look saved before starts again from it.
+const LOOK_KEY = 'oasis.village.panelLook.v2'
 const COLORS_KEY = 'oasis.village.panelColors.v1'
 const ACCENT_KEY = 'oasis.village.accentColors.v1'
 
 export function clampLook(look: Partial<PanelLook> | null | undefined): PanelLook {
   const opacity = typeof look?.opacity === 'number' && Number.isFinite(look.opacity) ? look.opacity : DEFAULT_LOOK.opacity
   const blur = typeof look?.blur === 'number' && Number.isFinite(look.blur) ? look.blur : DEFAULT_LOOK.blur
-  return { opacity: Math.min(1, Math.max(0.15, opacity)), blur: Math.min(24, Math.max(0, Math.round(blur))) }
+  return { opacity: Math.min(1, Math.max(0.05, opacity)), blur: Math.min(24, Math.max(0, Math.round(blur))) }
 }
 
 export function hexToRgb(hex: string): [number, number, number] | null {

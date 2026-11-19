@@ -35,6 +35,7 @@ import { FollowToggle, VoiceToggle } from './CompanionToggles'
 import { AgentSettingsButton } from './AgentSettingsMenu'
 import { AcademyTrainToggle } from './VillageAcademyTrainee'
 import { usePanelLook } from './PanelLook'
+import { dismissVillageAgent } from './village-leave'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
@@ -141,17 +142,10 @@ export function AgentSessionPanel() {
 
   const composer = <VillageComposer key={agent.id} agentId={agent.id} containerHeight={geometry.height} />
 
+  // Asks in the village's dialog, plays its leaving effect, then stops it (village-leave.ts; Delete does the same).
   const dismiss = () => {
-    const owned = agent.owned
-    const label = agentDisplayName(agent)
-    if (owned && !window.confirm(`Dismiss ${label}?\n\nThis stops its Claude Code process and removes it from the village. The session transcript stays on disk; summon it again from the picker to resume.`)) return
     setBusy(true)
-    const client = getAgentEngineClient()
-    const action = owned ? client.kill(agent.id) : client.unobserve(agent.id)
-    action
-      .then(() => leaveVillageFocus())
-      .catch(error => showNotice(`${owned ? 'Dismiss' : 'Unobserve'} failed: ${describeError(error)}`, 'error'))
-      .finally(() => setBusy(false))
+    void dismissVillageAgent(agent.id, () => leaveVillageFocus()).finally(() => setBusy(false))
   }
 
   // Drag the left edge: wider to the left (remembered); double-click: the automatic width again.

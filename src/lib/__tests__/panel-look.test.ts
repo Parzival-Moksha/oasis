@@ -4,7 +4,7 @@ import { DEFAULT_LOOK, clampLook, hexToRgb, panelStyle } from '../village/panel-
 
 describe('panel look', () => {
   it('keeps transparency and blur in range', () => {
-    expect(clampLook({ opacity: 0, blur: 99 })).toEqual({ opacity: 0.15, blur: 24 })
+    expect(clampLook({ opacity: 0, blur: 99 })).toEqual({ opacity: 0.05, blur: 24 })
     expect(clampLook({ opacity: 2, blur: -3 })).toEqual({ opacity: 1, blur: 0 })
     expect(clampLook(null)).toEqual(DEFAULT_LOOK)
     expect(clampLook({ opacity: Number.NaN })).toEqual(DEFAULT_LOOK)

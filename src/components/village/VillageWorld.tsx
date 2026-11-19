@@ -69,6 +69,8 @@ import { VillageAcademyTree } from './VillageAcademyTree'
 import { AcademyLevelTag, AcademyVillageBody, useAcademyStone, useAcademyTrainee } from './VillageAcademyTrainee'
 import { VillageVoice } from './VillageVoice'
 import { VillageTag, VillageTagDriver, deskScreenHeight, useVillageTagReach, villageTagReach } from './VillageTags'
+import { VillageLeaveEffect } from './VillageLeaveEffect'
+import { useVillageLeaving } from './village-leave'
 import { isStageWorldName, stationAtAnchor } from '../../lib/village/village-stage'
 import { getTagSettings } from '../../lib/village/tag-style'
 import { getVillageLooks, subscribeVillageLooks } from '../../lib/village/village-looks'
@@ -636,6 +638,8 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
   const blocked = useInputManager(s => isVillageFocusBlocked(s.inputState))
   const color = statusColor(status)
   const extras = useStationExtras(agentId)
+  // Dismissed: its body plays the leaving effect (VillageLeaveEffect), its name tag goes at once.
+  const leavingNow = useVillageLeaving(agentId) !== null
   const desks = useSyncExternalStore(subscribeVillageLooks, () => getVillageLooks().desks, () => false)
   // The desk screen floats over the tag: its bottom edge stays above everything the tag can show (its keys,
   // status, name and marker), at the size chosen in Settings and for this body's height.
@@ -735,6 +739,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
       <group ref={follower.mover}>
         {/* In the F view it turns to look into the camera (its face is left of where the camera looks). */}
         <group position={STATION.avatar} rotation-y={focused && onScreen && screenLayout ? screenLayout.faceTurn : 0}>
+          <VillageLeaveEffect agentId={agentId}>
           <VillageCorpseDrop agentId={agentId}>
           <VillageBodyBoundary key={avatarUrl} color={color}>
             <Suspense fallback={<AvatarPlaceholder color={color} />}>
@@ -753,6 +758,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
             </Suspense>
           </VillageBodyBoundary>
           </VillageCorpseDrop>
+          </VillageLeaveEffect>
           <group ref={head} position={[0, HEAD_HEIGHT, 0]} />
         </group>
         {/* Its helpers (subagents): half-size copies of it, in a semicircle behind it. */}
@@ -767,7 +773,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
         {/* Not in the F view: there its face fills the left of the picture, and the sign would sit on it. */}
         {/* Its name, status and marker; and while the owner is near it (not in its panel), its T / E / F keys. Not on a
             stage (the Council): the circle is filmed, and the keys would float over whoever stands next to him. */}
-        {!(focused && onScreen) && <StationTag agentId={agentId} colorKey={followKey} avatarKey={avatarUrl} keys={nearby && !focused && !bare} />}
+        {!(focused && onScreen) && !leavingNow && <StationTag agentId={agentId} colorKey={followKey} avatarKey={avatarUrl} keys={nearby && !focused && !bare} />}
         {!(focused && onScreen) && extras && (
           <Html position={EXTRAS_AT} center distanceFactor={9} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>
             <StationExtras agentId={agentId} />
