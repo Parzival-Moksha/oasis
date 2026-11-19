@@ -7,7 +7,7 @@
 
 import { useContext, useState, useSyncExternalStore } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
-import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
+import { useAudioManager, SOUND_OPTIONS, type SoundEvent, getFootstepVolume, setFootstepVolume, subscribeFootstepVolume } from '@/lib/audio-manager'
 import { SpellSoundsSelector } from './SpellSoundsSelector'
 import {
   DEFAULT_VOICE_TYPING_ENGINE,
@@ -16,6 +16,19 @@ import {
   subscribeVoiceTypingEngine,
   type VoiceTypingEngine,
 } from '@/lib/voice/voice-typing-engine'
+
+/** Your own footsteps (0 = silent; the default is a third of the old, too-loud level). */
+function FootstepSlider() {
+  const value = useSyncExternalStore(subscribeFootstepVolume, getFootstepVolume, () => 0.17)
+  return (
+    <VolumeSlider
+      label="Footsteps"
+      accent="rgba(190,170,140,0.85)"
+      value={value}
+      onChange={v => setFootstepVolume(v)}
+    />
+  )
+}
 
 function VolumeSlider({
   label,
@@ -170,6 +183,7 @@ export function SoundTab() {
             value={settings.sfxVolume}
             onChange={v => updateSetting('sfxVolume', v)}
           />
+          <FootstepSlider />
           <VolumeSlider
             label="Music"
             accent="rgba(244,114,182,0.85)"

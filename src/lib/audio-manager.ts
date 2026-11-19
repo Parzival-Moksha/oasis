@@ -362,6 +362,31 @@ function saveSettings(state: { volume: number; muted: boolean; selections: Recor
 // Footstep alternation — cycle through available footstep sounds
 let footstepIndex = 0
 
+// ── Footstep volume (Settings > Sound > Footsteps), 0..1 on top of the master volume ──
+// The owner, 2026-11-19: "my steps are … way too loud". The old level was 0.15 of the master volume; the
+// default is now a third of that, and the slider goes from silent up to twice the old level.
+const FOOTSTEP_KEY = 'oasis-footstep-volume'
+const FOOTSTEP_BASE = 0.3
+export const DEFAULT_FOOTSTEP_VOLUME = 0.17
+let footstepVolume: number | null = null
+const footstepListeners = new Set<() => void>()
+export function getFootstepVolume(): number {
+  if (footstepVolume !== null) return footstepVolume
+  let stored = NaN
+  try { stored = Number(window.localStorage.getItem(FOOTSTEP_KEY)) } catch { /* no storage */ }
+  footstepVolume = typeof window !== 'undefined' && window.localStorage?.getItem(FOOTSTEP_KEY) !== null && Number.isFinite(stored) ? Math.max(0, Math.min(1, stored)) : DEFAULT_FOOTSTEP_VOLUME
+  return footstepVolume
+}
+export function setFootstepVolume(value: number): void {
+  footstepVolume = Math.max(0, Math.min(1, value))
+  try { window.localStorage.setItem(FOOTSTEP_KEY, String(footstepVolume)) } catch { /* no storage */ }
+  footstepListeners.forEach(fn => fn())
+}
+export function subscribeFootstepVolume(fn: () => void): () => void {
+  footstepListeners.add(fn)
+  return () => { footstepListeners.delete(fn) }
+}
+
 /**
  * The Oasis has one sound set for every menu, panel and button (src/lib/ui-sounds.ts). Code that asks this
  * manager for a button hover or click is answered by that set, so old and new buttons sound alike. The router
@@ -431,12 +456,14 @@ export const useAudioManager = create<AudioManagerState>((set, get) => {
       const step = steps[footstepIndex % steps.length]
       footstepIndex++
 
-      if (brokenPaths.has(step.path)) { playFallbackBeep(volume * 0.15); return }
+      const level = volume * FOOTSTEP_BASE * getFootstepVolume()
+      if (level <= 0) return
+      if (brokenPaths.has(step.path)) { playFallbackBeep(level); return }
       const audio = getAudio(step.path)
-      audio.volume = volume * 0.15  // footsteps much quieter than UI sounds
+      audio.volume = Math.min(1, level)  // footsteps much quieter than UI sounds (Settings > Sound > Footsteps)
       audio.currentTime = 0
       audio.play().catch(() => {
-        if (audio.error) { brokenPaths.add(step.path); playFallbackBeep(volume * 0.15) }
+        if (audio.error) { brokenPaths.add(step.path); playFallbackBeep(level) }
       })
     },
 
