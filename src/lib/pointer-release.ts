@@ -9,6 +9,10 @@
 //   page gives its pointer lock back itself when the window loses focus, the tab is hidden or the page unloads
 //   (reload, navigation): the browser should, but a confinement it left behind followed the owner into other
 //   apps (2026-11-17). The engine's clip watchdog (Windows) releases any that still slips through.
+// - Held keys: the browser sends no keyup to a page that lost focus (Alt-Tab, a window popping up, the tab hidden).
+//   W held while a console window flashed up stayed "held": the owner kept running until he hit W again (2026-11-19).
+//   Every key down is noted; when focus goes, the page is hidden or pointer lock is lost, each one still down gets
+//   a keyup (synthetic, on window): drei's KeyboardControls (walk, run, noclip, jump, sprint), the mana key, all.
 // Pure bookkeeping plus the listeners; input-manager.ts installs it.
 
 const PENDING_MS = 1500
@@ -16,6 +20,8 @@ const PENDING_MS = 1500
 let lockRequestedAt = -Infinity
 let cancelLockUntil = -Infinity
 const captures = new Map<number, Element>()
+/** Keys down right now: code -> key (what a keyup for it needs). */
+const heldKeys = new Map<string, string>()
 let notify: ((what: string) => void) | null = null
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
@@ -41,6 +47,23 @@ export function setPointerReleaseNotifier(fn: ((what: string) => void) | null): 
 
 export function heldCaptures(): number {
   return captures.size
+}
+
+/** Codes of the keys this page thinks are down (tests). */
+export function heldKeyCodes(): string[] {
+  return [...heldKeys.keys()]
+}
+
+/** Let go of every key still down: a keyup for each, as if it had been released here. Returns their codes. */
+export function releaseHeldKeys(): string[] {
+  const codes = [...heldKeys.keys()]
+  if (typeof window === 'undefined' || !codes.length) return codes
+  const keys = [...heldKeys.entries()]
+  heldKeys.clear()
+  for (const [code, key] of keys) {
+    try { window.dispatchEvent(new KeyboardEvent('keyup', { code, key, bubbles: true })) } catch { /* no KeyboardEvent */ }
+  }
+  return codes
 }
 
 /** Release whatever holds the mouse. Returns what was released (for the notice and the tests). */
@@ -71,13 +94,19 @@ export function installPointerRelease(): () => void {
   const onGot = (event: PointerEvent) => { if (event.target instanceof Element) captures.set(event.pointerId, event.target) }
   const onLost = (event: PointerEvent) => { captures.delete(event.pointerId) }
   const onLockChange = () => {
+    // Mouse-look ended (Esc, another app took the mouse): nothing keeps walking by itself.
+    if (!document.pointerLockElement) releaseHeldKeys()
     noteLockSettled()
     if (document.pointerLockElement && now() < cancelLockUntil) {
       cancelLockUntil = -Infinity
       document.exitPointerLock()
     }
   }
+  const onKeyDownTrack = (event: KeyboardEvent) => {
+    if (event.isTrusted && event.code) heldKeys.set(event.code, event.key)
+  }
   const onKeyUp = (event: KeyboardEvent) => {
+    if (event.code) heldKeys.delete(event.code)
     if (event.key !== 'Escape') return
     const freed = freeMouse()
     // A lock Escape itself ends is normal; a drag or a late lock it had to stop is worth a word.
@@ -85,6 +114,7 @@ export function installPointerRelease(): () => void {
     if (unusual.length) notify?.(`Mouse released (${unusual.join(', ')})`)
   }
   const giveBackLock = () => {
+    releaseHeldKeys()
     if (document.pointerLockElement) document.exitPointerLock()
     noteLockSettled()
   }
@@ -100,6 +130,7 @@ export function installPointerRelease(): () => void {
   document.addEventListener('lostpointercapture', onLost, true)
   document.addEventListener('pointerlockchange', onLockChange)
   document.addEventListener('pointerlockerror', noteLockSettled)
+  window.addEventListener('keydown', onKeyDownTrack, true)
   window.addEventListener('keyup', onKeyUp, true)
   window.addEventListener('blur', onBlur)
   window.addEventListener('pagehide', giveBackLock)
@@ -113,6 +144,7 @@ export function installPointerRelease(): () => void {
     document.removeEventListener('lostpointercapture', onLost, true)
     document.removeEventListener('pointerlockchange', onLockChange)
     document.removeEventListener('pointerlockerror', noteLockSettled)
+    window.removeEventListener('keydown', onKeyDownTrack, true)
     window.removeEventListener('keyup', onKeyUp, true)
     window.removeEventListener('blur', onBlur)
   }
