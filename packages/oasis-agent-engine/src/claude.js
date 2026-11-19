@@ -34,6 +34,13 @@ export function cleanEnv(extra = {}) {
     delete env.ANTHROPIC_API_KEY;
     delete env.ANTHROPIC_AUTH_TOKEN;
   }
+  // The owner's global settings carry AgentCraft hooks (@idosal/agentcraft). On session start and every prompt they
+  // start a detached listener (no console) that runs `where`: a console program, so it gets a brand-new visible
+  // console, one Windows Terminal flash each. 21 agents starting = the burst of ~50 at engine start; prompts = the
+  // random ones mid-run (2026-11-19, traced with a process watch on a test engine). Its server (:2468) is not
+  // running anyway. AGENTCRAFT_INTERNAL_HERO=1 is AgentCraft's own "skip" switch: its hooks exit at once.
+  // OASIS_AGENTCRAFT=1 keeps them for agents.
+  if (process.env.OASIS_AGENTCRAFT !== '1') env.AGENTCRAFT_INTERNAL_HERO = '1';
   // A null in `extra` drops the variable (the CLI login for an agent: no inherited CLAUDE_CODE_OAUTH_TOKEN).
   const out = { ...env };
   for (const [key, value] of Object.entries(extra)) {
