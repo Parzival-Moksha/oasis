@@ -22,9 +22,9 @@ export const KIT_CSS = `
 .kit-tile { position: relative; cursor: pointer; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; min-height: 120px; padding: 0; text-align: left; }
 .kit-tile-pic { position: absolute; inset: 0; background-size: cover; background-position: center; }
 .kit-tile-pic::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 35%, rgba(0,0,0,0.78) 100%); }
-.kit-tile-text { position: relative; display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+.kit-tile-text { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 12px; }
 .kit-tile-icon { flex: none; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--kit-accent, #8fd3ff); color: #0b0c10; font-size: 15px; box-shadow: 0 0 12px var(--kit-accent, #8fd3ff); }
-.kit-tile-label { display: block; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; font-size: 12.5px; overflow-wrap: anywhere; color: #fff; text-shadow: 0 2px 6px #000; }
+.kit-tile-label { display: block; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; color: #fff; text-shadow: 0 2px 6px #000; }
 .kit-tile-sub { display: block; font-size: 11px; color: rgba(255,255,255,0.75); text-shadow: 0 1px 4px #000; }
 .kit-tile-badge { position: absolute; top: 8px; right: 8px; padding: 2px 7px; border-radius: 99px; font-size: 9.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; background: rgba(0,0,0,0.65); color: #fff; border: 1px solid rgba(255,255,255,0.35); }
 .kit-toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 0; user-select: none; }
@@ -146,4 +146,27 @@ export const KIT_CSS = `
 [data-kit-style="rune"].kit-tab[data-on="1"] { border-color: #f0d199; color: #fff3cf; box-shadow: 0 0 10px -2px #f0c26e; }
 [data-kit-style="rune"].kit-field input, [data-kit-style="rune"].kit-field textarea, [data-kit-style="rune"].kit-field select { border-radius: 4px; border: 1px solid #b89358; background: #140e07; color: #f6e7c8; font-family: ${BODY_SERIF}; font-size: 15px; }
 [data-kit-style="rune"].kit-close { border-radius: 4px; border: 1px solid #b89358; background: #1b130b; color: #f0d199; }
+/* ── card and progress bar (all styles) ─────────────────────────────────── */
+.kit-card { display: block; padding: 10px 12px; }
+.kit-card-title { display: block; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; margin-bottom: 4px; }
+.kit-progress { display: block; }
+.kit-progress-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+.kit-progress-track { position: relative; height: 10px; overflow: hidden; }
+.kit-progress-fill { position: absolute; inset: 0 auto 0 0; transition: width 400ms ease-out; }
+.kit-progress-fill::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0) 50%, rgba(0,0,0,0.25) 100%); }
+[data-kit-style="glass"].kit-card { border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); }
+[data-kit-style="glass"].kit-progress .kit-progress-track { border-radius: 99px; background: rgba(255,255,255,0.14); }
+[data-kit-style="glass"].kit-progress .kit-progress-fill { border-radius: 99px; background: var(--kit-accent, #8fd3ff); }
+[data-kit-style="forged"].kit-card { border: 1px solid rgba(201,162,86,0.45); border-radius: 5px; background: linear-gradient(180deg, rgba(52,43,29,0.62), rgba(22,18,13,0.7)); box-shadow: inset 0 1px 0 rgba(255,225,160,0.14), inset 0 0 0 1px rgba(0,0,0,0.55); }
+[data-kit-style="forged"].kit-card .kit-card-title { font-family: var(--font-cinzel), Georgia, serif; color: #e3c27a; }
+[data-kit-style="forged"].kit-progress .kit-progress-track { border-radius: 3px; background: #0b0907; box-shadow: inset 0 1px 3px #000, 0 0 0 1px rgba(201,162,86,0.55); }
+[data-kit-style="forged"].kit-progress .kit-progress-fill { background: linear-gradient(90deg, #9a6a24, #f5c96a); }
+[data-kit-style="parchment"].kit-card { border: 1px solid rgba(107,74,30,0.55); border-radius: 3px; background: rgba(255,248,226,0.35); }
+[data-kit-style="parchment"].kit-card .kit-card-title { font-family: var(--font-cinzel), Georgia, serif; color: #4a2d0c; }
+[data-kit-style="parchment"].kit-progress .kit-progress-track { background: #c8b083; box-shadow: inset 0 1px 2px rgba(60,35,10,0.6); }
+[data-kit-style="parchment"].kit-progress .kit-progress-fill { background: #9b2a1c; }
+[data-kit-style="rune"].kit-card { border: 1px solid rgba(184,147,88,0.6); border-radius: 4px; background: #1b130b; box-shadow: inset 0 0 0 2px #120c06; }
+[data-kit-style="rune"].kit-card .kit-card-title { font-family: var(--font-cinzel), Georgia, serif; font-variant: small-caps; text-transform: none; color: #f0d199; }
+[data-kit-style="rune"].kit-progress .kit-progress-track { border-radius: 2px; background: #140e07; box-shadow: inset 0 0 0 1px #b89358; }
+[data-kit-style="rune"].kit-progress .kit-progress-fill { background: linear-gradient(90deg, #8a6a34, #f0d199); }
 `

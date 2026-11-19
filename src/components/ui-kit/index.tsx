@@ -12,6 +12,7 @@
 //   <KitToggle checked onChange label hint />                 a switch
 //   <KitSlider label value min max step onChange format />    a slider
 //   <KitTabs tabs={[{id,label}]} active onChange />           tabs
+//   <KitCard title>…</KitCard>  <KitProgress label value max format accent />   a box, a bar that fills
 //   <KitTextField label value onChange multiline />           a text box (title="…" on anything gives the Oasis tooltip)
 //   <KitDialog open title onClose actions>…</KitDialog>       a modal dialog;  await kitConfirm({ title, body, confirm, danger })
 //   <KitLookControls />                                       the shared style / see-through / blur / colour controls
@@ -101,12 +102,35 @@ export function KitTileButton({ picture, icon, label, sub, badge, accent, classN
       {badge && <span className="kit-tile-badge">{badge}</span>}
       <span className="kit-tile-text">
         {icon && <span className="kit-tile-icon">{icon}</span>}
-        <span className="min-w-0">
+        <span className="block w-full min-w-0">
           <span className="kit-tile-label">{label}</span>
           {sub && <span className="kit-tile-sub">{sub}</span>}
         </span>
       </span>
     </button>
+  )
+}
+
+/** A box inside a panel (a stat, an account, a list row group). */
+export function KitCard({ title, children, className, ...rest }: { title?: ReactNode; children?: ReactNode } & Omit<React.HTMLAttributes<HTMLDivElement>, 'title'>) {
+  const kit = useKitStyle()
+  return (
+    <div {...rest} data-kit-style={kit} className={cx('kit-card', className)}>
+      {title && <span className="kit-card-title">{title}</span>}
+      {children}
+    </div>
+  )
+}
+
+/** A bar that fills (XP to the next level, hours of a day). value and max in any unit. */
+export function KitProgress({ label, value, max, format, accent }: { label?: ReactNode; value: number; max: number; format?: (value: number, max: number) => ReactNode; accent?: string }) {
+  const kit = useKitStyle()
+  const share = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0
+  return (
+    <div data-kit-style={kit} className="kit-progress" style={accent ? { ['--kit-accent' as string]: accent } : undefined} role="progressbar" aria-valuemin={0} aria-valuemax={max} aria-valuenow={value}>
+      {(label || format) && <span className="kit-progress-row"><span>{label}</span><span className="tabular-nums opacity-80">{format ? format(value, max) : `${Math.round(share * 100)}%`}</span></span>}
+      <span className="kit-progress-track block"><span className="kit-progress-fill block" style={{ width: `${share * 100}%` }} /></span>
+    </div>
   )
 }
 

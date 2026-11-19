@@ -6,7 +6,7 @@
 
 import { useState } from 'react'
 import { MENU_STYLES, setMenuLook, useMenuLook, type MenuStyleId } from '@/lib/ui-kit/menu-look'
-import { KitButton, KitPanel, KitSlider, KitStyleOverride, KitTabs, KitTextField, KitTileButton, KitToggle, kitConfirm } from './index'
+import { KitButton, KitCard, KitPanel, KitProgress, KitSlider, KitStyleOverride, KitTabs, KitTextField, KitTileButton, KitToggle, kitConfirm } from './index'
 
 const TILES = [
   { picture: '/ui/spellbook/tiles/sky-background.gpt2.webp', icon: '☀', label: 'Background', sub: 'Skies and light', accent: '#ffb35c' },
@@ -33,6 +33,7 @@ function Sample({ style }: { style: MenuStyleId }) {
           <KitSlider label="Volume" value={level} min={0} max={100} onChange={setLevel} format={v => `${v}%`} />
         </div>
         <div className="mt-2"><KitTextField label="Name" placeholder="Call it something" /></div>
+        <KitCard title="Level 7 · Journeyman" className="mt-2"><KitProgress label="XP to level 8" value={340} max={500} format={(v, m) => `${v} / ${m}`} accent="#ffd66b" /></KitCard>
         <div className="mt-3 flex flex-wrap gap-2">
           <KitButton variant="primary" onClick={() => setMenuLook({ style })}>{look.style === style ? 'In use' : 'Use this'}</KitButton>
           <KitButton>Cancel</KitButton>
