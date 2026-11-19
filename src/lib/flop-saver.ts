@@ -150,8 +150,9 @@ export class FlopWatcher {
   /** One frame: its duration (ms) and the time it ended (ms). Returns the level after it. */
   frame(durationMs: number, nowMs: number): number {
     if (this.started === null) this.started = nowMs
-    // A frame of a quarter second or more is not a frame rate: a hidden tab, a load, a hitch.
-    if (!(durationMs > 0) || durationMs > 250) {
+    // A gap of a second or more is not a frame rate: a hidden tab, a load. (Slower frames do
+    // count: a machine stuck at 3 fps must step down too.)
+    if (!(durationMs > 0) || durationMs >= 1000) {
       this.secondStart = null
       this.secondFrames = 0
       return this.level

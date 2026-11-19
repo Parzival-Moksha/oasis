@@ -93,6 +93,13 @@ describe('FlopWatcher', () => {
     expect(w.level).toBe(MAX_FLOP_LEVEL)
   })
 
+  it('a machine stuck at a few frames a second steps down as fast as one at 25', () => {
+    const w = new FlopWatcher()
+    let t = warm(w)
+    t = run(w, 3, FLOP_DOWN_AFTER_S + 2, t)
+    expect(w.level).toBe(1)
+  })
+
   it('a short dip does not count; a frame rate between 30 and 50 holds the level where it is', () => {
     const w = new FlopWatcher()
     let t = warm(w)
