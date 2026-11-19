@@ -55,6 +55,9 @@ export const include = [
   'public/ground/gravelly_sand_diff_1k.jpg',
   'public/ground/rock_face_diff_1k.jpg',
   'public/ground/marble_01_diff_1k.jpg',
+  'public/ground/rock_pitted_mossy_diff_1k.jpg',
+  'public/ground/concrete_floor_02_diff_1k.jpg',
+  'public/ground/sbs2/Dirt/Dirt_14-128x128.png',
   'public/models/stylized-nature/grass_common_tall.gltf',
   'public/models/stylized-nature/Grass_Common_Tall.bin',
   'public/models/stylized-nature/grass_common_short.gltf',
@@ -123,6 +126,8 @@ export const firstWorld = { seed: 'prisma/default-worlds/oasis-dusk.world.json',
  * found exactly once, or the cut stops: a changed workshop is noticed, not silently shipped broken.
  */
 export const transforms = [
+  // A new user's first view has no builder's grid (the owner, 19 Nov: "let's not confront them with the ugly grid"); it stays a setting.
+  { file: 'src/components/scene-lib/constants.ts', from: "  showGrid: true,", to: "  showGrid: false," },
   // A new player's body: one the cut ships (the workshop's default is CC BY and stays there).
   { file: 'src/lib/profile-defaults.ts', from: "'/avatars/gallery/VIPE_Hero__2902.vrm'", to: "'/avatars/gallery/CoolAlien.vrm'" },
   // The player's walk, run and sprint: the CC0 animation pack instead of the Mixamo files.

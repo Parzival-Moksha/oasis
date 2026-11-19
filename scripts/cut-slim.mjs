@@ -316,12 +316,19 @@ function writeCut({ chosen, avatarRows, data, leftOutAvatars, allFiles }, proble
 
   // The worlds a new install has: each seed (the lite one with its sky changed to a shipped one), and a
   // manifest that lists only them. A world that places a file the cut does not ship stops the cut.
+  const groundExtras = JSON.parse(fs.readFileSync(path.join(ROOT, 'data/ground-presets-extras.json'), 'utf8'))
   const manifest = []
   for (const world of WORLDS) {
     const seed = JSON.parse(data.get(world.seed).toString('utf8'))
     if (world.sky) seed.data.skyBackgroundId = world.sky
     for (const placement of seed.data.catalogPlacements || []) {
       if (placement.glbPath && !shipped.has(`public${decodeURIComponent(placement.glbPath)}`)) problems.push(`the world ${seed.name} places ${placement.glbPath}, which the cut does not ship`)
+    }
+    // Its ground and the textures of its crafted things must be shipped too, or the first view is flat colour.
+    const preset = seed.data.groundPresetId
+    if (preset && preset !== 'none') {
+      const custom = (groundExtras.additions || []).find((g) => g.id === preset)?.customTextureUrl
+      if (custom && !shipped.has(`public${custom}`)) problems.push(`the world ${seed.name} stands on ${custom}, which the cut does not ship`)
     }
     for (const avatar of seed.data.agentAvatars || []) {
       const url = avatar.avatar3dUrl || avatar.url
