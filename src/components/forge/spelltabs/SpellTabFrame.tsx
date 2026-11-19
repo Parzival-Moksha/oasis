@@ -19,6 +19,7 @@ import {
 import { createPortal } from 'react-dom'
 import { useUILayer } from '@/lib/input-manager'
 import { useAudioManager } from '@/lib/audio-manager'
+import { useFeatureKey } from '@/lib/feature-keys-client'
 
 const PANEL_MIN_WIDTH = 320
 const PANEL_MIN_HEIGHT = 420
@@ -116,6 +117,9 @@ export function SpellTabFrame({
   children,
 }: SpellTabFrameProps) {
   useUILayer(`spelltab-${spellId}`, isOpen)
+  // Generation spells need the user's own key for their service (src/lib/feature-keys.ts).
+  const keyState = useFeatureKey(spellId, isOpen)
+  const keyMissing = keyState !== null && !keyState.ready
 
   const [mobile, setMobile] = useState<boolean>(() => isMobileViewport())
   const [size, setSize] = useState<PanelSize>(() => readPanelSize(spellId))
@@ -325,7 +329,15 @@ export function SpellTabFrame({
 
       {/* ── Scrollable body */}
       <div className="overflow-y-auto p-3 flex-1 min-h-0">
-        {children}
+        {/* No key for this feature on this machine: one plain line, and the controls greyed out. */}
+        {keyMissing && (
+          <div role="status" className="mb-3 rounded-md border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-[12px] leading-5 text-amber-100">
+            {keyState?.line}
+          </div>
+        )}
+        <div className={keyMissing ? 'pointer-events-none select-none opacity-40 grayscale' : undefined} aria-disabled={keyMissing || undefined}>
+          {children}
+        </div>
       </div>
 
       {/* ── Desktop resize handle */}

@@ -7,6 +7,7 @@ import { useOasisStore } from '@/store/oasisStore'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import { resolveFontFamily } from '@/lib/fonts'
+import { useFeatureKeys } from '@/lib/feature-keys-client'
 import {
   SPELLBOOK_PAGE_IDS,
   SPELLBOOK_PAGES,
@@ -67,6 +68,7 @@ export function PlayerSpellbookPanel({
 }: PlayerSpellbookPanelProps) {
   const [activePage, setActivePage] = useState<SpellbookPageId>('recipe-catalog')
   const [highlightSpellId, setHighlightSpellId] = useState<SpellId | null>(null)
+  const featureKeys = useFeatureKeys(Boolean(visible && isOpen))
   const selectedSpellId = useOasisStore(s => s.selectedSpellId)
   const { settings } = useContext(SettingsContext)
   const spellbookFont = resolveFontFamily(settings.uiFont)
@@ -370,6 +372,8 @@ export function PlayerSpellbookPanel({
             const highlighted = highlightSpellId === definition.id
             const selected = selectedSpellId === definition.id
             const locked = (readOnly && !isCombatSpell(definition.id)) || lockedSpellIds.includes(definition.id)
+            // A generation spell whose service key is not on this machine: greyed, and its tab says what to add.
+            const needsKey = featureKeys[definition.id]?.ready === false
             const animation = highlighted
               ? 'oasisSpellLearnedPulse 1300ms ease-in-out 2'
               : selected
@@ -387,8 +391,9 @@ export function PlayerSpellbookPanel({
                   selected
                     ? 'border-amber-200/75 bg-gradient-to-br from-amber-900/42 via-orange-950/62 to-black/92 shadow-[0_0_22px_rgba(251,191,36,0.42)]'
                     : 'border-orange-200/28 bg-gradient-to-br from-orange-950/44 via-black/60 to-black/88',
-                  locked ? 'opacity-55 grayscale' : '',
+                  locked || needsKey ? 'opacity-55 grayscale' : '',
                 ].join(' ')}
+                title={needsKey ? featureKeys[definition.id]?.line : undefined}
                 style={animation ? { animation } : undefined}
               >
                 <div className="mb-2 aspect-[3/4] w-full overflow-hidden rounded-md border border-white/10 bg-gradient-to-b from-black/30 to-black/70">
@@ -407,6 +412,11 @@ export function PlayerSpellbookPanel({
                 <div className="mt-0.5 line-clamp-2 text-[10px] leading-4 text-white/60 sm:text-[11px]">
                   {definition.summary}
                 </div>
+                {needsKey && !locked && (
+                  <div className="pointer-events-none absolute right-1.5 top-1.5 rounded-md border border-amber-200/60 bg-black/80 px-1.5 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-amber-100 shadow-[0_0_8px_rgba(0,0,0,0.6)]">
+                    needs a key
+                  </div>
+                )}
                 {locked && (
                   <div
                     className="pointer-events-none absolute right-1.5 top-1.5 rounded-md border border-amber-200/60 bg-black/80 px-1.5 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-amber-100 shadow-[0_0_8px_rgba(0,0,0,0.6)]"
