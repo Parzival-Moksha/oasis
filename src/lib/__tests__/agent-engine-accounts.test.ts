@@ -22,6 +22,8 @@ interface AccountsLike {
   setVillageDefault: (id: string) => string
   view: (now?: number) => View
   reload: () => boolean
+  outToCheck: (now?: number) => Array<{ id: string }>
+  revive: (id: string, now?: number) => boolean
 }
 const { Accounts, parseAccounts, limitFrom, LIMIT_KINDS, UNKNOWN_RESET_MS, CLI } = accountsModule as unknown as {
   Accounts: new (o: Record<string, unknown>) => AccountsLike
@@ -84,8 +86,8 @@ describe('choosing an account', () => {
 
   it('auto: the account whose week ends first, so its tokens are not lost at the reset', () => {
     const { a } = make([A, B])
-    a.record('gmail', { status: 'allowed', utilization: 0.5, resetsAt: (NOW + 5 * 86_400_000) / 1000, rateLimitType: 'seven_day' })
-    a.record('yahoo', { status: 'allowed', utilization: 0.1, resetsAt: (NOW + 2 * 86_400_000) / 1000, rateLimitType: 'seven_day' })
+    a.record('gmail', { status: 'allowed', unifiedWindows: { seven_day: { utilization: 0.5, resetsAt: (NOW + 5 * 86_400_000) / 1000, status: 'allowed' } } })
+    a.record('yahoo', { status: 'allowed', unifiedWindows: { seven_day: { utilization: 0.1, resetsAt: (NOW + 2 * 86_400_000) / 1000, status: 'allowed' } } })
     expect(a.choose()?.id).toBe('yahoo')
     expect(a.view().accounts.find(x => x.id === 'gmail')?.windows.seven_day).toMatchObject({ utilization: 0.5, resetsAt: NOW + 5 * 86_400_000 })
   })
@@ -183,5 +185,38 @@ describe('telling a usage refusal from everything else', () => {
     expect(limitFrom({ type: 'result', is_error: true, result: 'Failed to authenticate. API Error: 401' })).toBeNull()
     expect(limitFrom({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed_warning', utilization: 0.92 } })).toBeNull()
     expect(limitFrom({ type: 'assistant', message: { content: [{ type: 'text', text: "You've hit your limit" }] } })).toBeNull()
+  })
+})
+
+// 19 Nov: the meter showed Yahoo's 5-hour window at 99% for three hours while claude.ai said 66%. The CLI's event has
+// no top-level utilization; every window's figure is in unifiedWindows (seen on the real account: 5h 0.7, week 0.08).
+describe('reading usage from the CLI\'s rate_limit_event', () => {
+  const REAL = { status: 'allowed', resetsAt: 1795113600, rateLimitType: 'five_hour', overageStatus: 'rejected', isUsingOverage: false, unifiedWindows: { five_hour: { utilization: 0.7, resetsAt: 1795113600, status: 'allowed' }, seven_day: { utilization: 0.08, resetsAt: 1795550400, status: 'allowed' } } }
+
+  it('takes every window from unifiedWindows', () => {
+    const { a } = make([B])
+    a.record('yahoo', REAL)
+    const w = a.view().accounts.find(x => x.id === 'yahoo')!.windows
+    expect(w.five_hour).toMatchObject({ utilization: 0.7, resetsAt: 1795113600000, status: 'allowed' })
+    expect(w.seven_day).toMatchObject({ utilization: 0.08, resetsAt: 1795550400000 })
+  })
+
+  it('never carries an old figure over, and never takes the top-level one for a window\'s', () => {
+    const { a, set } = make([B])
+    a.record('yahoo', { status: 'allowed', rateLimitType: 'five_hour', utilization: 0.99, resetsAt: 1795113600 })
+    expect(a.view().accounts.find(x => x.id === 'yahoo')!.windows.five_hour.utilization).toBeNull()
+    a.record('yahoo', REAL)
+    set(NOW + 30 * 60_000)
+    a.record('yahoo', { status: 'allowed', rateLimitType: 'five_hour', resetsAt: 1795113600 }) // no figure, half an hour later
+    expect(a.view().accounts.find(x => x.id === 'yahoo')!.windows.five_hour.utilization).toBeNull()
+  })
+
+  it('drops figures saved before the fix: unknown until the next event', () => {
+    const file = path.join(dir, 'old-accounts.json')
+    const stateFile = path.join(dir, 'old-state.json')
+    fs.writeFileSync(file, JSON.stringify({ accounts: [B] }))
+    fs.writeFileSync(stateFile, JSON.stringify({ accounts: { yahoo: { windows: { five_hour: { utilization: 0.99, resetsAt: 1, status: 'allowed', at: 1 } } } } }))
+    const a = new Accounts({ file, stateFile, now: () => NOW })
+    expect(a.view().accounts.find(x => x.id === 'yahoo')!.windows.five_hour.utilization).toBeNull()
   })
 })

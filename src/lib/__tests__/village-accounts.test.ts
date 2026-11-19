@@ -16,11 +16,12 @@ describe('village accounts wording', () => {
 
   it('one short piece per account: the week first, out with its time', () => {
     const v = view([
-      acct({ id: 'gmail', label: 'Gmail Ultra', windows: { seven_day: { utilization: 0.92, resetsAt: null, status: 'allowed_warning', at: NOW } } }),
+      acct({ id: 'gmail', label: 'Gmail Ultra', windows: { seven_day: { utilization: 0.92, resetsAt: null, status: 'allowed_warning', at: NOW }, five_hour: { utilization: null, resetsAt: null, status: 'allowed', at: NOW } } }),
       acct({ id: 'yahoo', label: 'Yahoo Max', exhaustedUntil: new Date(2026, 10, 19, 13, 20).getTime(), why: 'five_hour limit' }),
       acct({ id: 'cli', label: 'CLI login', cli: true }),
     ])
-    expect(accountPieces(v, NOW).map(p => [p.text, p.out])).toEqual([['Gmail 92%', false], ['Yahoo out until 13:20', true], ['CLI –', false]])
+    expect(accountPieces(v, NOW).map(p => [p.text, p.out])).toEqual([['Gmail 5h unknown · week 92%', false], ['Yahoo out until 13:20', true], ['CLI 5h unknown · week unknown', false]])
+    expect(accountPieces(v, NOW)[0].title).toContain('5-hour window: usage unknown (the CLI sent no figure)')
     expect(accountPieces(v, NOW)[1].title).toContain('five_hour limit')
   })
 

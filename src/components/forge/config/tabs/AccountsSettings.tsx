@@ -6,7 +6,7 @@
 
 import { useOasisStore } from '@/store/oasisStore'
 import { getAgentEngineClient } from '@/lib/agent-engine-client'
-import { accountChoices, mainWindow, shownAccounts } from '@/lib/village/village-accounts'
+import { accountChoices, shownAccounts, windowText } from '@/lib/village/village-accounts'
 
 const ADD = 'node C:\\af_oasis\\packages\\oasis-agent-engine\\scripts\\add-account.mjs'
 
@@ -25,7 +25,6 @@ export function AccountsSettings() {
           </div>
           {shownAccounts(view).map(account => {
             const out = Boolean(account.exhaustedUntil && account.exhaustedUntil > now)
-            const w = mainWindow(account)
             return (
               <div key={account.id} className="flex items-center justify-between gap-2 py-1 text-xs" data-account-row={account.id}>
                 <span className="min-w-0 truncate text-gray-300" title={account.email || undefined}>
@@ -35,7 +34,7 @@ export function AccountsSettings() {
                 <span className={out ? 'shrink-0 text-amber-300' : 'shrink-0 text-gray-400'}>
                   {out
                     ? `out until ${new Date(account.exhaustedUntil!).toString().slice(4, 21)}`
-                    : w ? `${Math.round(w.utilization * 100)}% of its ${w.name === 'seven_day' ? 'week' : w.name.replace('_', '-')}` : 'no usage seen yet'}
+                    : `${windowText(account, 'five_hour')} · ${windowText(account, 'seven_day')}`}
                 </span>
               </div>
             )

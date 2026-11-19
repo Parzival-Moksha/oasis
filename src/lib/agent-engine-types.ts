@@ -446,7 +446,8 @@ export interface EngineAccount {
   exhaustedUntil: number | null
   why: string | null
   /** From its own rate_limit_events: five_hour, seven_day, … */
-  windows: Record<string, { utilization: number | null; resetsAt: number | null; status: string | null; at: number }>
+  /** Each window as the CLI last reported it. utilization null: no figure was sent (unknown, never guessed). */
+  windows: Record<string, { utilization: number | null; resetsAt: number | null; status: string | null; at: number; source?: 'unified' | 'status-only' }>
 }
 export interface EngineAccountsView {
   /** "auto" (the account whose week ends first) or an account id. */

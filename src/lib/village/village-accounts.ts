@@ -27,16 +27,32 @@ export function mainWindow(account: EngineAccount): { name: string; utilization:
   return null
 }
 
-/** One piece per account for the HUD's engine pill: "Gmail 92%", "Yahoo out until 13:20". */
+/** "5h 70%", "week 8%", "5h unknown": one window, as the CLI last reported it; unknown when no figure was sent. */
+export function windowText(account: EngineAccount, name: 'five_hour' | 'seven_day'): string {
+  const w = account.windows?.[name]
+  const short = name === 'five_hour' ? '5h' : 'week'
+  return `${short} ${w && typeof w.utilization === 'number' ? `${Math.round(w.utilization * 100)}%` : 'unknown'}`
+}
+
+/** The tooltip line for one window: the figure, when the CLI said it, and when the window resets. */
+function windowTitle(account: EngineAccount, name: 'five_hour' | 'seven_day'): string {
+  const w = account.windows?.[name]
+  const what = name === 'five_hour' ? '5-hour window' : 'weekly window'
+  if (!w) return `${what}: unknown (no turn on this account reported it yet)`
+  const figure = typeof w.utilization === 'number' ? `${Math.round(w.utilization * 100)}% used` : 'usage unknown (the CLI sent no figure)'
+  return `${what}: ${figure}, as of ${clock(w.at)}${w.resetsAt ? `, resets ${new Date(w.resetsAt).toString().slice(0, 21)}` : ''}`
+}
+
+/** One piece per account for the Agents list: "Yahoo 5h 70% · week 8%", "Gmail out until 08:00". */
 export function accountPieces(view: EngineAccountsView | null | undefined, now = Date.now()): Array<{ id: string; text: string; out: boolean; title: string }> {
   const list = shownAccounts(view)
-  // Only the CLI login and nothing known about it: the pill's old "7-day" figure says the same.
+  // Only the CLI login and nothing out: one account, nothing to compare.
   if (list.length <= 1 && !list.some(a => a.exhaustedUntil && a.exhaustedUntil > now)) return []
   return list.map(account => {
     const out = Boolean(account.exhaustedUntil && account.exhaustedUntil > now)
-    const w = mainWindow(account)
-    const text = out ? `${shortLabel(account)} out until ${clock(account.exhaustedUntil!)}` : `${shortLabel(account)} ${w ? `${Math.round(w.utilization * 100)}%` : '–'}`
-    const title = `${account.label}${account.email ? ` (${account.email})` : ''}${account.plan ? `, ${account.plan}` : ''}: ${out ? `out of usage (${account.why || 'limit'}) until ${new Date(account.exhaustedUntil!).toString().slice(0, 21)}` : w ? `${Math.round(w.utilization * 100)}% of its ${w.name === 'seven_day' ? 'week' : w.name.replace('_', '-')} used` : 'no usage known yet'}`
+    const text = out ? `${shortLabel(account)} out until ${clock(account.exhaustedUntil!)}` : `${shortLabel(account)} ${windowText(account, 'five_hour')} · ${windowText(account, 'seven_day')}`
+    const head = `${account.label}${account.email ? ` (${account.email})` : ''}${account.plan ? `, ${account.plan}` : ''}`
+    const title = [head, ...(out ? [`out of usage (${account.why || 'limit'}) until ${new Date(account.exhaustedUntil!).toString().slice(0, 21)}`] : []), windowTitle(account, 'five_hour'), windowTitle(account, 'seven_day')].join('\n')
     return { id: account.id, text, out, title }
   })
 }

@@ -72,6 +72,11 @@ export class Accounts {
     const state = (this.stateFile && readJson(this.stateFile)) || {};
     /** id -> { windows: {type: {utilization, resetsAt, status, at}}, exhaustedUntil, why } */
     this.state = state.accounts && typeof state.accounts === 'object' ? state.accounts : {};
+    // Figures saved before the engine read `unifiedWindows` came from the event's top-level field, which is not a
+    // window's usage (it froze Yahoo at "99%" on 19 Nov while claude.ai said 66%). Unknown until the next event.
+    for (const s of Object.values(this.state)) {
+      for (const [name, w] of Object.entries(s?.windows || {})) if (w && w.source !== 'unified') s.windows[name] = { ...w, utilization: null, source: 'status-only' };
+    }
     this.villageDefault = typeof state.villageDefault === 'string' ? state.villageDefault : 'auto';
     if (state.cli && typeof state.cli === 'object') this.cliInfo = { email: state.cli.email || null, plan: state.cli.plan || null };
     this.reload();
@@ -138,14 +143,31 @@ export class Accounts {
     return this.sameQuota(id).some((x) => (this.state[x]?.exhaustedUntil || 0) > now);
   }
 
-  /** A rate_limit_event on this account: its window's utilization and reset. */
+  /**
+   * A rate_limit_event on this account. Each window's usage comes from `unifiedWindows` (CLI 2.1.323:
+   * { five_hour | seven_day | seven_day_overage_included: { utilization 0-1, resetsAt (s), status } }), the only place
+   * the CLI puts every window's figure. The top-level fields describe "the currently limiting window" and usually
+   * carry no utilization at all: from them only that window's status and reset are kept, never a number, and a
+   * figure the event did not send is never carried over. Unknown stays unknown.
+   */
   record(id, info, now = this.now()) {
     if (!id || !info) return;
-    const type = typeof info.rateLimitType === 'string' ? info.rateLimitType : typeof info.window === 'string' ? info.window : 'unknown';
-    const resetsAt = toMs(info.resetsAt);
+    const unified = info.unifiedWindows && typeof info.unifiedWindows === 'object' ? info.unifiedWindows : null;
     for (const x of this.sameQuota(id)) {
       const s = this.stateOf(x);
-      s.windows[type] = { utilization: typeof info.utilization === 'number' ? info.utilization : s.windows[type]?.utilization ?? null, resetsAt: resetsAt ?? s.windows[type]?.resetsAt ?? null, status: info.status || null, at: now };
+      if (unified) {
+        for (const [name, w] of Object.entries(unified)) {
+          if (!w || typeof w !== 'object') continue;
+          s.windows[name] = { utilization: typeof w.utilization === 'number' ? w.utilization : null, resetsAt: toMs(w.resetsAt), status: w.status || null, at: now, source: 'unified' };
+        }
+      }
+      const type = typeof info.rateLimitType === 'string' ? info.rateLimitType : null;
+      if (type && !(unified && unified[type])) {
+        const prev = s.windows[type];
+        // The limiting window, said without a figure: its status and reset only; a figure stays only while it is fresh.
+        const fresh = prev?.source === 'unified' && now - (prev.at || 0) < 10 * 60_000;
+        s.windows[type] = { utilization: fresh ? prev.utilization : null, resetsAt: toMs(info.resetsAt) ?? prev?.resetsAt ?? null, status: info.status || null, at: now, source: fresh ? 'unified' : 'status-only' };
+      }
     }
     this.saveState();
     this.onChange();
