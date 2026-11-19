@@ -25,7 +25,7 @@ export function AccountsWatch() {
       const was = before.get(account.id) ?? null
       const is = outNow.get(account.id) ?? null
       const name = account.cli ? 'The CLI login' : account.label
-      if (!was && is) showNotice(view.allExhausted ? `Every Claude account is out of usage. The agents wait and go on by themselves at ${clock(view.firstReset || is)}.` : `${name} is out of usage until ${clock(is)}: the agents go on on another account.`, 'warn')
+      if (!was && is) showNotice(view.allExhausted ? `Every Claude account is out of usage. The agents wait and go on by themselves at ${clock(view.firstReset || is)} at the latest; the engine checks every 10 minutes, and when you write to one, in case an account comes back sooner.` : `${name} is out of usage until ${clock(is)}: the agents go on on another account.`, 'warn')
       else if (was && !is) showNotice(`${name} is back: the agents use it again.`, 'info')
     }
   }, [view])

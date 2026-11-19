@@ -125,12 +125,17 @@ try {
   check('scheduled wake-ups are held back', c.events.filter((e) => e.agentId === y.id && e.kind === 'user.sent' && e.auto === 'schedule').length === wakesBefore);
   check('the outage is said once', logs.join('').split('Every Claude account is out of usage').length - 1 === 1);
 
-  // ---- 4
+  // ---- 4: a comes back hours before its reset (the owner upgraded the plan): the owner writes to the waiting agent,
+  // the engine checks the accounts with a tiny turn instead of trusting the reset time, and the agent goes on.
+  const isCheck = (l) => l.start && l.noTools;
+  const checksBefore = fakeLog().filter(isCheck).length;
   fake({ out: { b: { resetsAt: nowS() + 6 * 3600, window: 'seven_day' }, cli: { resetsAt: nowS() + 8 * 3600, window: 'five_hour' } } });
   const from4 = c.events.length;
-  await c.cmd('clock', { advanceMs: 2 * 3600_000 }); // past a's reset
+  const parkedReply = await c.cmd('send', { agentId: x.id, text: 'are you there?' }).catch((e) => ({ error: e.message }));
   const back = await c.next((e) => c.events.indexOf(e) >= from4 && e.agentId === x.id && e.kind === 'turn.end' && !e.limit, 20000);
-  check('a is back: the waiting agent goes on on a by itself', /^ok from a: Your last turn was cut off/.test(back?.result || ''), JSON.stringify(back?.result));
+  check('a lifts early: writing to the waiting agent checks the accounts and it goes on on a', /^ok from a: Your last turn was cut off/.test(back?.result || ''), `${JSON.stringify(back?.result)} ${JSON.stringify(parkedReply).slice(0, 80)}`);
+  const checks = fakeLog().filter(isCheck);
+  check('the check was a tiny haiku turn, no tools', checks.length > checksBefore && checks.every((l) => l.model === 'haiku' && !l.resume), `${checks.length - checksBefore} checks`);
   const wake = await c.next((e) => c.events.indexOf(e) >= from4 && e.agentId === y.id && e.kind === 'user.sent' && e.auto === 'schedule', 20000);
   await sleep(2500);
   check('the held wake-up goes out, once', !!wake && c.events.filter((e) => c.events.indexOf(e) >= from4 && e.agentId === y.id && e.kind === 'user.sent' && e.auto === 'schedule').length === 1);

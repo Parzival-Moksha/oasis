@@ -549,6 +549,8 @@ export class Agent {
     // Every account out (accounts.js): the message waits in the journal; the engine delivers it when one comes back.
     if (this.hub.allAccountsOut?.()) {
       this.park(this.hub.firstAccountReset?.() || null, false);
+      // Its reset time is only a forecast: someone wants this agent now, so ask the accounts (it goes on if one is back).
+      this.hub.checkAccountsNow?.();
       return { uuid: opts.uuid, parked: true };
     }
     // Its process runs on an account it should no longer use (out, or the village went back to the first): switch first.
@@ -591,7 +593,7 @@ export class Agent {
     const was = this.parked;
     this.parked = { until, resume: Boolean(resume || was?.resume) };
     const when = until ? new Date(until).toTimeString().slice(0, 5) : 'later';
-    if (!was) this.emit('notice', { subtype: 'accounts', text: `Every Claude account is out of usage: this agent waits until ${when}, then goes on by itself.` });
+    if (!was) this.emit('notice', { subtype: 'accounts', text: `Every Claude account is out of usage: this agent waits until ${when} at the latest, then goes on by itself. The engine checks every 10 minutes, and at once when you write here, in case an account comes back sooner.` });
     this.setStatus(STATUS.ERROR, `every account is out of usage until ${when}`);
   }
 

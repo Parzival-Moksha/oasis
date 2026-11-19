@@ -160,12 +160,42 @@ export class Accounts {
     for (const x of this.sameQuota(id)) {
       const s = this.stateOf(x);
       s.exhaustedUntil = Math.max(s.exhaustedUntil || 0, until);
+      s.kind = kind;
       s.why = `${kind === 'model_requires_usage_credits' ? 'model line out of usage credits' : `${window || 'usage'} limit`}`;
     }
     this.log(`accounts: ${this.get(id)?.label || id} is out (${this.stateOf(id).why}) until ${new Date(until).toString().slice(0, 21)}`);
     this.saveState();
     this.onChange();
     return until;
+  }
+
+  /**
+   * A check turn on this account was taken (probe.js): it is not out after all, whatever reset time it was given
+   * (the owner upgraded the plan, bought extra usage, or the limit lifted early). -> true when it was marked out.
+   */
+  revive(id, now = this.now()) {
+    const was = this.isExhausted(id, now);
+    for (const x of this.sameQuota(id)) {
+      const s = this.stateOf(x);
+      s.exhaustedUntil = null;
+      s.kind = null;
+      s.why = null;
+    }
+    if (was) {
+      this.log(`accounts: ${this.get(id)?.label || id} takes turns again (checked before its reset)`);
+      this.saveState();
+      this.onChange();
+    }
+    return was;
+  }
+
+  /** Accounts marked out that a check turn could bring back: [{id, token}] (an alias once; a model line waits its time). */
+  outToCheck(now = this.now()) {
+    const aliased = this.aliasOf(CLI);
+    return this.all()
+      .filter((a) => !(a.id === CLI && aliased) && this.isExhausted(a.id, now))
+      .filter((a) => this.sameQuota(a.id).every((x) => this.state[x]?.kind !== 'model_requires_usage_credits'))
+      .map((a) => ({ id: a.id, token: a.token }));
   }
 
   /** The accounts that may take a turn now (an alias offered once). */

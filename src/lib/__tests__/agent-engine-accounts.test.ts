@@ -121,6 +121,21 @@ describe('running out and coming back', () => {
     expect(a.exhaust('gmail', {})).toBe(NOW + UNKNOWN_RESET_MS + 30_000)
   })
 
+  it('back before its reset when a check turn is taken (the owner upgraded); a model line is not checked', () => {
+    const { a } = make([A, B])
+    a.exhaust('gmail', { resetsAt: NOW + 3 * 3_600_000, window: 'five_hour' })
+    a.exhaust('yahoo', { resetsAt: NOW + 2 * 3_600_000, kind: 'model_requires_usage_credits' })
+    a.exhaust(CLI, { resetsAt: NOW + 8 * 3_600_000 })
+    expect(a.allExhausted()).toBe(true)
+    expect(a.outToCheck().map(x => x.id).sort()).toEqual(['cli', 'gmail'])
+    expect(a.revive('gmail')).toBe(true)
+    expect(a.isExhausted('gmail')).toBe(false)
+    expect(a.allExhausted()).toBe(false)
+    expect(a.choose()?.id).toBe('gmail')
+    expect(a.view().accounts.find(x => x.id === 'gmail')?.why).toBeNull()
+    expect(a.revive('gmail')).toBe(false)
+  })
+
   it('every account out: it says so, and when the first comes back', () => {
     const { a } = make([A, B])
     a.exhaust('gmail', { resetsAt: NOW + 5 * 3_600_000 })

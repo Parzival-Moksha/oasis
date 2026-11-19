@@ -16,7 +16,7 @@ export function AccountSelect({ agent }: { agent: Pick<EngineAgentState, 'id' | 
   const choices = accountChoices(view)
   const running = agent.account?.label || 'none yet'
   const title = agent.parked
-    ? `Every account is out of usage: it waits${agent.parked.until ? ` until ${new Date(agent.parked.until).toTimeString().slice(0, 5)}` : ''}, then goes on by itself.`
+    ? `Every account is out of usage: it waits${agent.parked.until ? ` until ${new Date(agent.parked.until).toTimeString().slice(0, 5)} at the latest` : ''}, then goes on by itself. The engine checks every 10 minutes, and at once when you write to it.`
     : `Its process runs on ${running}. "auto" follows the village; a pick pins this agent (it moves to another account only when that one is out).`
   return (
     <label className="flex items-center gap-1" title={title} data-agent-account={agent.account?.id || ''}>

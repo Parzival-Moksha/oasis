@@ -20,7 +20,7 @@ const log = (entry) => { if (process.env.FAKE_CLAUDE_LOG) fs.appendFileSync(proc
 const state = () => { try { return JSON.parse(fs.readFileSync(process.env.FAKE_CLAUDE_STATE, 'utf8')); } catch { return {}; } };
 const out = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`);
 
-log({ start: true, resume: args.includes('--resume'), tokenSet: Boolean(token) });
+log({ start: true, resume: args.includes('--resume'), tokenSet: Boolean(token), model, noTools: args.includes('--strict-mcp-config') && arg('--tools') === '' });
 
 function turn(user) {
   const s = state();

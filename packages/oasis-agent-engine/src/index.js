@@ -25,6 +25,7 @@ import { restartLine, transcriptTurnOpen, wasMidTurn } from './resume.js';
 import { Characters, characterNote, cardStamp, charactersDirFor } from './character.js';
 import { Looks } from './looks.js';
 import { Accounts, CLI, accountsFilesFor } from './accounts.js';
+import { tinyTurn } from './probe.js';
 import { LIMIT_RESUME_TEXT } from './agent.js';
 import { Scheduler, DEFAULT_PROMPT, EVERY, REPEATS, appointmentLabel, describeSchedule, localDate, normalizeAppointment, normalizeSchedule, parseWhen, scheduleSettingsFileFor } from './schedule.js';
 import os from 'node:os';
@@ -143,6 +144,8 @@ const hub = {
   noteAccount: (id, account) => accounts.noteAccount(id, account),
   recordRateLimit: (id, info) => accounts.record(id, info),
   allAccountsOut: () => accounts.allExhausted(),
+  /** The owner wrote to an agent that waits for an account: ask the accounts now rather than trust their reset times. */
+  checkAccountsNow: () => { void checkOutAccounts({ asked: true }).catch((e) => hub.log(`accounts: check failed: ${e.message}`)); },
   firstAccountReset: () => accounts.firstReset(),
   onLimit: (agent, limit) => failover(agent, limit),
   /** The who-you-are note for an agent and what it was made from (agent.js sends it when due). */
@@ -316,9 +319,53 @@ function tellOutage() {
   outageTold = true;
   const first = accounts.firstReset();
   const when = first ? new Date(first).toTimeString().slice(0, 5) : 'later';
-  const line = `⏸ Every Claude account is out of usage. The village waits and goes on by itself at ${when}.`;
+  const line = `⏸ Every Claude account is out of usage. The village waits and goes on by itself at ${when} at the latest; it checks every 10 minutes in case one comes back sooner (an upgrade, extra usage).`;
   hub.log(`accounts: ${line}`);
   try { telegram?.say(line); } catch { /* no Telegram: the HUD says it */ }
+}
+
+/**
+ * A reset time is a forecast, not a fact: the owner may upgrade the plan or buy extra usage, and then an account takes
+ * turns again hours early (19 Nov: Yahoo marked out until 18:00 at 14:37, taking turns again by 15:00, and the village
+ * sat still). So while an account is marked out, the engine asks it with one tiny haiku turn (probe.js): every
+ * CHECK_EVERY_MS by itself, and at once (at most every CHECK_ASKED_MS) when the owner writes to a waiting agent or
+ * presses "check now". A refused check costs nothing; a taken one a few dozen tokens. Taken: the account is back and
+ * the waiting agents go on (accountsTick). Refused: it stays out, with the reset that refusal gave.
+ */
+const CHECK_EVERY_MS = 10 * 60_000;
+const CHECK_ASKED_MS = 30_000;
+const lastCheck = new Map(); // account id -> when it was last checked (the engine's clock)
+let lastAskedCheck = 0;
+let checking = null;
+function checkOutAccounts({ asked = false } = {}) {
+  if (checking) return checking;
+  if (asked) {
+    if (Date.now() - lastAskedCheck < CHECK_ASKED_MS) return Promise.resolve([]);
+    lastAskedCheck = Date.now();
+  }
+  const due = accounts.outToCheck().filter((a) => asked || now() - (lastCheck.get(a.id) || 0) >= CHECK_EVERY_MS);
+  if (!due.length) return Promise.resolve([]);
+  checking = Promise.all(due.map(async (a) => {
+    lastCheck.set(a.id, now());
+    const r = await tinyTurn(a.token);
+    const label = accountLabel(a.id);
+    if (r.ok && !r.refused) {
+      if (r.usage) accounts.record(a.id, r.usage);
+      accounts.revive(a.id);
+      return { id: a.id, back: true };
+    }
+    if (r.ok && r.refused) {
+      if (r.usage) accounts.record(a.id, r.usage);
+      if (r.usage?.resetsAt) accounts.exhaust(a.id, { resetsAt: r.usage.resetsAt, window: r.usage.rateLimitType, kind: r.kind });
+      hub.log(`accounts: checked ${label}: still out`);
+      return { id: a.id, back: false };
+    }
+    hub.log(`accounts: checked ${label}: no answer (${r.reason})`);
+    return { id: a.id, back: false, reason: r.reason };
+  }))
+    .then(async (out) => { if (out.some((x) => x.back)) await accountsTick(); return out; })
+    .finally(() => { checking = null; });
+  return checking;
 }
 
 /** Every 15 s, and when the test clock moves: an account is back, so the agents that waited go on. */
@@ -330,7 +377,7 @@ async function accountsTick() {
     a.sendChain = a.sendChain.then(() => a.unpark()).catch((e) => hub.log(`[${a.name}] resume after the outage failed: ${e.message}`));
   }
 }
-setInterval(() => { accounts.reload(); void accountsTick(); }, 15_000).unref();
+setInterval(() => { accounts.reload(); void accountsTick(); void checkOutAccounts().catch((e) => hub.log(`accounts: check failed: ${e.message}`)); }, 15_000).unref();
 
 /** An owned agent by id, session or name, for the schedule commands. */
 function scheduleAgent(ref) {
@@ -687,6 +734,8 @@ ${you.note}` : text);
   /** The accounts, which one is the village default, how full each is, which are out until when. */
   listAccounts() { return { ok: true, data: accounts.view() }; },
   /** The village's account: "auto" (the one whose week ends first) or an account id. Applies from each agent's next turn. */
+  /** Ask every account marked out with one tiny turn now (the HUD's "check now", agents, scripts). */
+  async checkAccounts() { const checked = await checkOutAccounts({ asked: true }); return { ok: true, data: { checked, ...accounts.view() } }; },
   setDefaultAccount({ account }) { return { ok: true, data: { villageDefault: accounts.setVillageDefault(account), ...accounts.view() } }; },
   /** Pin one agent to an account (null: back to the village's choice). An idle agent moves now. */
   setAccount({ agentId, agent, account }) {
