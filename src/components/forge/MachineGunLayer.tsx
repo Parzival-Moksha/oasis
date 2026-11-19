@@ -16,7 +16,7 @@ import { setPlayerSpellCasting } from '@/lib/player-avatar-runtime'
 import { VILLAGE_TARGET_PREFIX, damageVillageAgent } from '@/lib/village/village-combat'
 import { useOasisStore } from '@/store/oasisStore'
 import { canCastBolt, isTypingTarget } from './bolts/shared'
-import { collectActorTargets, resolveCombatAim, worldImpactAlong } from './bolts/aim'
+import { castOrigin, collectActorTargets, worldImpactAlong } from './bolts/aim'
 import { segmentSphereEntry } from './bolts/flight'
 
 const ROUND_MS = 90
@@ -78,6 +78,7 @@ function gunshot(): void {
 
 const _origin = new THREE.Vector3()
 const _dir = new THREE.Vector3()
+const _muzzleCam = new THREE.Vector3()
 interface Shot { point: THREE.Vector3; targetId: string | null; ground: boolean }
 
 /** A round along the crosshair (with a little spread): the first real mesh, terrain or ground, or an actor before it. */
@@ -201,7 +202,7 @@ export function MachineGunLayer({ enabled }: { enabled: boolean }) {
 
   function shoot(): void {
     const shot = traceShot(camera, scene)
-    const { origin: muzzle } = resolveCombatAim(camera, scene)
+    const { origin: muzzle } = castOrigin(camera, shot.point.distanceTo(camera.getWorldPosition(_muzzleCam)))
     const tracer = pool.tracers[pool.nextTracer]
     pool.nextTracer = (pool.nextTracer + 1) % TRACERS
     tracer.from.copy(muzzle)

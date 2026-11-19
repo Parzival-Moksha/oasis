@@ -19,7 +19,7 @@
 
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 
@@ -213,9 +213,9 @@ function manaNow(view: ManaView | null, now = Date.now()): number | null {
 }
 
 /** Test and debug handle: the last casts (aim, origin, impact), read by the playtest. */
-interface BoltDebugEntry { spell: CombatSpellId; design: string; fromHand: boolean; origin: Vec3; direction: Vec3; aimPoint: Vec3; impactDistance: number | null; impactObjectId: string | null; impact?: Vec3 | null; impactTarget?: string | null }
+interface BoltDebugEntry { id: string; spell: CombatSpellId; design: string; fromHand: boolean; origin: Vec3; direction: Vec3; aimPoint: Vec3; impactDistance: number | null; impactObjectId: string | null; impact?: Vec3 | null; impactTarget?: string | null }
 function debugLog(): BoltDebugEntry[] | null {
-  if (typeof window === 'undefined') return null
+  if (typeof window === 'undefined' || process.env.NODE_ENV === 'production') return null
   const host = window as unknown as { __oasisBolts?: { log: BoltDebugEntry[] } }
   host.__oasisBolts ??= { log: [] }
   return host.__oasisBolts.log
@@ -250,6 +250,8 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   // PvP: ids of bolts this client cast; only the caster reports its hits.
   const localBoltIdsRef = useRef<Set<string>>(new Set())
   const manaRef = useRef<ManaView | null>(null)
+  // Casts sent whose reply has not come back: a reply's mana is from before them, so they are taken off it.
+  const pendingCastsRef = useRef(0)
   const spellStatsRef = useRef<{ speed: number; damage: number; cost: number }>({ speed: PLAYER_BASE_STATS.fireboltSpeedMetersPerSecond, damage: 14, cost: PLAYER_BASE_STATS.fireboltManaCost })
   const flashRef = useRef<{ el: HTMLDivElement | null; alpha: number }>({ el: null, alpha: 0 })
 
@@ -397,7 +399,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     spawn(spell, design, aim, speed, damage, id, true)
     const log = debugLog()
     if (log) {
-      log.push({ spell, design, fromHand: aim.fromHand, origin: v3(aim.origin), direction: v3(aim.direction), aimPoint: v3(aim.aimPoint), impactDistance: aim.impactDistance, impactObjectId: aim.impactObjectId })
+      log.push({ id, spell, design, fromHand: aim.fromHand, origin: v3(aim.origin), direction: v3(aim.direction), aimPoint: v3(aim.aimPoint), impactDistance: aim.impactDistance, impactObjectId: aim.impactObjectId })
       if (log.length > 40) log.splice(0, log.length - 40)
     }
 
@@ -424,6 +426,13 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     if (known !== null && manaRef.current) {
       window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: { ...manaRef.current, mana: known - cost } }))
     }
+    pendingCastsRef.current += 1
+    const settle = (progression: unknown) => {
+      pendingCastsRef.current = Math.max(0, pendingCastsRef.current - 1)
+      const p = progression as { mana?: unknown } | undefined
+      if (!p || typeof p.mana !== 'number') return null
+      return { ...p, mana: Math.max(0, p.mana - cost * pendingCastsRef.current) }
+    }
     void fetch('/api/profile/spells/firebolt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -433,13 +442,14 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         const data = await response.json().catch(() => ({})) as SpellCastResponse
         if (typeof data.spell?.speedMetersPerSecond === 'number') spellStatsRef.current.speed = data.spell.speedMetersPerSecond
         if (typeof data.spell?.damage === 'number') spellStatsRef.current.damage = data.spell.damage
+        const progression = settle(data.progression)
         if (!response.ok || !data.ok) {
-          if (data.progression) window.dispatchEvent(new CustomEvent('oasis:firebolt-failed', { detail: data }))
+          if (progression) window.dispatchEvent(new CustomEvent('oasis:firebolt-failed', { detail: { ...data, progression } }))
           return
         }
-        if (data.progression) window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: data.progression }))
+        if (progression) window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: progression }))
       })
-      .catch(() => {})
+      .catch(() => { settle(undefined) })
   }, [camera, scene, spawn])
 
   useEffect(() => {
@@ -507,6 +517,13 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }
   }, [castBolt, enabled, gl])
 
+  // ─═̷─ Shader warm-up: the first time play mode is on, every design's look is mounted once
+  // and stays (BoltWarmup): drawn for three frames through the real pipeline, then hidden, so
+  // its shader programs are built then and never released (Storm Lance used to rebuild its
+  // shader on every cast; a design's first cast stalled 80-180 ms). ─═̷─
+  const [warm, setWarm] = useState(false)
+  useEffect(() => { if (enabled) setWarm(true) }, [enabled])
+
   // ─═̷─ Thunder flash: one DOM div, its opacity set from the frame loop (no React state) ─═̷─
   useEffect(() => {
     const el = document.createElement('div')
@@ -546,8 +563,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
           fx.impacts = [...fx.impacts.slice(-IMPACT_CAP), look.impact(p, bolt)]
           playImpactSound(p)
           if (step.impact.targetId) reportHit(bolt.id, step.impact.targetId, p, bolt.local)
-          const log = bolt.local ? debugLog() : null
-          const entry = log?.[log.length - 1]
+          const entry = bolt.local ? debugLog()?.find(e => e.id === bolt.id) : undefined
           if (entry && !entry.impact) { entry.impact = p; entry.impactTarget = step.impact.targetId }
         }
       }
@@ -601,6 +617,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   const fx = fxRef.current
   return (
     <group name="combat-bolt-layer">
+      {warm && <BoltWarmup />}
       {fx.trails.map(t => <TrailView key={t.id} fx={t} />)}
       {fx.bolts.map(b => <BoltView key={b.id} bolt={b} />)}
       {fx.impacts.map(i => <ImpactView key={i.id} fx={i} />)}
@@ -610,6 +627,59 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     </group>
   )
 }
+
+// ─═̷─═̷─🔥 WARM-UP SET ─═̷─═̷─🔥
+const WARM_Y = -1000
+const FLIGHT_KINDS: FlightKind[] = ['comet', 'solar', 'phoenix', 'tesla', 'storm', 'crystal', 'frozen', 'boreal']
+const KIND_SPELL: Record<FlightKind, [CombatSpellId, string]> = {
+  comet: ['firebolt', 'A'], solar: ['firebolt', 'B'], phoenix: ['firebolt', 'C'],
+  tesla: ['lightning-bolt', 'B'], storm: ['lightning-bolt', 'C'],
+  crystal: ['ice-bolt', 'A'], frozen: ['ice-bolt', 'B'], boreal: ['ice-bolt', 'C'],
+}
+
+/** One of every look, frozen mid-life, out of sight (frustum-culled, never drawn). Mounted once, never re-rendered. */
+const BoltWarmup = memo(function BoltWarmup() {
+  const set = useMemo(() => {
+    const p: Vec3 = [0, 0, 0]
+    const bolts = FLIGHT_KINDS.map(kind => {
+      const [spell, design] = KIND_SPELL[kind]
+      return { ...createBolt({ id: `warm-${kind}`, spell, design, origin: p, direction: [0, 0, -1], speed: 24, damage: 0, impactDistance: null, impactObjectId: null, local: false }), age: 0.2 }
+    })
+    const trails = bolts.map(b => ({ ...FLIGHT[flightKindFor(b.spell, b.design) ?? 'comet'].trail(p, b), age: 0.1 }))
+    const impacts: ImpactFx[] = bolts.map(b => ({ ...FLIGHT[flightKindFor(b.spell, b.design) ?? 'comet'].impact(p, b), age: 0.1 }))
+    impacts.push({ kind: 'plasma', id: 'warm-plasma-i', position: p, age: 0.1, ttl: 0.7, seed: 1, groundingTargets: [] })
+    impacts.push({ kind: 'thunder', id: 'warm-thunder-i', position: p, age: 0.1, ttl: 0.85, seed: 1 })
+    const zero = new THREE.Vector3()
+    const dir = new THREE.Vector3(0, 0, -1)
+    const plasma: PlasmaFilamentBolt = { id: 'warm-plasma', origin: p, length: 4, direction: [0, 0, -1], age: 0.1, ttl: 0.9, damage: 0, seed: 1, curves: buildPlasmaBolt(zero, dir, 4, 1) }
+    const strike: ThunderboltStrike = { id: 'warm-strike', groundPoint: p, age: 0.5, ttl: 1, damage: 0, seed: 1, segments: buildThunderbolt(zero, 1), target: null }
+    return { bolts, trails, impacts, plasma, strike }
+  }, [])
+  const groupRef = useRef<THREE.Group>(null)
+  useEffect(() => {
+    const group = groupRef.current
+    if (!group) return
+    // Drawn (not culled) for three frames, through the same render target and post-processing
+    // as everything else, so the programs match the real ones; then hidden for good.
+    group.traverse(object => { object.frustumCulled = false })
+    let frames = 0
+    let raf = requestAnimationFrame(function tick() {
+      frames += 1
+      if (frames < 4) { raf = requestAnimationFrame(tick); return }
+      group.visible = false
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [])
+  return (
+    <group ref={groupRef} name="combat-bolt-warmup" position={[0, WARM_Y, 0]}>
+      {set.trails.map(t => <TrailView key={t.id} fx={t} />)}
+      {set.bolts.map(b => <BoltView key={b.id} bolt={b} />)}
+      {set.impacts.map(i => <ImpactView key={i.id} fx={i} />)}
+      <PlasmaFilamentMesh bolt={set.plasma} />
+      <ThunderboltMesh strike={set.strike} />
+    </group>
+  )
+})
 
 // ─═̷─═̷─🎨 LOOKS ─═̷─═̷─🎨
 function BoltView({ bolt }: { bolt: FlyingBolt }) {

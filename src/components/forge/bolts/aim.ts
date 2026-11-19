@@ -172,27 +172,18 @@ const FIRST_PERSON_CAMERA_DISTANCE_M = 1.7
 /** The aimed point must be at least this far in front of the hand, or the shot leaves from the camera. */
 const MIN_AHEAD_OF_HAND_M = 1.2
 
-export function resolveCombatAim(camera: THREE.Camera, scene: THREE.Object3D, maxDistance = BOLT_MAX_RANGE_M): CombatAim {
-  camera.updateMatrixWorld()
+/**
+ * Where a cast leaves from, for a target `aimDistance` along the crosshair: the hand in third
+ * person, else (first person, noclip, orbit, or a target not in front of the hand) just under the
+ * camera's centre. No raycasts: the machine gun calls it every round.
+ */
+export function castOrigin(camera: THREE.Camera, aimDistance: number): { origin: THREE.Vector3; fromHand: boolean } {
   const camPos = new THREE.Vector3()
   const camDir = new THREE.Vector3()
   camera.getWorldPosition(camPos)
   camera.getWorldDirection(camDir).normalize()
-  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize()
-  const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize()
-
-  // 1. What the crosshair is on.
-  const actors = collectActorTargets(true)
-  const worldHit = castWorld(scene, camPos, camDir, maxDistance)
-  const actorHit = firstActorOnRay(camPos, camDir, worldHit ? worldHit.distance : maxDistance, actors)
-  const aimDistance = actorHit ? actorHit.distance : worldHit ? worldHit.distance : maxDistance
-  const aimPoint = camPos.clone().addScaledVector(camDir, aimDistance)
-
-  // 2. Where it leaves from.
   const pose = getPlayerAvatarPose()
-  const inputState = useInputManager.getState().inputState
-  let origin: THREE.Vector3 | null = null
-  if (pose && inputState === 'third-person') {
+  if (pose && useInputManager.getState().inputState === 'third-person') {
     const [px, py, pz] = pose.position
     const head = new THREE.Vector3(px, py + 1.55, pz)
     if (camPos.distanceTo(head) > FIRST_PERSON_CAMERA_DISTANCE_M) {
@@ -202,13 +193,30 @@ export function resolveCombatAim(camera: THREE.Camera, scene: THREE.Object3D, ma
       const poseRight = new THREE.Vector3(-forward.z, 0, forward.x)
       const hand = new THREE.Vector3(px, py + 1.25, pz).addScaledVector(forward, 0.45).addScaledVector(poseRight, 0.3)
       const handAlongView = hand.clone().sub(camPos).dot(camDir)
-      if (aimDistance - handAlongView >= MIN_AHEAD_OF_HAND_M) origin = hand
+      if (aimDistance - handAlongView >= MIN_AHEAD_OF_HAND_M) return { origin: hand, fromHand: true }
     }
   }
-  const fromHand = origin !== null
-  if (!origin) {
-    origin = camPos.clone().addScaledVector(camDir, 0.55).addScaledVector(up, -0.14).addScaledVector(right, 0.1)
-  }
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize()
+  const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize()
+  return { origin: camPos.addScaledVector(camDir, 0.55).addScaledVector(up, -0.14).addScaledVector(right, 0.1), fromHand: false }
+}
+
+export function resolveCombatAim(camera: THREE.Camera, scene: THREE.Object3D, maxDistance = BOLT_MAX_RANGE_M): CombatAim {
+  camera.updateMatrixWorld()
+  const camPos = new THREE.Vector3()
+  const camDir = new THREE.Vector3()
+  camera.getWorldPosition(camPos)
+  camera.getWorldDirection(camDir).normalize()
+
+  // 1. What the crosshair is on.
+  const actors = collectActorTargets(true)
+  const worldHit = castWorld(scene, camPos, camDir, maxDistance)
+  const actorHit = firstActorOnRay(camPos, camDir, worldHit ? worldHit.distance : maxDistance, actors)
+  const aimDistance = actorHit ? actorHit.distance : worldHit ? worldHit.distance : maxDistance
+  const aimPoint = camPos.clone().addScaledVector(camDir, aimDistance)
+
+  // 2. Where it leaves from.
+  const { origin, fromHand } = castOrigin(camera, aimDistance)
   const toAim = aimPoint.clone().sub(origin)
   const reach = toAim.length()
   const direction = reach > 1e-4 ? toAim.divideScalar(reach) : camDir.clone()
@@ -216,7 +224,8 @@ export function resolveCombatAim(camera: THREE.Camera, scene: THREE.Object3D, ma
   // 3. What it meets on its own path (the hand sees past corners the camera does not).
   let impactDistance: number | null = null
   let impactObjectId: string | null = null
-  const pathHit = castWorld(scene, origin, direction, actorHit || worldHit ? reach + 0.25 : maxDistance)
+  // Aimed at a wall: up to it. Aimed at an actor or the sky: all the way, so a dodging actor's wall still stops the bolt.
+  const pathHit = castWorld(scene, origin, direction, worldHit && !actorHit ? reach + 0.25 : maxDistance)
   if (pathHit) {
     impactDistance = pathHit.distance
     impactObjectId = pathHit.objectId
