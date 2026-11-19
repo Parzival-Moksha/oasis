@@ -14,8 +14,9 @@ export function GameMenuRailButton() {
       marker="Esc"
       accent="#7DD3FC"
       active={open}
-      aria-label="Main menu (Esc)"
-      data-oasis-tooltip="Menu (Esc)"
+      aria-label="Main menu (M)"
+      data-oasis-tooltip="Menu (M)"
+      title="Main menu (M, or Esc when nothing else is open)"
       data-rail-button="menu"
       className="oasis-tooltip"
       onClick={() => {

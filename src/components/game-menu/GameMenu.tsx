@@ -55,6 +55,19 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable
 }
 
+const NOT_TEXT = new Set(['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file', 'image'])
+/** Somewhere letters go: a text box, a text area, an editable field (sliders and checkboxes are not). */
+export function isWritingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (!el || !el.tagName) return false
+  if (el.isContentEditable || el.tagName === 'TEXTAREA') return true
+  if (el.tagName === 'INPUT') return !NOT_TEXT.has(((el as HTMLInputElement).type || 'text').toLowerCase())
+  return false
+}
+
+/** M: the main menu, open or closed, from anywhere except a text box (the owner, 2026-11-19). */
+export const MENU_KEY = 'KeyM'
+
 function useMenuTriggers() {
   useEffect(() => {
     let lastInputChangeAt = 0
@@ -86,6 +99,22 @@ function useMenuTriggers() {
     }
 
     const onKeyCapture = (event: KeyboardEvent) => {
+      if (event.code === MENU_KEY && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+        if (isWritingTarget(event.target) || isWritingTarget(document.activeElement)) return
+        const wasLocked = useInputManager.getState().pointerLocked
+        // After everyone else: a key someone used (holding M recharges mana in combat worlds) is theirs.
+        window.setTimeout(() => {
+          if (event.defaultPrevented) return
+          const menu = useGameMenu.getState()
+          if (menu.phase === 'open') {
+            playMenuSound(menu.prefs.sound, 'close')
+            menu.closeMenu({ relock: menu.openedFromMouseLook })
+          } else if (menu.phase === 'closed') {
+            menu.openMenu({ fromMouseLook: wasLocked })
+          }
+        }, 0)
+        return
+      }
       if (event.key !== 'Escape' || event.repeat) return
       const menu = useGameMenu.getState()
       if (menu.phase === 'open') {
@@ -174,7 +203,10 @@ function useMenuTriggers() {
   useEffect(() => useInputManager.subscribe((state, prev) => {
     if (state._uiLayerStack === prev._uiLayerStack) return
     if (useGameMenu.getState().phase !== 'open') return
-    if (state._uiLayerStack.some(id => id !== 'game-menu')) useGameMenu.getState().closeMenu()
+    // Only a panel opened while the menu is up makes it step aside; the agent panel or Settings that were
+    // already open stay underneath it (the owner, 2026-11-19: "the main menu draws over the agent panel").
+    const added = state._uiLayerStack.filter(id => !prev._uiLayerStack.includes(id))
+    if (added.some(id => id !== 'game-menu')) useGameMenu.getState().closeMenu()
   }), [])
 }
 
@@ -492,7 +524,7 @@ function GameMenuScreen({ closing }: { closing: boolean }) {
           </div>
         )}
         <div className="ogm-foot" style={{ top: size.h * 0.94 }}>
-          <kbd>Esc</kbd> back to the world
+          <kbd>M</kbd> or <kbd>Esc</kbd> back to the world
         </div>
       </div>
     </div>
@@ -515,7 +547,7 @@ export function GameMenu() {
 }
 
 const MENU_CSS = `
-.ogm-root { position: fixed; inset: 0; z-index: 150; outline: none; font-family: inherit; color: #fff; user-select: none; }
+.ogm-root { position: fixed; inset: 0; z-index: 20000; outline: none; font-family: inherit; color: #fff; user-select: none; }
 .ogm-root[data-closing="1"] { pointer-events: none; }
 .ogm-backdrop {
   position: absolute; inset: 0;
