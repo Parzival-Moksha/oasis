@@ -17,6 +17,7 @@ export const include = [
   'prisma/schema.prisma',
   'packages/oasis-agent-engine/',
   'plugins/oasis/',
+  'plugins/oasis-village/',
   '.claude-plugin/marketplace.json',
   'pnpm-lock.yaml',
   'next.config.mjs',

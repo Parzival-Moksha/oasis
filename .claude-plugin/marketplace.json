@@ -2,12 +2,19 @@
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "oasis",
   "description": "The Oasis: your Claude Code sessions as characters in a local 3D world.",
-  "owner": { "name": "Parzival-Moksha" },
+  "owner": {
+    "name": "Parzival-Moksha"
+  },
   "plugins": [
     {
       "name": "oasis",
       "description": "The Oasis as a live second window onto each session: the 3D village shows it, and what you say there arrives in the same session.",
       "source": "./plugins/oasis"
+    },
+    {
+      "name": "oasis-village",
+      "description": "The small way in: one command that fetches the Oasis from GitHub and opens it. No hooks, no scripts; without the bridge to desktop sessions.",
+      "source": "./plugins/oasis-village"
     }
   ]
 }
