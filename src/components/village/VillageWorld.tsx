@@ -382,6 +382,8 @@ function agentSeed(agentId: string): number {
 const HEAD_HEIGHT = 1.5
 /** The HP bar and the trainee's level (HTML, shown only when there is one): over the 3D tag and its marker. */
 const EXTRAS_AT: [number, number, number] = [STATION.label[0], 2.95, STATION.label[2]]
+/** A homed agent's screen (no desk under it): beside it on its right and a step back, so it hides nothing of the agent. */
+const HOME_WINDOW: [number, number, number] = [2.1, 2.6, STATION.window[2] - 0.4]
 
 /**
  * The part of a station that can leave its desk: the body, its label, its helpers. `mover` is that group.
@@ -703,7 +705,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
         {!focused && windowVisible && (
           <Html
             transform
-            position={STATION.window}
+            position={homed ? HOME_WINDOW : STATION.window}
             rotation-x={DESK_WINDOW_TILT}
             distanceFactor={deskWindowDistanceFactor('desk')}
             zIndexRange={overlayZ}
