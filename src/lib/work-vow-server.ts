@@ -98,6 +98,24 @@ export function setWorkSettings(settings: { freeValor?: number }, now = Date.now
   })
 }
 
+/**
+ * The owner's one XP: his old Profile XP, taken once as a starting balance (the first call records
+ * `currentOldXp`), plus every Mindcraft XP he earned (the same total Mindcraft shows, the commitment
+ * included). The old Profile row in the database is left as it was.
+ */
+export function foldedOwnerXp(currentOldXp: number, now = Date.now()): Promise<{ total: number; oldXp: number; mindcraftXp: number; foldedAt: number }> {
+  return serial(async () => {
+    const book = await readBook()
+    if (!book.profileFold) {
+      book.profileFold = { oldXp: Math.max(0, Math.floor(currentOldXp || 0)), at: now }
+      await writeBook(book)
+    }
+    const mindcraftXp = mindcraftBook(book, localDay(now)).totals.owner.xp
+    const fold = book.profileFold
+    return { total: Math.max(0, Math.round(fold.oldXp + mindcraftXp)), oldXp: fold.oldXp, mindcraftXp, foldedAt: fold.at }
+  })
+}
+
 /** Per mission: the owner's time and the agents' time, over every day. */
 export function workMissionTimers(): Promise<Record<string, { ownerSeconds: number; agentSeconds: number }>> {
   return serial(async () => missionTimers(await readBook()))

@@ -2,6 +2,7 @@ import 'server-only'
 
 import { prisma } from '@/lib/db'
 import { DEFAULT_XP_AWARDS, levelFromXp, type XpAction } from '@/lib/xp'
+import { profileFollowsMindcraft, profileXp } from '@/lib/profile-xp'
 
 export interface ServerXpResult {
   success: true
@@ -16,6 +17,18 @@ export interface ServerXpResult {
 }
 
 export async function awardXpToUser(userId: string, xpGained: number, awarded = 'custom'): Promise<ServerXpResult> {
+  // On this machine XP comes from Mindcraft (counted work), not from actions: the minutes spent building
+  // are already counted, so an award per action would pay twice. Nothing is added; the answer carries
+  // the Mindcraft-backed total. The daily login is still noted so its prompt doesn't come back.
+  if (profileFollowsMindcraft()) {
+    const existing = await prisma.profile.findUnique({ where: { userId } })
+    if (awarded === 'DAILY_LOGIN' && existing) {
+      await prisma.profile.update({ where: { userId }, data: { lastLoginDate: new Date().toISOString().split('T')[0] } })
+    }
+    const { xp } = await profileXp(existing?.totalXp ?? 0)
+    const level = levelFromXp(xp)
+    return { success: true, awarded, xp: 0, xpGained: 0, totalXp: xp, level, oldLevel: level, leveledUp: false, levelUp: false }
+  }
   const safeXp = Math.max(0, Math.floor(Number.isFinite(xpGained) ? xpGained : 0))
   const profile = await prisma.profile.upsert({
     where: { userId },

@@ -132,6 +132,11 @@ export interface WorkFile {
   releasedSeq?: number
   /** What the owner can change in Mindcraft. */
   settings?: { freeValor?: number }
+  /**
+   * The owner's old Profile XP (from building, quests, logins), taken once when his XP became Mindcraft XP
+   * (2026-11-19, "fold in"). His Profile level from then on = this balance + his Mindcraft XP.
+   */
+  profileFold?: { oldXp: number; at: number }
   /** The mission an agent said it is working on, by agent name (lower case): wins over the missions' `who`. */
   agentMissions?: Record<string, string>
   /** Agent hours: the latest event booked per agent and kind, so a replayed or doubled event is not booked twice. */
@@ -195,6 +200,7 @@ export function parseWorkFile(value: unknown): WorkFile {
   }
   if (typeof raw.released === 'string') file.released = raw.released
   if (typeof raw.releasedSeq === 'number') file.releasedSeq = raw.releasedSeq
+  if (raw.profileFold && typeof raw.profileFold === 'object' && typeof raw.profileFold.oldXp === 'number' && raw.profileFold.oldXp >= 0) file.profileFold = { oldXp: Math.floor(raw.profileFold.oldXp), at: num(raw.profileFold.at) }
   if (raw.settings && typeof raw.settings.freeValor === 'number' && raw.settings.freeValor >= 0 && raw.settings.freeValor <= 1) file.settings = { freeValor: raw.settings.freeValor }
   if (raw.agentMissions && typeof raw.agentMissions === 'object') {
     for (const [name, mission] of Object.entries(raw.agentMissions)) if (typeof mission === 'string' && mission) (file.agentMissions ||= {})[name] = mission

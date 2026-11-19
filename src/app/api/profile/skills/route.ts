@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getRequiredOasisUserId } from '@/lib/session'
 import { levelFromXp } from '@/lib/xp'
+import { profileXp } from '@/lib/profile-xp'
 import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/lib/profile-defaults'
 import {
   PLAYER_SKILL_CAP,
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
       update: {},
     })
 
-    const level = levelFromXp(profile.totalXp)
+    const level = levelFromXp((await profileXp(profile.totalXp)).xp)
     const progression = buildPlayerProgression({ ...profile, level })
     const currentRank = progression.skills[skill]
     if (currentRank >= PLAYER_SKILL_CAP) {

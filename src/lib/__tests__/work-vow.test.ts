@@ -199,6 +199,18 @@ describe('the server book (a temp file)', () => {
     await server.reportWorkBeat({ tab: 'a', seq: 8, seconds: 0, release: true }, t0 + 101_000)
     expect((await server.reportWorkBeat({ tab: 'c', seq: 1, seconds: 0 }, t0 + 102_000)).counting).toBe(true)
   })
+  it('folds the old Profile XP in once; from then on the Profile XP is that balance plus the Mindcraft XP', async () => {
+    const server = await import('../work-vow-server')
+    const t0 = at('10:00:00')
+    const first = await server.foldedOwnerXp(19_040, t0)
+    expect(first).toEqual({ total: 19_040, oldXp: 19_040, mindcraftXp: 0, foldedAt: t0 })
+    // Later the database's old XP may still move: the balance does not.
+    await server.editManualTime({ date: localDay(Date.now()), seconds: 3600, reason: 'test' })
+    const later = await server.foldedOwnerXp(25_000, t0 + 60_000)
+    expect(later.oldXp).toBe(19_040)
+    expect(later.mindcraftXp).toBeGreaterThanOrEqual(60)
+    expect(later.total).toBe(Math.round(19_040 + later.mindcraftXp))
+  })
   it('refuses to overwrite a book it cannot read', async () => {
     const server = await import('../work-vow-server')
     writeFileSync(process.env.OASIS_WORK_VOW_STATE as string, '{ not json', 'utf8')
