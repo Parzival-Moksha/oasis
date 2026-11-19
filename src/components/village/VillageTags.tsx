@@ -297,7 +297,17 @@ function noteTop(agentId: string, top: number): void {
 export function useVillageTagReach(agentId: string): number {
   useSyncExternalStore(listener => { topListeners.add(listener); return () => { topListeners.delete(listener) } }, () => topVersion, () => 0)
   useSyncExternalStore(subscribeTagSettings, getTagSettingsVersion, () => 0)
+  return villageTagReach(agentId)
+}
+
+/** The same, read now (for code that runs every few frames rather than in a render). */
+export function villageTagReach(agentId: string): number {
   return (tops.get(agentId) ?? TAG.defaultTop) + (TAG.markerAt + TAG.markerSize / 2) * getTagSettings().size
+}
+
+/** Where a desk screen floats over its agent (station-local), clear of everything its tag can show. */
+export function deskScreenHeight(reach: number, base: number, halfHeight: number): number {
+  return Math.max(base, reach + halfHeight + 0.08)
 }
 
 const tags = new Set<TagEntry>()

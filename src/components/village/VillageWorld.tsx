@@ -68,8 +68,9 @@ import { VillageMissionWall } from './VillageMissionWall'
 import { VillageAcademyTree } from './VillageAcademyTree'
 import { AcademyLevelTag, AcademyVillageBody, useAcademyStone, useAcademyTrainee } from './VillageAcademyTrainee'
 import { VillageVoice } from './VillageVoice'
-import { VillageTag, VillageTagDriver, useVillageTagReach } from './VillageTags'
+import { VillageTag, VillageTagDriver, deskScreenHeight, useVillageTagReach, villageTagReach } from './VillageTags'
 import { isStageWorldName, stationAtAnchor } from '../../lib/village/village-stage'
+import { getTagSettings } from '../../lib/village/tag-style'
 import { getVillageHome, getVillageHomesVersion, subscribeVillageHomes, useVillageHomesSync } from './village-homes'
 import { readableAccent, tagMarker } from '../../lib/village/village-tags'
 import { getAgentAccent, getPanelLookVersion, subscribePanelLook } from '../../lib/village/panel-look'
@@ -385,7 +386,10 @@ const HEAD_HEIGHT = 1.5
 /** The HP bar and the trainee's level (HTML, shown only when there is one): over the 3D tag and its marker. */
 const EXTRAS_AT: [number, number, number] = [STATION.label[0], 2.95, STATION.label[2]]
 /** A homed agent's screen (no desk under it): beside it on its right and a step back, so it hides nothing of the agent. */
-const HOME_WINDOW: [number, number, number] = [2.1, 2.6, STATION.window[2] - 0.4]
+function homeWindowAt(size: number): [number, number, number] {
+  // Further out the bigger the tag (Settings > Agents > Name tags): its widest row is about 1.7 m at size 1.
+  return [DESK_WINDOW_WORLD.width / 2 + 0.2 + 0.85 * size, 2.6, STATION.window[2] - 0.4]
+}
 
 /**
  * The part of a station that can leave its desk: the body, its label, its helpers. `mover` is that group.
@@ -635,7 +639,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
   // status, name and marker), at the size chosen in Settings and for this body's height.
   const tagReach = useVillageTagReach(agentId)
   const deskWindowAt = useMemo<[number, number, number]>(
-    () => [STATION.window[0], Math.max(STATION.window[1], tagReach + (DESK_WINDOW_WORLD.height / 2) * Math.cos(DESK_WINDOW_TILT) + 0.08), STATION.window[2]],
+    () => [STATION.window[0], deskScreenHeight(tagReach, STATION.window[1], (DESK_WINDOW_WORLD.height / 2) * Math.cos(DESK_WINDOW_TILT)), STATION.window[2]],
     [tagReach],
   )
   const observed = kind !== 'owned'
@@ -714,7 +718,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
         {!focused && windowVisible && (
           <Html
             transform
-            position={homed ? HOME_WINDOW : deskWindowAt}
+            position={homed ? homeWindowAt(getTagSettings().size) : deskWindowAt}
             rotation-x={DESK_WINDOW_TILT}
             distanceFactor={deskWindowDistanceFactor('desk')}
             zIndexRange={overlayZ}
@@ -788,7 +792,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
  * "Desk screens" setting (off / nearest / all, src/lib/village/desk-screens.ts), re-evaluated a few
  * times per second. `near`: the agents close to the camera, whose helpers show their labels.
  */
-function useVisibleDeskWindows(placements: Map<string, VillageStationPlacement>): { windows: Set<string>; near: Set<string> } {
+function useVisibleDeskWindows(placements: Map<string, VillageStationPlacement>, homedIds: Set<string>): { windows: Set<string>; near: Set<string> } {
   const { settings } = useContext(SettingsContext)
   const mode = isDeskScreensMode(settings.villageDeskScreens) ? settings.villageDeskScreens : DESK_SCREENS_DEFAULT
   const [key, setKey] = useState('|')
@@ -807,8 +811,41 @@ function useVisibleDeskWindows(placements: Map<string, VillageStationPlacement>)
       point.set(...stationLocalToWorld(placement, STATION.window))
       desks.push({ id, distance: camera.position.distanceTo(point) })
     }
-    const windows = pickDeskScreens(desks, DESK_SCREEN_LIMIT[mode], new Set(windowsKey ? windowsKey.split(',') : []))
+    let windows = pickDeskScreens(desks, DESK_SCREEN_LIMIT[mode], new Set(windowsKey ? windowsKey.split(',') : []))
     const near = pickDeskScreens(desks, NEAR_AGENTS_MAX, new Set(nearKey ? nearKey.split(',') : []))
+    // Screens are web panels drawn over the 3D picture whatever their depth: one further back can cover the tag
+    // and T / E / F keys of the agent the owner is near. Such a screen is hidden while he is near that agent.
+    const nearbyId = useOasisStore.getState().agentEngine.nearbyAgentId
+    const nearbyAt = nearbyId ? placements.get(nearbyId) : null
+    if (nearbyAt && windows.length && (camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+      const cam = camera as THREE.PerspectiveCamera
+      const tan = Math.tan((cam.fov * Math.PI) / 360)
+      // The tag's span over the head at the chosen size (keys row at the bottom, marker at the top), as two points
+      // on screen (normalized device coordinates), and its half width (the keys row is the widest piece).
+      const size = getTagSettings().size
+      const low = point.set(nearbyAt.anchor[0], nearbyAt.anchor[1] + 1.5, nearbyAt.anchor[2]).clone().project(cam)
+      const high = point.set(nearbyAt.anchor[0], nearbyAt.anchor[1] + 1.9 + 1.45 * size, nearbyAt.anchor[2]).clone().project(cam)
+      const tagDistance = camera.position.distanceTo(point.set(nearbyAt.anchor[0], nearbyAt.anchor[1] + 2, nearbyAt.anchor[2]))
+      const tagHalf = (0.1 + 0.85 * size) / (Math.max(0.5, tagDistance) * tan * cam.aspect)
+      windows = windows.filter(id => {
+        if (id === nearbyId) return true
+        const at = placements.get(id)
+        if (!at) return true
+        // Where the screen really floats: lifted over its own tag (deskWindowAt in VillageStation).
+        point.set(...stationLocalToWorld(at, homedIds.has(id)
+          ? homeWindowAt(size)
+          : [STATION.window[0], deskScreenHeight(villageTagReach(id), STATION.window[1], (DESK_WINDOW_WORLD.height / 2) * Math.cos(DESK_WINDOW_TILT)), STATION.window[2]]))
+        const distance = camera.position.distanceTo(point)
+        const center = point.project(cam)
+        if (center.z > 1) return true
+        const halfW = (DESK_WINDOW_WORLD.width / 2) / (Math.max(0.5, distance) * tan * cam.aspect) + tagHalf
+        const halfH = (DESK_WINDOW_WORLD.height / 2) / (Math.max(0.5, distance) * tan)
+        const covers = (p: THREE.Vector3) => Math.abs(p.x - center.x) < halfW && Math.abs(p.y - center.y) < halfH
+        const top = Math.max(low.y, high.y)
+        const bottom = Math.min(low.y, high.y)
+        return !(covers(low) || covers(high) || (Math.abs(low.x - center.x) < halfW && bottom < center.y - halfH && top > center.y + halfH))
+      })
+    }
     const next = `${windows.join(',')}|${near.join(',')}`
     if (next !== keyRef.current) {
       keyRef.current = next
@@ -1051,7 +1088,7 @@ export function VillageWorld() {
     setVillageAvatars(avatars)
   }, [avatars])
 
-  const visible = useVisibleDeskWindows(homed.placements)
+  const visible = useVisibleDeskWindows(homed.placements, homed.ids)
   const mobile = useIsMobileOasis()
   const overlayZ = mobile ? OVERLAY_Z_MOBILE : OVERLAY_Z
 

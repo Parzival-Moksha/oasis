@@ -144,7 +144,7 @@ export const TAG = {
   /** The name's baseline above the head (over the status word). */
   nameAt: 0.54,
   /** The marker's centre above the head (over the name). */
-  markerAt: 1.16,
+  markerAt: 1.22,
   markerSize: 0.5,
   /** Tags further than this from the camera grow, so a name across the plaza is still readable. */
   growFrom: 9,
