@@ -9,6 +9,7 @@ import { useSyncExternalStore, type ReactNode } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { isInVillagePlaza, subscribeVillagePlaza } from './village-actions'
 import { VillageAgentsMenu } from './VillageAgentsMenu'
+import { AccountsWatch } from './AccountsWatch'
 import { VillageAcademyReader } from './VillageAcademyReader'
 import { GAME_HUD_TEXT, GameKeycap } from '../forge/GameKeycap'
 
@@ -51,6 +52,8 @@ export function VillageHud() {
     <>
       {/* The roster lives in the Agents menu on the left: full names, status, model and thinking. */}
       <VillageAgentsMenu />
+      {/* A notice when a Claude account runs out or comes back (engine accounts.js). */}
+      <AccountsWatch />
       {/* The Academy: the prompt at a node of the skill tree, and the node's sheet. */}
       <VillageAcademyReader />
 

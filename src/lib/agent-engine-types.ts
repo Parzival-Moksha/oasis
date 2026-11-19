@@ -92,6 +92,11 @@ export interface EngineAgentSnapshot {
   lastOutcome?: { outcome: string; reason?: string | null; at?: number | null } | null
   /** Told to carry on after an engine restart cut its turn; set until that turn ends. */
   resumedAt?: number | null
+  /** The Claude account its process runs on (engine accounts.js), its pin (null: the village's choice), and whether it
+   *  waits because every account is out of usage (until the first comes back). Missing on older engines. */
+  account?: { id: string; label: string } | null
+  accountPin?: string | null
+  parked?: { until: number | null } | null
   /** When it wakes up on its own (engine schedule.js); null: off. Missing on engines older than schedules. */
   schedule?: EngineSchedule | null
   appointments?: EngineAppointment[]
@@ -268,7 +273,7 @@ export type EngineContextEvent = EngineEventEnvelope<'context'> & EngineContextU
 export type EngineRateLimitEvent = EngineEventEnvelope<'rate_limit'> & EngineRateLimit
 export type EngineNoticeEvent = EngineEventEnvelope<'notice'> & { subtype?: string; text?: string; model?: string }
 export type EngineErrorEvent = EngineEventEnvelope<'error'> & { message?: string; retrying?: boolean }
-export type EngineExitEvent = EngineEventEnvelope<'exit'> & { code?: number | null; signal?: string | null; stderr?: string[] }
+export type EngineExitEvent = EngineEventEnvelope<'exit'> & { code?: number | null; signal?: string | null; stderr?: string[]; /** A planned stop to move to another Claude account: the session starts again at once. */ switching?: boolean }
 export type EngineModelEvent = EngineEventEnvelope<'model'> & { model?: string; resolved?: string; applied?: string; resolvedEffort?: string | null }
 /** Thinking effort switched for an owned agent (setEffort): live, or `applied: 'on next start'` when its process is down. */
 export type EngineEffortEvent = EngineEventEnvelope<'effort'> & { effort: string | null; resolvedEffort?: string | null; applied?: string }
@@ -426,10 +431,36 @@ export interface EngineRestartInfo {
   line: string | null
 }
 
+/** The Claude accounts the agents run on (engine accounts.js). Never a token. */
+export interface EngineAccount {
+  id: string
+  label: string
+  email: string | null
+  plan: string | null
+  priority: number
+  /** The CLI's own login (no token). */
+  cli: boolean
+  /** The CLI login is the same account as this token account (one quota). */
+  sameAs: string | null
+  /** Out of usage until then (ms), with why ("five_hour limit"). */
+  exhaustedUntil: number | null
+  why: string | null
+  /** From its own rate_limit_events: five_hour, seven_day, … */
+  windows: Record<string, { utilization: number | null; resetsAt: number | null; status: string | null; at: number }>
+}
+export interface EngineAccountsView {
+  /** "auto" (the account whose week ends first) or an account id. */
+  villageDefault: string
+  firstReset: number | null
+  allExhausted: boolean
+  accounts: EngineAccount[]
+}
+
 export interface EngineServerInfo {
   port?: number
   claude?: string
   restart?: EngineRestartInfo
+  accounts?: EngineAccountsView
 }
 
 export type EngineServerMessage =
@@ -438,6 +469,8 @@ export type EngineServerMessage =
   | { type: 'show'; agentId: string }
   | { type: 'agents'; agents: EngineAgentSnapshot[] }
   | { type: 'event'; event: EngineEvent }
+  /** The Claude accounts changed: usage learnt, one ran out or came back, the village default moved. */
+  | ({ type: 'accounts' } & EngineAccountsView)
   /** The engine wants a picture from this agent's avatar for a message being sent (answer with the eyesFrame command). */
   | { type: 'eyes.request'; requestId: string; agentId: string }
   /** An agent asked for pictures (scripts/me.mjs): its own avatar from the front, or what is around it (answer with viewFrames). */
@@ -522,6 +555,10 @@ export interface EngineCommandMap {
   getCharacter: { args: { agentId: string }; result: { ok: boolean; data: EngineCharacter } }
   /** The owner's (or the agent's) own words on the card. */
   setCharacter: { args: { agentId: string; role?: string; who?: string }; result: { ok: boolean; data: EngineCharacter } }
+  /** Claude accounts (engine accounts.js). */
+  listAccounts: { args: Record<string, never>; result: { ok: boolean; data: EngineAccountsView } }
+  setDefaultAccount: { args: { account: string }; result: { ok: boolean; data: EngineAccountsView } }
+  setAccount: { args: { agentId: string; account: string | null }; result: { ok: boolean; data: { agentId: string; accountPin: string | null } } }
   /** Schedules (engine schedule.js). */
   setSchedule: { args: { agentId: string; every?: EngineScheduleEvery; at?: string; day?: number; prompt?: string }; result: { ok: boolean; data: EngineScheduleView } }
   addAppointment: { args: { agentId: string; at: string | number; repeat?: 'daily' | 'weekly'; note?: string; prompt?: string; by?: string }; result: { ok: boolean; data: EngineScheduleView & { appointment: EngineAppointment } } }

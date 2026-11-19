@@ -24,6 +24,8 @@ import { Journal, journalFileFor } from './journal.js';
 import { restartLine, transcriptTurnOpen, wasMidTurn } from './resume.js';
 import { Characters, characterNote, cardStamp, charactersDirFor } from './character.js';
 import { Looks } from './looks.js';
+import { Accounts, CLI, accountsFilesFor } from './accounts.js';
+import { LIMIT_RESUME_TEXT } from './agent.js';
 import { Scheduler, DEFAULT_PROMPT, EVERY, REPEATS, appointmentLabel, describeSchedule, localDate, normalizeAppointment, normalizeSchedule, parseWhen, scheduleSettingsFileFor } from './schedule.js';
 import os from 'node:os';
 import { readOlderHistory } from './history.js';
@@ -70,7 +72,18 @@ const clock = { offset: FAKE_CLOCK ? Number(process.env.OASIS_CLOCK_OFFSET_MS) |
 const now = () => Date.now() + clock.offset;
 /** The command an agent runs to tell the owner on Telegram, once (scripts/tell.mjs). */
 const TELL_SCRIPT = path.resolve(HERE, '..', 'scripts', 'tell.mjs').replace(/\\/g, '/');
+// Claude accounts (accounts.js): which one each agent runs on, and moving on when one runs out of usage.
+const accountFiles = accountsFilesFor(ROSTER_FILE);
+const accounts = new Accounts({
+  file: process.env.OASIS_ACCOUNTS || accountFiles.file,
+  stateFile: process.env.OASIS_ACCOUNTS_STATE || accountFiles.stateFile,
+  now,
+  // It may log while the engine is still being set up (before `hub` exists): the same format, straight to the console.
+  log: (...a) => console.log(new Date().toISOString().slice(11, 19), ...a),
+  onChange: () => accountsChanged(),
+});
 const scheduler = new Scheduler({
+  blocked: () => accounts.allExhausted(),
   agents: () => ownedAgents(),
   now,
   settingsFile: process.env.OASIS_SCHEDULE_SETTINGS || scheduleSettingsFileFor(ROSTER_FILE),
@@ -114,7 +127,7 @@ const hub = {
     }
     broadcast({ type: 'event', event });
     telegram?.onEvent(event);
-    if (/^(status|init|meta|model|mode|effort|eyes|speak|voice|chrome|schedule|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
+    if (/^(status|init|meta|model|mode|effort|eyes|speak|voice|chrome|schedule|account|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
   },
   eyes: (agentId) => captureEyes(agentId),
   journal,
@@ -123,6 +136,15 @@ const hub = {
   nextWake: (agent) => scheduler.nextWakeOf(agent),
   wakesToday: (agent) => scheduler.countToday(agent),
   scheduleCheck: (agent) => { try { scheduler.check(agent); } catch (e) { hub.log(`[${agent.name}] schedule check failed: ${e.message}`); } },
+  /** Claude accounts (accounts.js). The token only ever goes into a child's environment (accountEnv). */
+  chooseAccount: (agent) => accounts.choose({ pin: agent.accountPin }) || accountComingBackFirst(),
+  accountEnv: (id) => accounts.envFor(id),
+  accountLabel: (id) => accountLabel(id),
+  noteAccount: (id, account) => accounts.noteAccount(id, account),
+  recordRateLimit: (id, info) => accounts.record(id, info),
+  allAccountsOut: () => accounts.allExhausted(),
+  firstAccountReset: () => accounts.firstReset(),
+  onLimit: (agent, limit) => failover(agent, limit),
   /** The who-you-are note for an agent and what it was made from (agent.js sends it when due). */
   character: (agent) => characterFor(agent),
   /** Where this engine listens: agents get it as OASIS_ENGINE_URL. */
@@ -239,6 +261,76 @@ function saveViews(agent, view, pictures) {
     return { path: file.replace(/\\/g, '/'), label: p.label || null, note: p.note || null };
   });
 }
+
+// ------------------------------------------------------------------ accounts: failover
+function accountLabel(id) {
+  if (!id) return null;
+  const alias = accounts.aliasOf(id);
+  if (alias) return accounts.get(alias)?.label || alias;
+  const a = accounts.get(id);
+  if (!a) return id;
+  return a.id === CLI && a.plan ? `CLI login (${a.plan})` : a.label;
+}
+
+/** Every account is out: start a process on the one that comes back first (a start spends nothing). */
+function accountComingBackFirst() {
+  const list = accounts.view().accounts.filter((a) => !a.sameAs).sort((a, b) => (a.exhaustedUntil || 0) - (b.exhaustedUntil || 0));
+  return list[0] ? { id: list[0].id, label: list[0].label } : null;
+}
+
+let accountsTimer = null;
+function accountsChanged() {
+  clearTimeout(accountsTimer);
+  accountsTimer = setTimeout(() => { broadcast({ type: 'accounts', ...accounts.view() }); scheduleSnapshot(); }, 200);
+}
+
+let outageTold = false;
+/**
+ * A turn of `agent` was refused for usage (agent.js afterResult). That account is out until its reset; the agent stops
+ * and resumes the same session on the next account with a carry-on note, so the refused turn runs again. Idle agents
+ * on the same account move now; busy ones move before their next turn (agent.js sendNow). Every account out: they
+ * wait, the owner gets one Telegram line, and accountsTick() resumes them when the first account is back.
+ */
+function failover(agent, limit) {
+  const from = agent.accountId;
+  if (from) accounts.exhaust(from, { resetsAt: limit.resetsAt, window: limit.window, kind: limit.kind });
+  if (accounts.allExhausted()) {
+    agent.park(accounts.firstReset(), true);
+    tellOutage();
+    return;
+  }
+  agent.sendChain = agent.sendChain
+    .then(async () => {
+      await agent.switchAccount(`${accountLabel(from)} is out of usage`);
+      await agent.flushLeftovers({ resume: true, resumeText: LIMIT_RESUME_TEXT });
+    })
+    .catch((e) => hub.log(`[${agent.name}] failover failed: ${e.message}`));
+  for (const other of ownedAgents()) {
+    if (other === agent || !other.proc || !other.isIdle() || !accounts.sameQuota(from || '').includes(other.accountId)) continue;
+    other.sendChain = other.sendChain.then(() => other.switchAccount(`${accountLabel(from)} is out of usage`)).catch((e) => hub.log(`[${other.name}] move failed: ${e.message}`));
+  }
+}
+
+function tellOutage() {
+  if (outageTold) return;
+  outageTold = true;
+  const first = accounts.firstReset();
+  const when = first ? new Date(first).toTimeString().slice(0, 5) : 'later';
+  const line = `⏸ Every Claude account is out of usage. The village waits and goes on by itself at ${when}.`;
+  hub.log(`accounts: ${line}`);
+  try { telegram?.say(line); } catch { /* no Telegram: the HUD says it */ }
+}
+
+/** Every 15 s, and when the test clock moves: an account is back, so the agents that waited go on. */
+async function accountsTick() {
+  if (accounts.allExhausted()) return;
+  if (outageTold) { outageTold = false; hub.log('accounts: an account is back'); accountsChanged(); }
+  for (const a of ownedAgents()) {
+    if (!a.parked) continue;
+    a.sendChain = a.sendChain.then(() => a.unpark()).catch((e) => hub.log(`[${a.name}] resume after the outage failed: ${e.message}`));
+  }
+}
+setInterval(() => { accounts.reload(); void accountsTick(); }, 15_000).unref();
 
 /** An owned agent by id, session or name, for the schedule commands. */
 function scheduleAgent(ref) {
@@ -591,12 +683,31 @@ ${you.note}` : text);
     if (!telegram) throw new Error('the Telegram line is not running in this engine');
     return { ok: true, data: telegram.tell(a.id, a.name, text) };
   },
+  // ---- Claude accounts (accounts.js): never a token here, only ids and labels.
+  /** The accounts, which one is the village default, how full each is, which are out until when. */
+  listAccounts() { return { ok: true, data: accounts.view() }; },
+  /** The village's account: "auto" (the one whose week ends first) or an account id. Applies from each agent's next turn. */
+  setDefaultAccount({ account }) { return { ok: true, data: { villageDefault: accounts.setVillageDefault(account), ...accounts.view() } }; },
+  /** Pin one agent to an account (null: back to the village's choice). An idle agent moves now. */
+  setAccount({ agentId, agent, account }) {
+    const a = scheduleAgent(agentId ?? agent);
+    const pin = account && account !== 'auto' ? String(account) : null;
+    if (pin && !accounts.get(pin)) throw new Error(`no account "${pin}" (${accounts.all().map((x) => x.id).join(', ')})`);
+    a.accountPin = pin;
+    a.persist();
+    const want = hub.chooseAccount(a);
+    if (a.proc && a.isIdle() && want && want.id !== a.accountId) a.sendChain = a.sendChain.then(() => a.switchAccount('pinned by the owner')).catch(() => {});
+    scheduleSnapshot();
+    return { ok: true, data: { agentId: a.id, accountPin: pin, account: want } };
+  },
   /** Test engines only (OASIS_FAKE_CLOCK=1): move the schedules' clock. advanceMs adds; at sets it to that time. */
   clock({ advanceMs, at } = {}) {
     if (!FAKE_CLOCK) throw new Error('the clock can only be moved in a test engine (OASIS_FAKE_CLOCK=1)');
     if (typeof advanceMs === 'number') clock.offset += advanceMs;
     if (at !== undefined) { const t = parseWhen(at, now()); if (t === null) throw new Error('at: a time'); clock.offset = t - Date.now(); }
     scheduler.tick();
+    void accountsTick();
+    accountsChanged();
     scheduleSnapshot();
     return { ok: true, data: { now: now(), iso: new Date(now()).toString() } };
   },
@@ -801,7 +912,7 @@ const server = http.createServer(async (req, res) => {
   if (!requestAllowed(req, url)) return sendJson(res, 403, { error: 'not allowed: this Oasis asks for its local key (open it with /oasis or scripts/oasis.mjs)' });
   try {
     if (req.method === 'GET' && url.pathname.startsWith('/file/')) return serveAttachment(url.pathname.slice('/file/'.length), res, req);
-    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, clients: clients.size, restart: restartInfo(), claude: resolveClaude(), ears: earsStatus(), clipWatchdog: clipWatchdogState(), liveScribe: { model: LIVE_SCRIBE_MODEL, ready: hasLiveScribe() }, places: { missions: setting('missionsDir'), grill: setting('grillFile') } });
+    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, clients: clients.size, restart: restartInfo(), accounts: accounts.view(), claude: resolveClaude(), ears: earsStatus(), clipWatchdog: clipWatchdogState(), liveScribe: { model: LIVE_SCRIBE_MODEL, ready: hasLiveScribe() }, places: { missions: setting('missionsDir'), grill: setting('grillFile') } });
     if (req.method === 'GET' && url.pathname === '/api/agents') return sendJson(res, 200, snapshots());
     if (req.method === 'GET' && url.pathname === '/api/sessions') return sendJson(res, 200, await commands.listSessions({}));
     if (req.method === 'POST' && url.pathname === '/hook') {
@@ -885,7 +996,7 @@ wss.on('connection', (ws) => {
   for (const [id, list] of backlog) if (agents.has(id)) bl[id] = list;
   const show = pendingShow && Date.now() - pendingShow.at < 90000 && agents.has(pendingShow.agentId) ? pendingShow.agentId : undefined;
   pendingShow = null;
-  ws.send(JSON.stringify({ type: 'hello', agents: snapshots(), backlog: bl, server: { port: PORT, claude: resolveClaude().how, restart: restartInfo() }, ...(show ? { show } : {}) }));
+  ws.send(JSON.stringify({ type: 'hello', agents: snapshots(), backlog: bl, server: { port: PORT, claude: resolveClaude().how, restart: restartInfo(), accounts: accounts.view() }, ...(show ? { show } : {}) }));
   ws.on('message', async (raw) => {
     let msg;
     try { msg = JSON.parse(String(raw)); } catch { return; }

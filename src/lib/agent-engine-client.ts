@@ -431,6 +431,20 @@ export class AgentEngineClient {
     return this.cmd('wakeNow', { agentId, by: 'the owner' })
   }
 
+  /** Claude accounts (engine accounts.js): never a token here. */
+  listAccounts() {
+    return this.cmd('listAccounts', {})
+  }
+
+  setDefaultAccount(account: string) {
+    return this.cmd('setDefaultAccount', { account })
+  }
+
+  /** Pin one agent to an account, or null for the village's choice. */
+  setAccount(agentId: string, account: string | null) {
+    return this.cmd('setAccount', { agentId, account })
+  }
+
   /** Quiet hours and the daily cap, for all agents. With no argument: read them. */
   scheduleSettings(patch: { quiet?: EngineScheduleSettings['quiet']; dailyCap?: number } = {}) {
     return this.cmd('scheduleSettings', patch)
@@ -600,6 +614,11 @@ export class AgentEngineClient {
         this.flushDeltas()
         this.dispatch({ type: 'agents', agents: message.agents || [], at: this.now() })
         return
+      case 'accounts': {
+        const { type: _type, ...accounts } = message
+        this.dispatch({ type: 'accounts', accounts })
+        return
+      }
       case 'event': {
         const event = message.event
         if (!event || typeof event !== 'object') return

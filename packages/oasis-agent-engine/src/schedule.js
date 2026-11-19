@@ -295,6 +295,8 @@ export class Scheduler {
     this.settings = normalizeSettings(this.readSettings());
     this.timer = null;
     this.paused = true; // until start(): the engine first brings everyone back (resume notes go first)
+    /** True while no wake-up may go out (every Claude account is out of usage): due ones wait, then go once. */
+    this.blocked = o.blocked || (() => false);
   }
 
   readSettings() {
@@ -361,7 +363,7 @@ export class Scheduler {
       if (!due.appointments.length) return 'capped';
     }
     // Busy, or its last scheduled message is not taken in yet: wait (the next check, or the idle poke, sends it).
-    if (!agent.isIdle() || agent.scheduledPending) return 'waiting';
+    if (!agent.isIdle() || agent.scheduledPending || this.blocked()) return 'waiting';
     const message = wakeMessage({ schedule: agent.schedule, recurring, appointments: due.appointments }, now, { tell: this.tell });
     // Book it before it goes out, so a second check (or a restart while it is on its way) never sends it twice.
     agent.wake = { lastAt: recurring !== null ? now : agent.wake?.lastAt ?? null, day: localDate(now), count: this.countToday(agent, now) + 1 };

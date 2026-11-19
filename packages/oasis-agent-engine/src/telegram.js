@@ -813,11 +813,16 @@ export class TelegramLine {
         }
         return;
       case 'turn.end':
+        // Refused for usage: not the answer. The engine moves the agent to another account and the turn runs again;
+        // that one answers here (the agent stays armed).
+        if (e.limit) { t.finalText = ''; t.files = []; return; }
         if (t.armed) this.reply(id, e, t);
         return;
       case 'exit':
         // The engine itself is closing: the agent is resumed at the next start and answers then.
         if (!this.running) return;
+        // Moving to another Claude account (accounts.js): the same session goes on in a moment.
+        if (e.switching) return;
         if (t.armed || t.uuids.size) {
           this.say(`${t.name} stopped before answering${e.code != null ? ` (exit code ${e.code})` : ''}.`);
           t.armed = false; t.uuids.clear(); t.repliedAt = Date.now();

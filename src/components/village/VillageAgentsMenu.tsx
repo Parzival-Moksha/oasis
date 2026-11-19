@@ -6,7 +6,7 @@
 // with how long each has been at it. A click walks the camera to the agent, or opens a helper's work.
 // It scrolls, folds up, and stays clear of the talk panel on the right (on a phone, of the bottom sheet).
 
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { GameMenuButton } from '@/components/forge/GameMenuButton'
 import { useOasisStore } from '../../store/oasisStore'
 import { selectAttentionQueue, type EngineAgentState } from '../../store/slices/agentEngineSlice'
@@ -15,6 +15,7 @@ import { formatElapsed, subagentLook, visibleSubagents, type SubagentLook } from
 import { focusVillageAgent, focusVillageSubagent, getSessionPanelGeometry, getVillageScreen, subscribeVillageScreen } from './village-actions'
 import { VILLAGE_HELPERS_COLOR, VILLAGE_OBSERVED_COLOR, cwdLabel, statusColor, villageAgentLook } from './village-status'
 import { wakeLine } from '../../lib/village/village-schedule'
+import { accountPieces } from '../../lib/village/village-accounts'
 import { CUT_NAME_LENGTH, fullAgentName, sessionTitles } from './village-agent-labels'
 import { SUBAGENT_LOOK_COLOR } from './VillageSubagentMinis'
 import { getCouncilVersion, getStageCast, isStageWorldNow, subscribeCouncil } from './village-council'
@@ -59,18 +60,20 @@ interface Row {
   helpers: HelperRow[]
   /** "wakes 14:00" (engine schedule.js), or '' when nothing wakes it. */
   wake: string
+  /** The Claude account its process runs on (engine accounts.js), when there is more than one; '' otherwise. */
+  account: string
 }
 
 function rowKey(agent: EngineAgentState, titles: Map<string, string>, now: number): string {
   const look = villageAgentLook(agent, now)
   const helpers = visibleSubagents(agent, now).map(sub => [sub.key, subagentLook(sub), sub.description, sub.startedAt].join('\u0003')).join('\u0004')
-  return [agent.id, fullAgentName(agent, titles), look.status, look.label, agent.owned ? '' : '1', cwdLabel(agent.cwd), helpers, wakeLine(agent.nextWake, now) || ''].join('\u0001')
+  return [agent.id, fullAgentName(agent, titles), look.status, look.label, agent.owned ? '' : '1', cwdLabel(agent.cwd), helpers, wakeLine(agent.nextWake, now) || '', agent.account?.label || ''].join('\u0001')
 }
 
 function parseRow(item: string): Row {
-  const [id, name, status, label, observed, repo, helpers, wake] = item.split('\u0001')
+  const [id, name, status, label, observed, repo, helpers, wake, account] = item.split('\u0001')
   return {
-    id, name, status, label, repo, observed: observed === '1', wake: wake || '',
+    id, name, status, label, repo, observed: observed === '1', wake: wake || '', account: account || '',
     color: statusColor(status),
     helpers: helpers ? helpers.split('\u0004').map(part => {
       const [key, subLook, description, startedAt] = part.split('\u0003')
@@ -197,6 +200,9 @@ export function VillageAgentsMenu() {
   useSessionTitlesWhenNamesAreCut()
   const hasHelpers = useOasisStore(s => s.agentEngine.order.some(id => (s.agentEngine.agents[id]?.subagents.length || 0) > 0))
   const now = useClock(hasHelpers)
+  // The Claude accounts (engine accounts.js): one short piece each, shown above the rows when there is more than one.
+  const accountsView = useOasisStore(s => s.agentEngine.connection.server?.accounts || null)
+  const accounts = useMemo(() => accountPieces(accountsView, now), [accountsView, now])
   // On a stage (the Council's world) only the agents who are there: its cast (village-council.ts).
   const castVersion = useSyncExternalStore(subscribeCouncil, getCouncilVersion, () => 0)
   const rowsKey = useOasisStore(s => {
@@ -294,6 +300,12 @@ export function VillageAgentsMenu() {
           data-agents-list
         >
           <div ref={contentRef}>
+          {/* How full each Claude account is, and which one is out until when (engine accounts.js). */}
+          {accounts.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap gap-x-2 px-1.5 text-[10px] text-white/55" data-accounts-line>
+              {accounts.map(piece => <span key={piece.id} title={piece.title} className={piece.out ? 'text-amber-300' : undefined}>{piece.text}</span>)}
+            </div>
+          )}
           {rows.length === 0 && (
             <div className="px-2 py-2 text-[11px] leading-snug text-white/55">No agents yet. Stand in the circle and press E, or use + Summon.</div>
           )}
@@ -325,6 +337,7 @@ export function VillageAgentsMenu() {
                     {row.repo && <span className="text-cyan-100/60">· {row.repo}</span>}
                     {row.observed && <span className="text-cyan-200/60">· watched</span>}
                     {row.wake && <span className="text-amber-100/70" data-agent-wake-line title="It wakes up on its own then (its settings menu: Schedule)">· {row.wake}</span>}
+                    {row.account && accounts.length > 1 && <span className="text-violet-100/60" data-agent-account-line title="The Claude account it runs on">· {row.account.split(/\s+/)[0]}</span>}
                   </span>
                 </button>
                 </div>

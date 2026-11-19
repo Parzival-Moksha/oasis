@@ -34,7 +34,13 @@ export function cleanEnv(extra = {}) {
     delete env.ANTHROPIC_API_KEY;
     delete env.ANTHROPIC_AUTH_TOKEN;
   }
-  return { ...env, ...extra };
+  // A null in `extra` drops the variable (the CLI login for an agent: no inherited CLAUDE_CODE_OAUTH_TOKEN).
+  const out = { ...env };
+  for (const [key, value] of Object.entries(extra)) {
+    if (value === null || value === undefined) delete out[key];
+    else out[key] = value;
+  }
+  return out;
 }
 
 let cached = null;

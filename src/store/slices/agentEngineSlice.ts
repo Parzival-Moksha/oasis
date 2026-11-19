@@ -6,6 +6,7 @@
 // src/lib/agent-engine-client.ts and src/components/village/.
 
 import type {
+  EngineAccountsView,
   EngineAppointment,
   EngineSchedule,
   EngineAgentKind,
@@ -72,6 +73,8 @@ export type AgentLogEntry =
       images?: Array<{ fileId: string; name?: string; mediaType?: string }>
       /** A wake-up from the agent's schedule, not the owner: what woke it ("hourly wake-up"). */
       scheduled?: string
+      /** The engine's own carry-on note (engine resume.js / accounts.js), not the owner's words. */
+      engineNote?: boolean
     })
   | (LogBase & { type: 'text'; text: string; parentToolUseId: string | null })
   | (LogBase & {
@@ -199,6 +202,10 @@ export interface EngineAgentState {
   lastOutcomeAt: number | null
   /** The engine restarted mid-turn and told it to carry on: set while that turn runs (its sign says "resumed"). */
   resumedAt: number | null
+  /** The Claude account its process runs on, its pin, and whether it waits for an account to come back. */
+  account: { id: string; label: string } | null
+  accountPin: string | null
+  parked: { until: number | null } | null
   /** When it wakes up on its own (engine schedule.js). undefined fields stay null on engines older than schedules. */
   schedule: EngineSchedule | null
   appointments: EngineAppointment[]
@@ -280,6 +287,8 @@ export type AgentEngineAction =
       at: number
     }
   | { type: 'agents'; agents: EngineAgentSnapshot[]; at: number }
+  /** The Claude accounts changed (engine accounts.js): kept with the server info, for the HUD and Settings. */
+  | { type: 'accounts'; accounts: EngineAccountsView }
   | { type: 'event'; event: EngineEvent }
   | { type: 'focus'; agentId: string | null }
   /** After a reload: these agents finished while you weren't looking (village-seen.ts). */
@@ -364,6 +373,9 @@ export function createAgentState(
     voiceChoice: null,
     lastOutcomeAt: null,
     resumedAt: null,
+    account: null,
+    accountPin: null,
+    parked: null,
     schedule: null,
     appointments: [],
     nextWake: null,
@@ -437,6 +449,9 @@ export function applySnapshot(agent: EngineAgentState, snap: EngineAgentSnapshot
     voiceChoice: snap.voiceChoice !== undefined ? snap.voiceChoice || null : agent.voiceChoice,
     lastOutcomeAt: typeof snap.lastOutcome?.at === 'number' ? snap.lastOutcome.at : agent.lastOutcomeAt,
     resumedAt: snap.resumedAt !== undefined ? snap.resumedAt ?? null : agent.resumedAt,
+    account: snap.account !== undefined ? snap.account ?? null : agent.account,
+    accountPin: snap.accountPin !== undefined ? snap.accountPin ?? null : agent.accountPin,
+    parked: snap.parked !== undefined ? snap.parked ?? null : agent.parked,
     schedule: snap.schedule !== undefined ? snap.schedule ?? null : agent.schedule,
     appointments: Array.isArray(snap.appointments) ? snap.appointments : agent.appointments,
     nextWake: snap.nextWake !== undefined ? snap.nextWake ?? null : agent.nextWake,
@@ -653,6 +668,8 @@ function foldAgentEventInner(agent: EngineAgentState, event: EngineEvent, ctx: F
         ...(e.voice?.fileId ? { voice: e.voice } : {}),
         ...(e.images?.length ? { images: e.images } : {}),
         ...(e.auto === 'schedule' ? { scheduled: e.scheduled || 'scheduled' } : {}),
+        // The engine's carry-on note (after a restart, or on another account): not the owner's words.
+        ...(e.auto === 'resume' ? { engineNote: true } : {}),
       })
     }
 
@@ -882,6 +899,8 @@ function foldAgentEventInner(agent: EngineAgentState, event: EngineEvent, ctx: F
     }
 
     case 'exit': {
+      // Moving to another Claude account (engine accounts.js): the same session starts again at once, no news.
+      if (e.switching) return { ...a, alive: false, live: null, pendingUser: 0 }
       ;[key, a] = nextKey(a, 'q')
       const stderr = Array.isArray(e.stderr) && e.stderr.length ? `: ${e.stderr.join(' | ')}` : ''
       a = { ...a, alive: false, live: null, pendingUser: 0 }
@@ -1050,6 +1069,11 @@ export function agentEngineReducer(state: AgentEngineState, action: AgentEngineA
         focusedAgentId: state.focusedAgentId && agents[state.focusedAgentId] ? state.focusedAgentId : null,
         nearbyAgentId: state.nearbyAgentId && agents[state.nearbyAgentId] ? state.nearbyAgentId : null,
       }
+    }
+
+    case 'accounts': {
+      const server = state.connection.server || {}
+      return { ...state, connection: { ...state.connection, server: { ...server, accounts: action.accounts } } }
     }
 
     case 'agents': {

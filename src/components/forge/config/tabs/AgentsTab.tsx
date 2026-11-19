@@ -13,6 +13,7 @@ import { isVillageSoundOn, setVillageSoundOn, subscribeVillageSound } from '@/co
 import { TAG_SIZE, TAG_STYLES, getTagSettings, getTagSettingsVersion, setTagSettings, subscribeTagSettings } from '@/lib/village/tag-style'
 import { isVillageVoiceOn, setVillageVoiceOn, subscribeVillageVoice } from '@/components/village/village-companion'
 import { WakeUpSettings } from './WakeUpSettings'
+import { AccountsSettings } from './AccountsSettings'
 
 /** An on/off row: a switch, a title and a line on what it does now. */
 function SwitchRow({ on, onToggle, title, hint, data }: { on: boolean; onToggle: () => void; title: string; hint: string; data: string }) {
@@ -257,6 +258,8 @@ export function AgentsTab() {
       </section>
       {/* Quiet hours and the daily cap of agents' scheduled wake-ups (the engine keeps them). */}
       <WakeUpSettings />
+      {/* The Claude accounts the agents run on, and the village's default (the engine keeps them). */}
+      <AccountsSettings />
     </div>
   )
 }

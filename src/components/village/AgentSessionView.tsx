@@ -376,6 +376,8 @@ const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: Age
                 <span>
                   {entry.scheduled
                     ? <span data-thread-scheduled title={`Sent by the agent's schedule: ${entry.scheduled}`} className="rounded bg-amber-300/20 px-1 text-amber-100">scheduled</span>
+                    : entry.engineNote
+                    ? <span data-thread-engine-note title="The engine's carry-on note (after an engine restart, or on another Claude account), not your words" className="rounded bg-white/15 px-1 text-white/80">engine</span>
                     : entry.state === 'seen' ? 'prompt' : 'you'}
                   {state ? ` · ${state}` : ''}{entry.priority === 'now' ? ' · urgent' : ''}
                 </span>

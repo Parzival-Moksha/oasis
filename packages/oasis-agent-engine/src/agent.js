@@ -29,6 +29,10 @@ import { VOICE_DEFAULT, VOICE_NOTE, VOICE_OFF_NOTE, isVoiceKey, voicePickNote } 
 import { outcomeForRoster, restoreOutcome, statusForOutcome } from './outcome.js';
 import { RESUME_TEXT, RESUMED_REASON } from './resume.js';
 import { normalizeSchedule } from './schedule.js';
+import { CLI, limitFrom } from './accounts.js';
+
+/** Said when a turn was refused for usage and the agent goes on on another account (accounts.js). */
+export const LIMIT_RESUME_TEXT = 'Your last turn was cut off: the Claude account it ran on reached its usage limit. You now run on another account. Carry on from where you stopped.';
 import { registerAttachment } from './files.js';
 
 const SANDBOX_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'sandbox');
@@ -73,6 +77,14 @@ export class Agent {
     this.schedule = normalizeSchedule(spec.schedule);
     this.appointments = Array.isArray(spec.appointments) ? spec.appointments.filter((a) => a && typeof a.id === 'string' && typeof a.at === 'number') : [];
     this.wake = spec.wake && typeof spec.wake === 'object' ? { lastAt: typeof spec.wake.lastAt === 'number' ? spec.wake.lastAt : null, day: typeof spec.wake.day === 'string' ? spec.wake.day : null, count: Number(spec.wake.count) || 0 } : { lastAt: null, day: null, count: 0 };
+    // Its Claude account (accounts.js): a pin from the roster (null: the village's choice), and the one its process runs on.
+    this.accountPin = typeof spec.account === 'string' && spec.account ? spec.account : null;
+    this.accountId = null;
+    /** What a refusal in the running turn said ({kind, resetsAt, window}): failover once the turn has ended. */
+    this.limitHit = null;
+    /** Every account is out: messages wait in the journal until one comes back ({ until, resume }). */
+    this.parked = null;
+    this.exitWaiters = [];
     /** The scheduled message on its way (its uuid) until the CLI takes it in: never two queued at once. */
     this.scheduledPending = null;
     /** The running turn was started by the schedule (and nobody else joined it): the page does not treat it as the owner's. */
@@ -157,11 +169,14 @@ export class Agent {
       nextWake: this.hub.nextWake ? this.hub.nextWake(this) : null,
       wakesToday: this.hub.wakesToday ? this.hub.wakesToday(this) : 0,
       scheduledRun: this.scheduledRun && !this.scheduledMixed,
+      account: this.accountId ? { id: this.accountId, label: this.hub.accountLabel ? this.hub.accountLabel(this.accountId) : this.accountId } : null,
+      accountPin: this.accountPin,
+      parked: this.parked ? { until: this.parked.until } : null,
     };
   }
 
   rosterEntry() {
-    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, speak: this.speak, ...(this.speakSet ? { speakSet: true } : {}), ...(this.voiceChoice ? { voiceChoice: this.voiceChoice } : {}), ...(this.voiceOffered ? { voiceOffered: true } : {}), ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}), ...(this.proc?.pid ? { pid: this.proc.pid } : {}), ...(this.schedule ? { schedule: this.schedule } : {}), ...(this.appointments.length ? { appointments: this.appointments } : {}), ...(this.wake.lastAt || this.wake.count ? { wake: this.wake } : {}) };
+    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, speak: this.speak, ...(this.speakSet ? { speakSet: true } : {}), ...(this.voiceChoice ? { voiceChoice: this.voiceChoice } : {}), ...(this.voiceOffered ? { voiceOffered: true } : {}), ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}), ...(this.proc?.pid ? { pid: this.proc.pid } : {}), ...(this.schedule ? { schedule: this.schedule } : {}), ...(this.appointments.length ? { appointments: this.appointments } : {}), ...(this.wake.lastAt || this.wake.count ? { wake: this.wake } : {}), ...(this.accountPin ? { account: this.accountPin } : {}) };
   }
 
   /** Nothing running, nothing queued, no decision open: a scheduled wake-up may go out now. */
@@ -218,7 +233,11 @@ export class Agent {
     // SendUserFile is off in -p mode unless the host shows files by path; the Oasis does (files.js, /file/<id>).
     // Checked with 2.1.318: the init tool list gains SendUserFile, and its result lists each validated path.
     // OASIS_AGENT_ID / OASIS_ENGINE_URL: who it is in the village and where the engine listens (scripts/voice.mjs reads them).
-    const env = { CLAUDE_CODE_ATTACHMENTS_BY_PATH: '1', OASIS_AGENT_ID: this.id, ...(this.hub.url ? { OASIS_ENGINE_URL: this.hub.url } : {}) };
+    // Its Claude account (accounts.js): the token goes into this child's environment only (the CLI keeps it out of the
+    // agent's own shell); the CLI login drops any inherited one. Every account out: the one that comes back first.
+    const account = this.hub.chooseAccount ? this.hub.chooseAccount(this) : null;
+    this.accountId = account?.id || null;
+    const env = { CLAUDE_CODE_ATTACHMENTS_BY_PATH: '1', OASIS_AGENT_ID: this.id, ...(this.hub.url ? { OASIS_ENGINE_URL: this.hub.url } : {}), ...(account && this.hub.accountEnv ? this.hub.accountEnv(account.id) : {}) };
     // Scratch agents live inside the 7c_oasis repo: keep them off the owner's auto-memory.
     if (path.resolve(this.cwd).toLowerCase().startsWith(SANDBOX_ROOT.toLowerCase())) env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';
     this.hub.log(`[${this.name}] spawn claude ${args.join(' ')} (cwd ${this.cwd})`);
@@ -247,6 +266,8 @@ export class Agent {
     this.request('initialize', {}).then(async (r) => {
       if (r?.ok) {
         const d = r.data || {};
+        // Which account the CLI login is (free): one quota with a token account of the same email.
+        if (this.accountId === CLI && d.account) this.hub.noteAccount?.(this.accountId, d.account);
         this.meta = {
           models: (d.models || []).map((m) => ({
             value: m.value, resolvedModel: m.resolvedModel, displayName: m.displayName,
@@ -301,7 +322,8 @@ export class Agent {
     this.scheduledRun = false;
     // Background subagents live inside this process: they stopped with it.
     this.norm.endOpenSubagents('stopped', 'the agent process stopped');
-    this.emit('exit', { code, signal, stderr: wasKilling ? undefined : this.stderrTail.slice(-5) });
+    this.emit('exit', { code, signal, stderr: wasKilling ? undefined : this.stderrTail.slice(-5), ...(this.switching ? { switching: true } : {}) });
+    for (const done of this.exitWaiters.splice(0)) done();
     if (wasKilling || code === 0) this.setStatus(STATUS.IDLE, wasKilling ? 'stopped' : 'exited');
     else this.setStatus(STATUS.ERROR, `claude exited (code ${code}${signal ? ', ' + signal : ''})`);
     // A switch that changes the start arguments (Chrome): come back with them, same session.
@@ -347,6 +369,15 @@ export class Agent {
       this.setStatus(STATUS.WORKING, 'turn started');
     }
     if (msg.type === 'user' && msg.isReplay) this.onReplay(msg);
+    // Usage (accounts.js): every rate_limit_event fills its account's windows; a refusal for usage is remembered for
+    // the end of the turn. Only usage_limit_reached / model_requires_usage_credits count: never a 529 or the network.
+    if (msg.type === 'rate_limit_event' && this.accountId) this.hub.recordRateLimit?.(this.accountId, msg.rate_limit_info);
+    const limit = limitFrom(msg);
+    if (limit && this.turnRunning) {
+      const prev = this.limitHit;
+      if (limit.kind || prev) this.limitHit = { kind: limit.kind || prev?.kind || null, resetsAt: limit.resetsAt || prev?.resetsAt || null, window: limit.window || prev?.window || null };
+      else this.limitHit = { kind: null, resetsAt: limit.resetsAt, window: limit.window, rejectedOnly: true };
+    }
     this.norm.handleStream(msg);
     if (msg.type === 'result') this.afterResult();
   }
@@ -432,8 +463,11 @@ export class Agent {
     this.recomputeStatus();
     // Chrome was switched during the turn: restart now that it is over (unless more messages wait).
     if (this.restartPending && !this.pendingUser.size) this.kill();
+    // Refused for usage: the engine marks the account out and moves this agent on (accounts.js, index.js).
+    else if (this.limitHit?.kind) { const limit = this.limitHit; this.limitHit = null; this.hub.onLimit?.(this, limit); }
     // A wake-up that came due while it worked goes out now (schedule.js).
     else if (this.hub.scheduleCheck) setTimeout(() => this.hub.scheduleCheck(this), 1500).unref?.();
+    this.limitHit = null;
   }
 
   onEvent(kind, payload) {
@@ -442,6 +476,8 @@ export class Agent {
     // A resumed session whose last turn was cut off makes the CLI close that turn by itself at start
     // (init + turn.end, no API call): that must not hide "stopped mid-turn" before anyone wrote to it.
     if (kind === 'turn.end' && (this.sentSinceStart || !this.lastOutcome)) this.lastOutcome = payload;
+    // Refused for usage: the turn says so (the page and Telegram treat it as a pause, not the end of the work).
+    if (kind === 'turn.end' && this.limitHit?.kind) payload = { ...payload, limit: { kind: this.limitHit.kind, resetsAt: this.limitHit.resetsAt, window: this.limitHit.window, account: this.accountId } };
     // A turn the schedule started: the page does not mark it "finished, unseen" or walk the agent up to the owner.
     if (kind === 'turn.end' && this.scheduledRun && !this.scheduledMixed) payload = { ...payload, scheduled: true };
     this.emit(kind, payload);
@@ -510,6 +546,16 @@ export class Agent {
   }
 
   async sendNow(text, opts = {}) {
+    // Every account out (accounts.js): the message waits in the journal; the engine delivers it when one comes back.
+    if (this.hub.allAccountsOut?.()) {
+      this.park(this.hub.firstAccountReset?.() || null, false);
+      return { uuid: opts.uuid, parked: true };
+    }
+    // Its process runs on an account it should no longer use (out, or the village went back to the first): switch first.
+    if (this.proc && this.hub.chooseAccount) {
+      const want = this.hub.chooseAccount(this);
+      if (want && want.id !== this.accountId) await this.switchAccount(`moving to ${want.label}`);
+    }
     if (!this.proc) {
       this.start();
       if (!this.proc) throw new Error(this.statusReason);
@@ -520,13 +566,52 @@ export class Agent {
   }
 
   /**
+   * Stop this agent's process and start it again (same session, --resume) on the account the engine chooses now.
+   * One process per session: the old one is gone before the new one starts. Never while a turn runs.
+   */
+  async switchAccount(why = '') {
+    const from = this.accountId;
+    if (this.proc) {
+      this.switching = true;
+      const gone = new Promise((resolve) => this.exitWaiters.push(resolve));
+      this.kill();
+      await gone;
+      this.switching = false;
+    }
+    this.start();
+    if (this.accountId !== from) {
+      this.hub.log(`[${this.name}] account: ${from || 'none'} -> ${this.accountId || 'none'}${why ? ` (${why})` : ''}`);
+      this.emit('account', { from, to: this.accountId, why });
+    }
+    return this.accountId;
+  }
+
+  /** Every account is out: wait (status error with the time), and go on when the engine says one is back. */
+  park(until, resume) {
+    const was = this.parked;
+    this.parked = { until, resume: Boolean(resume || was?.resume) };
+    const when = until ? new Date(until).toTimeString().slice(0, 5) : 'later';
+    if (!was) this.emit('notice', { subtype: 'accounts', text: `Every Claude account is out of usage: this agent waits until ${when}, then goes on by itself.` });
+    this.setStatus(STATUS.ERROR, `every account is out of usage until ${when}`);
+  }
+
+  /** An account is back: resume on it, carry on if a turn was cut off, deliver what waited. */
+  async unpark() {
+    const parked = this.parked;
+    if (!parked) return { resumed: false, delivered: 0 };
+    this.parked = null;
+    await this.switchAccount('an account is back');
+    return this.flushLeftovers({ resume: parked.resume, resumeText: LIMIT_RESUME_TEXT });
+  }
+
+  /**
    * After a start: the journal's messages for this agent that its CLI never took in, oldest first, each under its
    * old uuid. One whose uuid is already in the transcript was taken in after all and is only crossed off.
    * resume: the last run was cut off mid-turn; it is told to carry on first, once (the note is a journal entry
    * like any other, so a second restart before it is taken in sends that same one, not another).
    * -> { resumed, delivered }
    */
-  async flushLeftovers({ resume = false } = {}) {
+  async flushLeftovers({ resume = false, resumeText = RESUME_TEXT } = {}) {
     const journal = this.hub.journal;
     if (!journal) return { resumed: false, delivered: 0 };
     // What the CLI took in after all (its uuid is in the transcript) is crossed off first. That goes for an earlier
@@ -537,7 +622,7 @@ export class Agent {
       for (const e of waiting) if (tail.includes(`"uuid":"${e.uuid}"`)) journal.done(this.id, e.uuid);
     }
     if (resume && !journal.queuedFor(this.id).some((e) => e.resume)) {
-      journal.queue(this.id, { uuid: randomUUID(), text: RESUME_TEXT, resume: true }, { first: true });
+      journal.queue(this.id, { uuid: randomUUID(), text: resumeText, resume: true }, { first: true });
     }
     const left = journal.queuedFor(this.id).filter((e) => !this.inFlight.has(e.uuid) && !this.pendingUser.has(e.uuid));
     let resumed = false;
@@ -636,7 +721,8 @@ export class Agent {
     this.emit('user.sent', { uuid, text, midTurn: turnWasRunning, priority: msg.priority || 'next', ...(picture?.data ? { eyes: true } : {}), ...(voice ? { voice } : {}), ...(shown.length ? { images: shown } : {}), ...(resume ? { auto: 'resume' } : {}), ...(scheduled ? { auto: 'schedule', scheduled: scheduled.label || 'scheduled' } : {}) });
     if (resume) {
       this.resumedAt = Date.now();
-      this.emit('notice', { subtype: 'resumed', text: 'The engine restarted while this agent was working: it was told to carry on.' });
+      const label = this.hub.accountLabel ? this.hub.accountLabel(this.accountId) : this.accountId;
+      this.emit('notice', { subtype: 'resumed', text: text === LIMIT_RESUME_TEXT ? `Its Claude account ran out of usage: it goes on on ${label || 'another account'}, told to carry on.` : 'The engine restarted while this agent was working: it was told to carry on.' });
     }
     // An open permission / question / plan still blocks the CLI: talking to it doesn't resolve that.
     if (this.permissions.size) this.recomputeStatus();

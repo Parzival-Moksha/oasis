@@ -28,6 +28,7 @@ import {
 } from './village-actions'
 import { VillageComposer } from './VillageComposer'
 import { EffortSelect } from './EffortSelect'
+import { AccountSelect } from './AccountSelect'
 import { EyesToggle } from './EyesToggle'
 import { ChromeToggle } from './ChromeToggle'
 import { FollowToggle, VoiceToggle } from './CompanionToggles'
@@ -282,6 +283,8 @@ export function AgentSessionPanel() {
             </select>
           </label>
           <EffortSelect agent={agent} />
+          {/* Its Claude account (engine accounts.js), when there is more than one. */}
+          <AccountSelect agent={agent} />
           <EyesToggle agent={agent} />
           <ChromeToggle agent={agent} />
           <AcademyTrainToggle agent={agent} />
