@@ -188,6 +188,8 @@ export function useUnifiedThumbnailQueue() {
           return false
         }
         delete failureCountsRef.current[id]
+        // Shown from memory this session: a production server may not serve the new file until it restarts.
+        useThumbnailStore.getState().setLocalUrl(id, URL.createObjectURL(blob))
         useThumbnailStore.getState().markReady(id)
         return true
       } catch (err) {

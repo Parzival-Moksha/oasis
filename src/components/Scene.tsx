@@ -42,6 +42,7 @@ import { ForgeRealm } from './realms/ForgeRealm'
 import PanoramaCapture from './forge/PanoramaCapture'
 import { ViewportScreenshotBridge } from './forge/ViewportScreenshotBridge'
 import { WizardConsole, type WizardMode } from './forge/WizardConsole'
+import { WizardDockViewOffset } from './forge/WizardDockViewOffset'
 // AssetExplorerWindow deleted — functionality lives in WizardConsole
 import { ObjectInspector } from './forge/ObjectInspector'
 import { ObjectHtmlOverlay } from './forge/ObjectHtmlOverlay'
@@ -2090,6 +2091,8 @@ export default function Scene() {
 
         {/* ─═̷─═̷─🎮 CAMERA CONTROLLER — ONE owner, ONE useFrame, ZERO fights ─═̷─═̷─🎮 */}
         <CameraControllerComponent />
+        {/* The docked Wizard console: the view centre moves into what the panel leaves (forge/wizard-dock.ts). */}
+        <WizardDockViewOffset />
         <PointerLockRaycaster />
         <ScenePlayableSignal worldReady={playableWorldReady} worldId={playableWorldId} />
         {!villageProfile && <OnboardingSpawnPrimer controlMode={settings.controlMode} />}

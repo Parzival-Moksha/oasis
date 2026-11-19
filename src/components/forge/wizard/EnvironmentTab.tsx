@@ -29,7 +29,8 @@ const TEXT = 'text-[11px] opacity-80'
 /** A picture for skies with no jpg of their own (HDR files and built-in presets). */
 function skyPlaceholder(emoji: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e1b4b"/><stop offset="1" stop-color="#05060a"/></linearGradient></defs><rect width="160" height="90" fill="url(#g)"/><text x="80" y="58" font-size="34" text-anchor="middle">${emoji}</text></svg>`
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+  // Parentheses escaped too: the kit puts this inside an unquoted CSS url(...).
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg).replace(/\(/g, '%28').replace(/\)/g, '%29')}`
 }
 
 const SECTION_KEY = 'oasis-wizard-environment-section'
@@ -172,7 +173,7 @@ function BackgroundSection() {
   const skyId = useOasisStore(s => s.worldSkyBackground)
   const setSky = useOasisStore(s => s.setWorldSkyBackground)
   return (
-    <div className="grid grid-cols-2 gap-1.5">
+    <div className="grid grid-cols-3 gap-1.5">
       {SKY_BACKGROUNDS.map(sky => {
         const picture = sky.path && sky.path.endsWith('.jpg') ? sky.path : skyPlaceholder('preset' in sky ? '🏙️' : sky.path ? '🌌' : '✨')
         return <KitPickTile key={sky.id} picture={picture} label={sky.name} selected={skyId === sky.id} accent="#818cf8" title={sky.name} onClick={() => setSky(sky.id)} />

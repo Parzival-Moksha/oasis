@@ -22,6 +22,9 @@ interface ThumbnailStore {
   status: Record<string, ThumbStatus>
   /** Per-asset version counter — bump on transition to 'ready'. */
   versions: Record<string, number>
+  /** Pictures rendered in this session, as blob: URLs. A packaged Oasis runs `next start`, which serves only the
+   *  public/ files that existed at build time, so a picture saved just now would 404 until a restart (Hustler). */
+  localUrls: Record<string, string>
   /** Aggregate progress for UI display. */
   pending: number
   done: number
@@ -32,6 +35,7 @@ interface ThumbnailStore {
   markPending(id: string): void
   markReady(id: string): void
   markFailed(id: string): void
+  setLocalUrl(id: string, url: string): void
   seedKnown(ids: string[]): void
   resetProgress(total: number): void
   bumpDone(): void
@@ -40,6 +44,7 @@ interface ThumbnailStore {
 export const useThumbnailStore = create<ThumbnailStore>((set) => ({
   status: {},
   versions: {},
+  localUrls: {},
   pending: 0,
   done: 0,
   total: 0,
@@ -64,6 +69,11 @@ export const useThumbnailStore = create<ThumbnailStore>((set) => ({
       status: { ...s.status, [id]: 'failed' },
       pending: wasPending ? Math.max(0, s.pending - 1) : s.pending,
     }
+  }),
+  setLocalUrl: (id, url) => set(s => {
+    const old = s.localUrls[id]
+    if (old && old !== url) { try { URL.revokeObjectURL(old) } catch { /* not a blob */ } }
+    return { localUrls: { ...s.localUrls, [id]: url } }
   }),
   seedKnown: (ids) => set(s => {
     const next = { ...s.status }

@@ -106,10 +106,17 @@ function CardThumbnail({ id, type, thumbnailUrl, fallbackThumbnailUrl, mediaUrl,
   const videoRef = useRef<HTMLVideoElement>(null)
   const thumbStatus = useThumbnailStore(s => type === 'catalog' ? s.status[id] : undefined)
   const thumbVersion = useThumbnailStore(s => type === 'catalog' ? (s.versions[id] || 0) : 0)
+  // A picture rendered in this session (see thumbnail-store localUrls) wins over the file URL.
+  const localThumb = useThumbnailStore(s => type === 'catalog' ? s.localUrls[id] : undefined)
 
   useEffect(() => {
     setImgFailed(false)
-  }, [thumbnailUrl, thumbStatus, thumbVersion])
+  }, [thumbnailUrl, thumbStatus, thumbVersion, localThumb])
+
+  if (localThumb) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={localThumb} alt={name} className="w-full h-full object-cover" />
+  }
 
   const withThumbVersion = (src: string): string => (
     thumbVersion > 0 ? `${src}${src.includes('?') ? '&' : '?'}v=${thumbVersion}` : src

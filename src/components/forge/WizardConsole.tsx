@@ -38,7 +38,8 @@ import { PORTAL_GATE_VARIANT_DEFS, type PortalGateVariant } from '../../lib/port
 import { portalThumbPath } from '../../lib/portal-thumbnails'
 import { EnvironmentTab } from './wizard/EnvironmentTab'
 import { CatalogCategories } from './wizard/CatalogCategories'
-import { KitButton } from '@/components/ui-kit'
+import { KitButton, KitPanel, KitTabs } from '@/components/ui-kit'
+import { WIZARD_DOCK_MARGIN, getWizardDockWidth, setWizardDockOpen, setWizardDockWidth, useWizardDockVersion, wizardDockGeometry } from '@/lib/forge/wizard-dock'
 import { requestCatalogThumbnails } from '../../hooks/useUnifiedThumbnailQueue'
 import {
   buildAudioPlacementPending,
@@ -1325,6 +1326,18 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
   const portalThumbVersion = usePortalThumbnailGenerator()
 
   // ░▒▓ Catalog thumbnail generator — manual trigger for 100+ GLB renders ▓▒░
+  // Docked on the right like the agent panel; the 3D view's centre moves into what is left (lib/forge/wizard-dock.ts).
+  useWizardDockVersion()
+  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === 'undefined' ? 1600 : window.innerWidth))
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  useEffect(() => {
+    setWizardDockOpen(isOpen)
+    return () => setWizardDockOpen(false)
+  }, [isOpen])
   const catalogThumbGen = useCatalogThumbnailGenerator()
   void catalogThumbGen
   // First sight of the catalog: any model with no picture on disk gets one rendered, the category in view first.
@@ -1734,6 +1747,19 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
 
   if (!isOpen) return null
 
+  const dock = wizardDockGeometry(viewportWidth, getWizardDockWidth())
+  const startDockResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const handle = event.currentTarget
+    handle.setPointerCapture(event.pointerId)
+    const move = (e: PointerEvent) => setWizardDockWidth(window.innerWidth - WIZARD_DOCK_MARGIN - e.clientX)
+    const up = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); handle.removeEventListener('pointercancel', up) }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', up)
+    handle.addEventListener('pointercancel', up)
+  }
+
   const forgeColor = '#F97316' // orange-500
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1741,82 +1767,45 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
   // ═══════════════════════════════════════════════════════════════════════════
 
   return createPortal(
-    <div
+    <KitPanel
       data-menu-portal="wizard-console"
       data-ui-panel
-      className="fixed rounded-xl border overflow-hidden shadow-2xl flex flex-col"
+      icon={<span className="text-lg leading-none">🧙‍♂️</span>}
+      title={<>{hostedVariant ? 'World Console' : 'Wizard Console'}{activeCount > 0 && <span className="ml-2 animate-pulse text-[11px]" title="Spells at work">&#9679; {activeCount}</span>}</>}
+      onClose={onClose}
       style={{
+        // Inline: the kit sets .kit-panel { position: relative }, which would beat a class.
+        position: 'fixed',
         zIndex: useOasisStore.getState().getPanelZIndex('wizard', 9999),
-        left: position.x,
-        top: position.y,
-        width: size.width,
-        height: size.height,
-        backgroundColor: `rgba(0, 0, 0, ${opacity})`,
+        top: WIZARD_DOCK_MARGIN,
+        bottom: WIZARD_DOCK_MARGIN,
+        right: WIZARD_DOCK_MARGIN,
+        width: dock.width,
         // Placing: the console fades so the world behind it shows where the thing will land (owner, 10:22).
         opacity: placementPending ? 0.4 : 1,
         transition: 'opacity 180ms ease-out',
-        borderColor: activeCount > 0 ? `${forgeColor}66` : 'rgba(100, 100, 100, 0.3)',
-        boxShadow: activeCount > 0
-          ? `0 0 30px ${forgeColor}33, 0 0 60px ${forgeColor}11`
-          : '0 0 20px rgba(0, 0, 0, 0.5)',
       }}
       onMouseDown={(e) => { e.stopPropagation(); useOasisStore.getState().bringPanelToFront('wizard') }}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* ─═̷─═̷─ HEADER — Draggable ─═̷─═̷─ */}
-      <div
-        className="px-3 py-2 border-b border-gray-700/50 flex items-center justify-between cursor-move select-none flex-shrink-0"
-        onMouseDown={handleDragStart}
-        style={{
-          background: activeCount > 0
-            ? `linear-gradient(135deg, ${forgeColor}22 0%, rgba(0,0,0,0) 100%)`
-            : 'rgba(30, 30, 30, 0.5)',
-        }}
-      >
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-lg">🧙‍♂️</span>
-          {size.width >= 520 && <span className="text-sm tracking-widest" style={{ color: forgeColor, fontFamily: "'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif", fontWeight: 700, fontVariant: 'small-caps', letterSpacing: '0.15em' }}>{hostedVariant ? 'World Console' : 'Wizard Console'}</span>}
-          {activeCount > 0 && (
-            <span className="text-yellow-400 text-xs animate-pulse">&#9679; {activeCount}</span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1 min-w-0 flex-1 ml-2 overflow-hidden">
-          {/* ░▒▓ Adaptive tab strip — icons always, labels when there's room ▓▒░ */}
-          <div ref={tabStripRef} className="flex items-center gap-1 overflow-x-auto min-w-0 flex-1 pb-0.5" style={{ scrollbarWidth: 'none' }}>
-            {visibleTabs.map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setMode(tab.key)}
-                className={`inline-flex min-w-fit flex-shrink-0 items-center justify-center text-xs px-1.5 py-0.5 rounded transition-colors whitespace-nowrap ${
-                  mode === tab.key
-                    ? `bg-${tab.color}-500/20 text-${tab.color}-400 border border-${tab.color}-500/50`
-                    : 'text-gray-300 border border-transparent hover:text-white'
-                }`}
-                title={tab.title}
-                style={mode === tab.key ? {
-                  backgroundColor: `rgba(${tab.color === 'orange' ? '249,115,22' : tab.color === 'blue' ? '59,130,246' : tab.color === 'emerald' ? '16,185,129' : tab.color === 'yellow' ? '234,179,8' : tab.color === 'cyan' ? '6,182,212' : tab.color === 'purple' ? '168,85,247' : tab.color === 'violet' ? '139,92,246' : tab.color === 'rose' ? '244,63,94' : '236,72,153'}, 0.2)`,
-                  color: `rgb(${tab.color === 'orange' ? '251,146,60' : tab.color === 'blue' ? '96,165,250' : tab.color === 'emerald' ? '52,211,153' : tab.color === 'yellow' ? '250,204,21' : tab.color === 'cyan' ? '34,211,238' : tab.color === 'purple' ? '192,132,252' : tab.color === 'violet' ? '196,181,253' : tab.color === 'rose' ? '253,164,175' : '244,114,182'})`,
-                  borderColor: `rgba(${tab.color === 'orange' ? '249,115,22' : tab.color === 'blue' ? '59,130,246' : tab.color === 'emerald' ? '16,185,129' : tab.color === 'yellow' ? '234,179,8' : tab.color === 'cyan' ? '6,182,212' : tab.color === 'purple' ? '168,85,247' : tab.color === 'violet' ? '139,92,246' : tab.color === 'rose' ? '244,63,94' : '236,72,153'}, 0.5)`,
-                } : undefined}
-              >
-                <span className="flex-shrink-0 text-sm leading-none">{tab.icon}</span>{showTabLabels && <span className="ml-1">{tab.label}</span>}
-              </button>
-            ))}
-          </div>
-          {/* ░▒▓ Fixed controls — NEVER shrink, always visible ▓▒░ */}
-          {/* The old gear/settings button moved to the global Config menu
-              (rail "CONFIG" → src/components/forge/config/ConfigMenu.tsx). */}
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-white transition-colors text-lg leading-none ml-1"
-            >
-              &#215;
-            </button>
-          </div>
-        </div>
+      {/* The left edge: drag sideways to make the console wider or narrower (remembered). */}
+      {dock.side === 'right' && (
+        <div
+          className="absolute -left-1.5 top-0 bottom-0 z-10 w-3 cursor-ew-resize"
+          onPointerDown={startDockResize}
+          onDoubleClick={() => setWizardDockWidth(null)}
+          title="Drag to resize (double-click: back to a third of the screen)"
+          data-wizard-dock-handle
+        />
+      )}
+      <div className="flex h-full min-h-0 flex-col">
+      <div className="mb-2 flex-shrink-0" data-wizard-tabs>
+        <KitTabs
+          tabs={visibleTabs.map(tab => ({ id: tab.key, label: <span className="whitespace-nowrap">{tab.icon}{dock.width >= 520 ? ` ${tab.label}` : ''}</span>, title: tab.title }))}
+          active={mode}
+          onChange={id => setMode(id)}
+        />
       </div>
 
       {/* ─═̷─═̷─ PLACEMENT MODE INDICATOR ─═̷─═̷─ */}
@@ -2095,7 +2084,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
       )}
 
       {/* ─══ॐ══─ GALLERY / WORLD / ASSETS / PLACED / SETTINGS ─══ॐ══─ */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto pr-1">
         {mode === 'world' ? (
           <div className="space-y-4">
 
@@ -3155,14 +3144,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
         )}
       </div>
 
-      {/* ─═̷─═̷─ RESIZE HANDLE ─═̷─═̷─ */}
-      <div
-        className="resize-handle absolute bottom-0 right-0 w-4 h-4 cursor-se-resize flex-shrink-0"
-        onMouseDown={handleResizeStart}
-        style={{
-          background: `linear-gradient(135deg, transparent 50%, ${forgeColor}44 50%)`,
-        }}
-      />
+      </div>
 
       <DeleteConfirmModal
         isOpen={!!deleteConfirm}
@@ -3178,7 +3160,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
       {assetsLightboxUrl && (
         <MediaLightbox url={assetsLightboxUrl} onClose={() => setAssetsLightboxUrl(null)} />
       )}
-    </div>,
+    </KitPanel>,
     document.body
   )
 }
