@@ -86,7 +86,7 @@ export interface SpellbookPageDefinition {
 }
 
 export const SPELLBOOK_PAGES: Record<SpellbookPageId, SpellbookPageDefinition> = {
-  'recipe-catalog': { id: 'recipe-catalog', name: 'Place', shortName: 'Place' },
+  'recipe-catalog': { id: 'recipe-catalog', name: 'Create', shortName: 'Create' },
   premium: { id: 'premium', name: 'Premium Craft', shortName: 'Premium' },
   'world-root': { id: 'world-root', name: 'World Root', shortName: 'World' },
   creative: { id: 'creative', name: 'Creative', shortName: 'Creative' },
@@ -158,11 +158,12 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
   },
   'catalog-place': {
     id: 'catalog-place',
-    name: 'Place',
+    // The spell of creation (owner, 2026-11-19 at 18:14: 'I don't like place... it's gotta be create').
+    name: 'Create',
     tier: 1,
     category: 'recipe-catalog',
     achievementId: 'learn-place',
-    summary: 'Place catalog objects into editable worlds.',
+    summary: 'Bring catalog objects into the world.',
     stats: ['Catalog', 'World allowlist', 'Object inspector'],
     actionId: 'open-place-menu',
   },

@@ -38,6 +38,7 @@ import { PORTAL_GATE_VARIANT_DEFS, type PortalGateVariant } from '../../lib/port
 import { portalThumbPath } from '../../lib/portal-thumbnails'
 import { EnvironmentTab } from './wizard/EnvironmentTab'
 import { CatalogCategories } from './wizard/CatalogCategories'
+import { KitButton } from '@/components/ui-kit'
 import { requestCatalogThumbnails } from '../../hooks/useUnifiedThumbnailQueue'
 import {
   buildAudioPlacementPending,
@@ -757,7 +758,10 @@ function MediaLightbox({ url, onClose }: { url: string; onClose: () => void }) {
 }
 
 function MediaTab({ cols, onRequestDelete }: { cols: number; onRequestDelete: (target: { url: string; name: string; placedCount: number }, onConfirm: () => Promise<void>) => void }) {
-  const [subTab, setSubTab] = useState<'generate' | 'image' | 'video' | 'audio'>('generate')
+  // Generation is the spell book's job (owner, 2026-11-19 at 16:49): Media is the gallery and the uploads.
+  // What the spells made sits under "Made by spells"; making more opens the spell book.
+  const [subTab, setSubTab] = useState<'generated' | 'image' | 'video' | 'audio'>('generated')
+  const generatedImages = useOasisStore(s => s.generatedImages)
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
   const [loading, setLoading] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
@@ -837,11 +841,11 @@ function MediaTab({ cols, onRequestDelete }: { cols: number; onRequestDelete: (t
     return count
   }, [placedCatalogAssets, behaviors])
 
-  const filtered = mediaItems.filter(m => subTab === 'generate' ? false : m.type === subTab)
+  const filtered = mediaItems.filter(m => subTab === 'generated' ? false : m.type === subTab)
   const formatSize = (bytes: number) => bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)}MB` : `${(bytes / 1024).toFixed(0)}KB`
 
   const subTabs = [
-    { key: 'generate' as const, label: 'Generate', icon: '\u{1F3A8}' },
+    { key: 'generated' as const, label: 'Made by spells', icon: '\u{2728}' },
     { key: 'image' as const, label: 'Images', icon: '\u{1F5BC}' },
     { key: 'video' as const, label: 'Videos', icon: '\u{1F3AC}' },
     { key: 'audio' as const, label: 'Audio', icon: '\u{1F3B5}' },
@@ -850,23 +854,16 @@ function MediaTab({ cols, onRequestDelete }: { cols: number; onRequestDelete: (t
   return (
     <div className="space-y-3">
       {/* Sub-tab pills */}
-      <div className="flex gap-1 flex-wrap">
-        {subTabs.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setSubTab(t.key)}
-            className={`text-[10px] px-2 py-1 rounded transition-colors ${
-              subTab === t.key
-                ? 'bg-pink-500/20 text-pink-300 border border-pink-500/40'
-                : 'text-gray-400 border border-gray-700/30 hover:text-white hover:border-gray-500/50'
-            }`}
-          >
-            {t.icon} {t.label}
-          </button>
-        ))}
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <CatalogCategories
+            items={subTabs.map(t => ({ id: t.key, label: `${t.icon} ${t.label}`, count: t.key === 'generated' ? generatedImages.length : mediaItems.filter(m => m.type === t.key).length }))}
+            active={subTab}
+            onChange={id => setSubTab(id as typeof subTab)}
+          />
+        </div>
         {/* Upload button */}
-        <label className="text-[10px] px-2 py-1 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/25 transition-colors cursor-pointer ml-auto">
-          + Upload
+        <KitButton className="shrink-0" onClick={() => fileInputRef.current?.click()} title="Upload pictures, videos or sounds from this computer">+ Upload</KitButton>
           <input
             ref={fileInputRef}
             type="file"
@@ -875,25 +872,45 @@ function MediaTab({ cols, onRequestDelete }: { cols: number; onRequestDelete: (t
             onChange={e => handleUpload(e.target.files)}
             className="hidden"
           />
-        </label>
       </div>
 
-      {/* Generate sub-tab = ImagineTab (passes cols + lightbox) */}
-      {subTab === 'generate' && (
-        <ImagineTab
-          cols={cols}
-          setLightboxUrl={setLightboxUrl}
-          onRequestDelete={(image, placedCount) => {
-            onRequestDelete(
-              { url: image.url, name: image.prompt.slice(0, 30) || 'generated image', placedCount },
-              async () => { removeGeneratedImage(image.id) }
-            )
-          }}
-        />
+      {/* Made by spells: the pictures the spell book generated. Making more is the spell book's job. */}
+      {subTab === 'generated' && (
+        <>
+          <KitButton variant="primary" className="w-full" onClick={() => window.dispatchEvent(new CustomEvent('oasis:open-spelltab', { detail: { spellId: 'text-to-pic' } }))} title="Opens the spell book's picture spell">
+            ✨ Make a picture with a spell
+          </KitButton>
+          {generatedImages.length === 0 ? (
+            <div className="py-6 text-center text-[11px] opacity-75">Nothing made yet. Pictures you make with spells appear here.</div>
+          ) : (
+            <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+              {[...generatedImages].reverse().map(img => {
+                const placedCount = placedCatalogAssets.filter(ca => ca.imageUrl === img.url).length
+                return (
+                  <AssetCard
+                    key={img.id}
+                    id={img.id}
+                    name={img.prompt}
+                    type="media-image"
+                    thumbnailUrl={img.url}
+                    mediaUrl={img.url}
+                    isInWorld={placedCount > 0}
+                    accentColor="#EC4899"
+                    subtitle={new Date(img.createdAt).toLocaleDateString()}
+                    onClick={() => enterPlacementMode(buildImagePlacementPending({ name: img.prompt.slice(0, 24), imageUrl: img.url }))}
+                    onDelete={() => onRequestDelete({ url: img.url, name: img.prompt.slice(0, 30) || 'generated image', placedCount }, async () => { removeGeneratedImage(img.id) })}
+                    onViewFullscreen={() => setLightboxUrl(img.url)}
+                    onPlaceWithFrame={() => enterPlacementMode(buildImagePlacementPending({ name: img.prompt.slice(0, 24), imageUrl: img.url, frameStyle: 'gilded' }))}
+                  />
+                )
+              })}
+            </div>
+          )}
+        </>
       )}
 
       {/* Media browser */}
-      {subTab !== 'generate' && (
+      {subTab !== 'generated' && (
         <>
           {loading && <div className="text-[10px] text-gray-500 text-center py-4">Loading...</div>}
 
@@ -1014,7 +1031,8 @@ const WIZARD_TABS = [
   title: string
 }>
 
-const WIZARD_TAB_ORDER: WizardMode[] = ['world', 'assets', 'media', 'music', 'video', 'agents', 'craft', 'conjure', 'placed']
+// Music and Video are generation: the spell book's job (owner, 2026-11-19 at 16:49), so they left the console.
+const WIZARD_TAB_ORDER: WizardMode[] = ['world', 'assets', 'media', 'agents', 'craft', 'conjure', 'placed']
 const WIZARD_TAB_LABEL_OVERRIDES: Partial<Record<WizardMode, string>> = {
   agents: '3D Agents',
   craft: 'Crafting',
