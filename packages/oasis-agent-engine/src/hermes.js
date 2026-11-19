@@ -117,9 +117,11 @@ export function hermesCommand(spec = {}) {
   if (spec.remote) return sshCommand(spec.remote, { worldTools: spec.worldTools !== false });
   if (Array.isArray(spec.command) && spec.command.length && spec.command.every((s) => typeof s === 'string')) return spec.command;
   if (process.env.OASIS_HERMES_BIN) return [process.env.OASIS_HERMES_BIN, 'acp'];
+  // Hermes 0.22+ installs its launcher in <home>\bin (a uv-built Python); 0.15 had it in the checkout's venv.
+  const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
   const candidates = process.platform === 'win32'
-    ? [path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'hermes', 'hermes-agent', 'venv', 'Scripts', 'hermes.exe')]
-    : [path.join(os.homedir(), '.hermes', 'hermes-agent', 'venv', 'bin', 'hermes')];
+    ? [path.join(local, 'hermes', 'bin', 'hermes.exe'), path.join(local, 'hermes', 'hermes-agent', 'venv', 'Scripts', 'hermes.exe')]
+    : [path.join(os.homedir(), '.hermes', 'bin', 'hermes'), path.join(os.homedir(), '.hermes', 'hermes-agent', 'venv', 'bin', 'hermes')];
   const found = candidates.find((p) => fs.existsSync(p));
   return [found || 'hermes', 'acp'];
 }
