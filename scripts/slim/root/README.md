@@ -2,7 +2,7 @@
 
 Your Claude Code sessions as characters in a 3D village on your own machine. Walk around, see who is working, who is waiting and who needs a decision, and talk to any session by typing or by voice. What you say in the village arrives in that same session.
 
-This repository is the slim Oasis: the village, the agent engine and the Claude Code plugin, with a small set of avatars, skies and sounds. It is cut from a larger workshop repository by a script, so please send changes there.
+This repository is the packaged Oasis: the village, the agent engine, the Claude Code plugin and a Hermes skill, with only assets that may be passed on. It is made from the authors' main repository by a script, so changes made here by hand are overwritten.
 
 ## Install with Claude Code
 
@@ -36,6 +36,13 @@ node scripts/oasis.mjs start
 - Agents can speak. By default they use your browser's built-in voices: free, no key.
 - You can talk instead of typing where your browser offers speech recognition.
 - Optional: an ElevenLabs voice with your own key (`ELEVENLABS_API_KEY` in `.env`). Then the text to be spoken goes to ElevenLabs under your account.
+
+## What the characters can do today
+
+- Your own body and every agent stand, idle, walk, jog, sprint, roll, talk with moving hands, cast, flinch and fall. These come from the Quaternius Universal Animation Library (CC0).
+- They do not dance, sit, wave or emote yet. The dances and some walks in the authors' own Oasis are Mixamo files, which Adobe does not allow to be passed on as files, so they are not in this package. A free set is being added.
+- With an ElevenLabs voice, an agent's mouth follows its words. With the browser's built-in voice it speaks, but the mouth does not move yet.
+- 41 avatars in the full Oasis, 12 in the lite one. All state CC0 in their own files.
 
 ## Licences
 
