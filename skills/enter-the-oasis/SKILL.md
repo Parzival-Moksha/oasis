@@ -50,7 +50,7 @@ node "<install folder>/scripts/oasis.mjs" start
 
 Give the second command at least ten minutes, or run it in the background and check back. Use only this address and this tag.
 
-For the full Oasis instead (every asset and world, about 570 MB), the user can run `npx oasis-lite` in a terminal; do not start that yourself without being asked.
+For the full Oasis instead (every asset and world, about 570 MB), the user can run `npx oasis-village` in a terminal; do not start that yourself without being asked.
 
 ## Other commands
 

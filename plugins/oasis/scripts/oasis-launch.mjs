@@ -239,7 +239,7 @@ function installInBackground() {
   writeState({ state: 'running', step: 'download', pid: child.pid, startedAt: Date.now(), edition: has('--lite') ? 'lite' : 'full', bytes: 0, total: 0, error: '', log: logFile() })
 }
 
-async function main() {
+export async function main() {
   if (Number(process.versions.node.split('.')[0]) < 20) {
     say(`The Oasis needs Node.js 20 or later (this is ${process.versions.node}).`)
     return 5
