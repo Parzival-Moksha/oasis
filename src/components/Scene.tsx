@@ -87,6 +87,7 @@ import { VillageVoiceWidget } from './village/VillageVoiceWidget'
 import { VillageScreenBackdrop } from './village/VillageScreenBackdrop'
 import { ConnectionWarning } from './forge/ConnectionWarning'
 import { getVillageScreen, openVillagePicker, subscribeVillageScreen } from './village/village-actions'
+import { openSummonMenu } from './village/summon-request'
 import { installTestHarness } from '@/lib/test-harness'
 import { HOSTED_USER_LOCKED_SPELL_IDS, isHostedUserLockedSpell, type SpellId } from '@/lib/spellbook'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
@@ -1836,11 +1837,13 @@ export default function Scene() {
       // ─═̷─ Agents ─═̷─
       case 'summon-claude-code':
         // The village's summoning circle (a Claude Code agent with its own desk); outside the village, the CC window.
-        if (villageProfile) openVillagePicker(true)
+        if (villageProfile) openSummonMenu('claude')
         else placeQuickAgentWindow('anorak')
         return
       case 'summon-codex':
-        placeQuickAgentWindow('codex')
+        // In the village: the summon menu on Codex, which says what a Codex agent still needs.
+        if (villageProfile) openSummonMenu('codex')
+        else placeQuickAgentWindow('codex')
         return
       case 'summon-djinn':
         placeQuickAgentWindow('merlin')
@@ -1849,7 +1852,9 @@ export default function Scene() {
         placeQuickAgentWindow('openclaw')
         return
       case 'summon-hermes':
-        placeQuickAgentWindow('hermes')
+        // The village's summon menu on Hermes (the old "Connect Hermes" pairing window did nothing there).
+        if (villageProfile) openSummonMenu('hermes')
+        else placeQuickAgentWindow('hermes')
         return
       case 'browser':
         placeQuickAgentWindow('browser')

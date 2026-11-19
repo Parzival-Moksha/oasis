@@ -1,40 +1,117 @@
 'use client'
 
-// ░▒▓ SESSION PICKER — summon a Claude Code session as an agent (owned) or observe it (read-only) ▓▒░
-// The engine lists metadata only (title, cwd, size, live badge from a 128 KB head/tail read);
-// transcripts are replayed only when you spawn or observe one.
+// ░▒▓ SUMMON MENU — summon an agent: a new session, or continue one ▓▒░
+// The owner (2026-11-19): "Summon an agent should be like one of the main things in the Oasis", "more like a game",
+// "left and right: new session or continue session", "three big input fields", the working folder "not a text
+// input field", "a default … you can change if you're advanced". One menu for every kind of agent:
+//   Claude Code and Hermes run in the agent engine; Codex and phone call are shown greyed with what is missing.
+// Drawn with the Oasis UI kit (components/ui-kit, Hipster's): Settings switches every menu between Glass, Forged, Parchment, Rune.
+// The engine lists session metadata only (title, cwd, size, live badge); transcripts are replayed only on spawn.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '../../lib/input-manager'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
-import type { EngineRuntime, EngineSessionMeta, SpawnAgentArgs } from '../../lib/agent-engine-types'
+import type { EngineAgentSnapshot, EngineSessionMeta, SpawnAgentArgs } from '../../lib/agent-engine-types'
 import { filterSessions, pickSuggestions } from '../../lib/village/village-sessions'
 import { useVillageSettings } from '../../lib/village/village-settings-client'
+import { accountChoices, shownAccounts } from '../../lib/village/village-accounts'
+import { FOLDER_SOURCE_WORD, pickDefaultFolder, type HermesProfile } from '../../lib/village/summon-defaults'
 import { VILLAGE_PICKER_LAYER, focusVillageAgent, openVillagePicker } from './village-actions'
+import { takeSummonKind, type SummonKind } from './summon-request'
 import { cwdLabel, formatAgo, formatBytes } from './village-status'
 import { FolderBrowser } from './FolderBrowser'
+import { getKeychainState, keyStates, openKeychain, refreshKeychain, subscribeKeychain } from './keychain-store'
+import { showNotice } from '../forge/GlobalNotice'
+import { KitButton, KitPanel, KitTabs, KitTextField, KitTileButton, kitConfirm, useKitStyle } from '@/components/ui-kit'
 import { CUSTOM_MODEL_VALUE, cleanModelId, mergeModelLists, type ModelOption } from '../../lib/village/village-models'
 
-const PAGE = 60
+const PAGE = 40
 const FETCH_STEP = 300
-const MODES = ['', 'default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
-/** A Hermes agent's modes (engine hermes.js, ACP session/set_mode). */
-const HERMES_MODES = ['', 'default', 'accept_edits', 'dont_ask']
-/** The Hermes form's last values, so summoning Og again is one click. */
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
+/** What the menu remembers between summons: the last folder, half, kind and choices. */
+const SUMMON_KEY = 'oasis.village.summon'
+/** The Hermes form's last values (older key, kept so Og's ssh host survives). */
 const HERMES_FORM_KEY = 'oasis.village.hermesSpawn'
+
+/** Claude Code's permission modes, in words. '' = the agent's settings decide. */
+const CLAUDE_MODES: Array<[string, string]> = [
+  ['', 'From settings'],
+  ['default', 'Ask before acting'],
+  ['acceptEdits', 'Accept edits'],
+  ['auto', 'Auto'],
+  ['plan', 'Plan only'],
+  ['bypassPermissions', 'Full access'],
+]
+/** A Hermes agent's modes (engine hermes.js, ACP session/set_mode). */
+const HERMES_MODES: Array<[string, string]> = [
+  ['', 'Hermes default'],
+  ['default', 'Ask before acting'],
+  ['accept_edits', 'Accept edits'],
+  ['dont_ask', "Don't ask"],
+]
+
+// ─── the look: Hipster's UI kit (components/ui-kit) draws every part; Settings picks Glass / Forged / Parchment / Rune.
+// Only layout lives here, plus SUMMON_CSS: a larger size for the New-session fields (the owner: "big input fields").
+const ACCENT = '#a78bfa'
+const TILE = '/ui/spellbook/tiles'
+const SUMMON_CSS = `[data-summon-menu] .summon-big input, [data-summon-menu] .summon-big select { padding: 12px 14px; font-size: 15px; min-height: 46px; }`
+/** A hairline in the panel's own text colour, so it suits every kit style. */
+const HAIRLINE = '1px solid color-mix(in srgb, currentColor 14%, transparent)'
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** Shown inside the picker: the global notice toast sits underneath this overlay. */
 interface PickerError {
   message: string
   action?: { label: string; run: () => void }
 }
-
 type ErrorSink = (error: PickerError | null) => void
+
+interface Remembered {
+  lastCwd?: string
+  half?: 'new' | 'continue'
+  kind?: SummonKind
+  model?: string
+  claudeMode?: string
+  hermesMode?: string
+  account?: string
+}
+
+function readRemembered(): Remembered {
+  try { return JSON.parse(window.localStorage.getItem(SUMMON_KEY) || '{}') as Remembered } catch { return {} }
+}
+function remember(patch: Remembered): void {
+  try { window.localStorage.setItem(SUMMON_KEY, JSON.stringify({ ...readRemembered(), ...patch })) } catch { /* private mode */ }
+}
+
+interface HermesRemote { where: 'here' | 'ssh'; host: string; address: string; profile: string }
+function readHermesForm(): HermesRemote {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(HERMES_FORM_KEY) || '{}') as Partial<HermesRemote>
+    return { where: saved.where === 'ssh' ? 'ssh' : 'here', host: saved.host || '', address: saved.address || '', profile: saved.profile || '' }
+  } catch {
+    return { where: 'here', host: '', address: '', profile: '' }
+  }
+}
+
+interface SummonDefaults { home: string; workspace: string; hermes: { home: string; profiles: HermesProfile[] } }
+let defaultsCache: SummonDefaults | null = null
+
+function useSummonDefaults(open: boolean): SummonDefaults | null {
+  const [value, setValue] = useState<SummonDefaults | null>(defaultsCache)
+  useEffect(() => {
+    if (!open) return
+    let live = true
+    fetch(`${BASE}/api/local/summon-defaults`, { cache: 'no-store' })
+      .then(response => (response.ok ? response.json() : null))
+      .then((data: SummonDefaults | null) => { if (data && live) { defaultsCache = data; setValue(data) } })
+      .catch(() => { /* the folder line falls back to sessions */ })
+    return () => { live = false }
+  }, [open])
+  return value
+}
 
 function useSessionLoader(open: boolean) {
   const dispatch = useOasisStore(s => s.agentEngineDispatch)
@@ -64,54 +141,371 @@ function useSessionLoader(open: boolean) {
   }
 }
 
-interface SpawnDefaults {
+/** What every summon carries: the model, permissions and Claude account picked in the menu. */
+interface SpawnChoices {
   model: string
   permissionMode: string
-  runtime: EngineRuntime
+  /** 'auto' or an account id (engine accounts.js); set on the new agent right after it is created. */
+  account: string
 }
 
-function SessionRow({ session, defaults, onDone, onError }: { session: EngineSessionMeta; defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink }) {
-  const [busy, setBusy] = useState<'spawn' | 'observe' | null>(null)
+/** Spawn, then pin the account when one was picked (a new agent is idle, so it moves at once). */
+function spawnWith(args: SpawnAgentArgs, choices: SpawnChoices): Promise<EngineAgentSnapshot> {
   const client = getAgentEngineClient()
+  return client.spawnAgent(args).then(agent => {
+    if (args.runtime !== 'hermes' && choices.account && choices.account !== 'auto') {
+      client.setAccount(agent.id, choices.account).catch(error => showNotice(`It started, but the account could not be set: ${describeError(error)}`, 'error'))
+    }
+    return agent
+  })
+}
+
+// ─── the frame ──────────────────────────────────────────────────────────────
+
+function SummonFrame({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  return (
+    <div
+      data-ui-panel="village-picker"
+      data-summon-menu
+      className="kit-dialog-backdrop max-[700px]:!p-0"
+      style={{ zIndex: 9600, padding: 16 }}
+      onPointerDown={event => { if (event.target === event.currentTarget) onClose() }}
+    >
+      <style>{SUMMON_CSS}</style>
+      <KitPanel
+        title="Summon an agent"
+        icon={<span aria-hidden style={{ color: ACCENT, fontSize: 18 }}>✦</span>}
+        onClose={onClose}
+        className="h-[min(760px,88vh)] w-[min(900px,100%)] max-[700px]:h-full max-[700px]:w-full"
+      >
+        <div className="flex h-full min-h-0 flex-col gap-3">{children}</div>
+      </KitPanel>
+    </div>
+  )
+}
+
+const KINDS: Array<{ id: SummonKind; name: string; line: string; icon: string; picture: string; ready: boolean }> = [
+  { id: 'claude', name: 'Claude Code', line: 'Codes in a folder, on your Claude plan', icon: '✦', picture: `${TILE}/summon-claude-code.gpt2.webp`, ready: true },
+  { id: 'hermes', name: 'Hermes', line: 'Its own model, soul and memory', icon: '☿', picture: `${TILE}/summon-hermes.gpt2.webp`, ready: true },
+  { id: 'codex', name: 'Codex', line: 'Not in the engine yet', icon: '◈', picture: `${TILE}/summon-codex.gpt2.webp`, ready: false },
+  { id: 'phone', name: 'Phone call', line: 'Live voice: not in the engine yet', icon: '☏', picture: `${TILE}/summon-djinn.gpt2.webp`, ready: false },
+]
+
+function KindTabs({ kind, onPick }: { kind: SummonKind; onPick: (kind: SummonKind) => void }) {
+  return (
+    <div className="grid shrink-0 grid-cols-4 gap-2 max-[700px]:grid-cols-2" role="tablist" aria-label="Kind of agent">
+      {KINDS.map(item => {
+        const on = item.id === kind
+        return (
+          <KitTileButton
+            key={item.id}
+            role="tab"
+            aria-selected={on}
+            data-summon-kind={item.id}
+            onClick={() => onPick(item.id)}
+            picture={item.picture}
+            icon={item.icon}
+            label={item.name}
+            sub={item.line}
+            badge={on ? '✓ chosen' : item.ready ? undefined : 'not yet'}
+            accent={ACCENT}
+            title={item.ready ? `Summon a ${item.name} agent` : `${item.name}: what is missing, and the keys it would use`}
+            className="!min-h-[104px]"
+            style={{ opacity: on ? 1 : item.ready ? 0.78 : 0.5 }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function HalfTabs({ half, onPick }: { half: 'new' | 'continue'; onPick: (half: 'new' | 'continue') => void }) {
+  return (
+    <div className="shrink-0" data-summon-half={half}>
+      <KitTabs
+        tabs={[
+          { id: 'new' as const, label: '＋ New session', title: 'A fresh agent' },
+          { id: 'continue' as const, label: '↻ Continue session', title: 'Pick up a session you had' },
+        ]}
+        active={half}
+        onChange={onPick}
+      />
+    </div>
+  )
+}
+
+/** The kit has no dropdown yet: its field style (kit-field) around a native select, which the kit's CSS already styles. */
+function KitSelectField({ label, title, children, ...rest }: { label: ReactNode; title?: string; children: ReactNode } & React.SelectHTMLAttributes<HTMLSelectElement>) {
+  const kit = useKitStyle()
+  return (
+    <label data-kit-style={kit} className="kit-field" title={title}>
+      <span className="kit-label">{label}</span>
+      <select {...rest}>{children}</select>
+    </label>
+  )
+}
+
+/** The working folder, shown quietly: a line, not a field. "change" opens the folder browser. */
+function FolderLine({ folder, note, onChange }: { folder: string; note: string; onChange: () => void }) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px]" data-summon-folder>
+      <span className="opacity-55">Works in</span>
+      <span className="max-w-[420px] truncate font-mono opacity-80" title={folder}>{folder || '…'}</span>
+      {note && <span className="opacity-40">({note})</span>}
+      <button type="button" onClick={onChange} title="Pick another folder on this machine" className="rounded px-1.5 py-0.5 underline decoration-dotted underline-offset-2 opacity-70 hover:opacity-100">change</button>
+    </div>
+  )
+}
+
+function ErrorBox({ error, onClear }: { error: PickerError | null; onClear: () => void }) {
+  if (!error) return null
+  return (
+    <div role="alert" className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-[12.5px]" style={{ border: '1px solid rgba(248,113,113,0.6)', background: 'rgba(239,68,68,0.14)' }}>
+      <span className="min-w-0 flex-1 break-words">{error.message}</span>
+      {error.action && <KitButton variant="danger" onClick={() => { const run = error.action?.run; onClear(); run?.() }}>{error.action.label}</KitButton>}
+      <button type="button" aria-label="dismiss" title="Dismiss" onClick={onClear} className="rounded-md px-1.5 py-0.5 text-[12px] font-bold opacity-70 hover:opacity-100">✕</button>
+    </div>
+  )
+}
+
+const stopKeys = (event: React.KeyboardEvent) => { if (event.key !== 'Escape') event.stopPropagation() }
+
+// ─── new session ────────────────────────────────────────────────────────────
+
+function ModelSelect({ value, models, onChange }: { value: string; models: ModelOption[]; onChange: (model: string) => void }) {
+  return (
+    <KitSelectField
+      label="Model"
+      title="The Claude model it runs on. From settings: the village's default."
+      value={value}
+      onChange={event => {
+        let model: string | null = event.target.value
+        if (model === CUSTOM_MODEL_VALUE) {
+          model = cleanModelId(window.prompt('Model id (any the Claude Code CLI takes, e.g. claude-fable-5-2)', ''))
+          if (!model) return
+        }
+        onChange(model || '')
+      }}
+      onKeyDown={stopKeys}
+    >
+      <option value="">From settings</option>
+      {models.map(model => <option key={model.value} value={model.value}>{model.displayName || model.value}</option>)}
+      {value && !models.some(model => model.value === value) && <option value={value}>{value}</option>}
+      <option value={CUSTOM_MODEL_VALUE}>Other model id…</option>
+    </KitSelectField>
+  )
+}
+
+function ModeSelect({ value, modes, onChange }: { value: string; modes: Array<[string, string]>; onChange: (mode: string) => void }) {
+  return (
+    <KitSelectField label="Permissions" title="What it may do without asking you first." value={value} onChange={event => onChange(event.target.value)} onKeyDown={stopKeys}>
+      {modes.map(([mode, label]) => <option key={mode} value={mode}>{label}</option>)}
+    </KitSelectField>
+  )
+}
+
+function AccountField({ value, onChange }: { value: string; onChange: (account: string) => void }) {
+  const view = useOasisStore(s => s.agentEngine.connection.server?.accounts || null)
+  if (!view || shownAccounts(view).length < 2) return null
+  return (
+    <KitSelectField label="Account" value={value || 'auto'} onChange={event => onChange(event.target.value)} onKeyDown={stopKeys} title="The Claude account its process runs on. Auto: the one whose week ends first.">
+      {accountChoices(view).map(choice => <option key={choice.value} value={choice.value}>{choice.value === 'auto' ? 'Auto (the one whose week ends first)' : choice.label}</option>)}
+    </KitSelectField>
+  )
+}
+
+/** Every Claude account out of usage: a new agent would only wait. Said big and plain before you summon one. */
+function OutOfUsage() {
+  const view = useOasisStore(s => s.agentEngine.connection.server?.accounts || null)
+  if (!view?.allExhausted) return null
+  const until = view.firstReset ? new Date(view.firstReset) : null
+  const when = until ? `${until.toTimeString().slice(0, 5)}${until.toDateString() !== new Date().toDateString() ? ` on ${until.toDateString().slice(0, 10)}` : ''}` : 'its reset'
+  return (
+    <div role="status" data-summon-out-of-usage className="rounded-lg px-4 py-3 text-[15px] font-bold leading-snug" style={{ border: '1px solid rgba(251,191,36,0.65)', background: 'rgba(251,191,36,0.14)' }}>
+      Your Claude usage is used up until {when}.
+      <span className="mt-1 block text-[12.5px] font-normal opacity-75">A Claude Code agent summoned now waits until then, and goes on by itself. A Hermes agent runs on its own model.</span>
+    </div>
+  )
+}
+
+function NewClaude({ folder, folderNote, onBrowse, choices, setChoices, models, onDone, onError }: {
+  folder: { path: string; create: boolean }
+  folderNote: string
+  onBrowse: () => void
+  choices: SpawnChoices
+  setChoices: (patch: Partial<SpawnChoices>) => void
+  models: ModelOption[]
+  onDone: (agentId: string, cwd: string) => void
+  onError: ErrorSink
+}) {
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const submit = (createCwd = folder.create) => {
+    const cwd = folder.path.trim()
+    if (!cwd) return
+    const args: SpawnAgentArgs = { name: name.trim() || cwdLabel(cwd), cwd }
+    if (createCwd) args.createCwd = true
+    if (choices.model) args.model = choices.model
+    if (choices.permissionMode) args.permissionMode = choices.permissionMode
+    setBusy(true)
+    onError(null)
+    spawnWith(args, choices)
+      .then(agent => onDone(agent.id, cwd))
+      .catch(error => {
+        const message = describeError(error)
+        if (!createCwd && message.startsWith('cwd does not exist')) {
+          onError({ message: `The folder ${cwd} does not exist yet.`, action: { label: 'Create it and summon', run: () => submit(true) } })
+        } else {
+          onError({ message: `Summoning failed: ${message}` })
+        }
+      })
+      .finally(() => setBusy(false))
+  }
+  return (
+    <form className="summon-big flex flex-col gap-4" data-summon-new="claude" onSubmit={event => { event.preventDefault(); submit() }}>
+      <KitTextField label="Name" value={name} autoFocus onChange={event => setName(event.target.value)} onKeyDown={stopKeys} placeholder={folder.path ? cwdLabel(folder.path) : 'a name'} />
+      <div className="grid grid-cols-2 gap-4 max-[700px]:grid-cols-1">
+        <ModelSelect value={choices.model} models={models} onChange={model => setChoices({ model })} />
+        <ModeSelect value={choices.permissionMode} modes={CLAUDE_MODES} onChange={permissionMode => setChoices({ permissionMode })} />
+      </div>
+      <AccountField value={choices.account} onChange={account => setChoices({ account })} />
+      <OutOfUsage />
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <FolderLine folder={folder.path} note={folderNote} onChange={onBrowse} />
+        <KitButton type="submit" variant="primary" disabled={busy || !folder.path.trim()} className="min-w-[160px] !py-3 !text-[14px]">{busy ? 'Summoning…' : 'Summon'}</KitButton>
+      </div>
+    </form>
+  )
+}
+
+function NewHermes({ folder, folderNote, onBrowse, profiles, hermesHome, choices, setChoices, onDone, onError }: {
+  folder: { path: string; create: boolean }
+  folderNote: string
+  onBrowse: () => void
+  profiles: HermesProfile[] | null
+  hermesHome: string
+  choices: SpawnChoices
+  setChoices: (patch: Partial<SpawnChoices>) => void
+  onDone: (agentId: string, cwd: string) => void
+  onError: ErrorSink
+}) {
+  const [name, setName] = useState('')
+  const [form, setForm] = useState<HermesRemote>(readHermesForm)
+  const [busy, setBusy] = useState(false)
+  const set = (patch: Partial<HermesRemote>) => setForm(current => ({ ...current, ...patch }))
+  const ssh = form.where === 'ssh'
+  // A profile is only ever a real Hermes home from the list (engine refuses anything else since 8bc9518).
+  const known = (profiles || []).some(profile => profile.path === form.profile)
+  const profile = known ? form.profile : ''
+  const ready = ssh ? Boolean(form.host.trim()) : Boolean(folder.path.trim())
+  const submit = (createCwd = folder.create) => {
+    if (!ready) return
+    const cwd = ssh ? '' : folder.path.trim()
+    const host = form.host.trim()
+    const args: SpawnAgentArgs = ssh
+      ? { runtime: 'hermes', name: name.trim() || host, cwd, remote: { host, ...(form.address.trim() ? { address: form.address.trim() } : {}) } }
+      : { runtime: 'hermes', name: name.trim() || (profile ? (profiles || []).find(p => p.path === profile)?.name : '') || 'Hermes', cwd, ...(profile ? { hermesHome: profile } : {}) }
+    if (createCwd && !ssh) args.createCwd = true
+    if (choices.permissionMode) args.permissionMode = choices.permissionMode
+    try { window.localStorage.setItem(HERMES_FORM_KEY, JSON.stringify({ ...form, profile })) } catch { /* private mode */ }
+    setBusy(true)
+    onError(null)
+    spawnWith(args, choices)
+      .then(agent => onDone(agent.id, cwd))
+      .catch(error => {
+        const message = describeError(error)
+        if (!createCwd && message.startsWith('cwd does not exist')) {
+          onError({ message: `The folder ${cwd} does not exist yet.`, action: { label: 'Create it and summon', run: () => submit(true) } })
+        } else {
+          onError({ message: `Summoning failed: ${message}` })
+        }
+      })
+      .finally(() => setBusy(false))
+  }
+  return (
+    <form className="summon-big flex flex-col gap-4" data-summon-new="hermes" onSubmit={event => { event.preventDefault(); submit() }}>
+      <KitTextField label="Name" value={name} autoFocus onChange={event => setName(event.target.value)} onKeyDown={stopKeys} placeholder="e.g. Jerry" />
+      <div className="grid grid-cols-2 gap-4 max-[700px]:grid-cols-1">
+          <KitSelectField
+            label="Profile"
+            value={ssh ? '__ssh' : profile}
+            onChange={event => {
+              const value = event.target.value
+              if (value === '__ssh') set({ where: 'ssh' })
+              else set({ where: 'here', profile: value })
+            }}
+            onKeyDown={stopKeys}
+            title="A Hermes profile: its model, its SOUL.md and its memory. Only real Hermes homes on this machine are listed."
+          >
+            <option value="">{profiles === null ? 'Hermes (its own home)' : `main${(profiles.find(p => p.name === 'main')?.model) ? ` · ${profiles.find(p => p.name === 'main')?.model}` : ''}`}</option>
+            {(profiles || []).filter(p => p.name !== 'main' && p.path !== hermesHome).map(p => <option key={p.path} value={p.path}>{p.name}{p.model ? ` · ${p.model}` : ''}</option>)}
+            <option value="__ssh">On another machine (ssh)…</option>
+          </KitSelectField>
+        <ModeSelect value={choices.permissionMode} modes={HERMES_MODES} onChange={permissionMode => setChoices({ permissionMode })} />
+      </div>
+      {ssh && (
+        <div className="grid grid-cols-2 gap-4 max-[700px]:grid-cols-1">
+          <KitTextField label="ssh host" value={form.host} onChange={event => set({ host: event.target.value })} onKeyDown={stopKeys} placeholder="e.g. og" />
+          <KitTextField label="Address (if its name does not resolve)" value={form.address} onChange={event => set({ address: event.target.value })} onKeyDown={stopKeys} placeholder="e.g. 192.168.1.149" />
+        </div>
+      )}
+      <div className="text-[12px] opacity-55">
+        {ssh
+          ? 'Needs `ssh <host>` to work from this PC with a key, and Hermes installed there. It works in its home folder there; world tools: free ones only.'
+          : `Hermes runs here in ${profile || hermesHome || 'its own home'}: that profile's model, SOUL.md and memory. World tools: free ones only. Its shell runs most commands without asking.`}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {ssh ? <span /> : <FolderLine folder={folder.path} note={folderNote} onChange={onBrowse} />}
+        <KitButton type="submit" variant="primary" disabled={busy || !ready} className="min-w-[160px] !py-3 !text-[14px]">{busy ? 'Summoning…' : 'Summon'}</KitButton>
+      </div>
+    </form>
+  )
+}
+
+// ─── continue session ───────────────────────────────────────────────────────
+
+function SessionRow({ session, choices, onDone, onError }: { session: EngineSessionMeta; choices: SpawnChoices; onDone: (agentId: string) => void; onError: ErrorSink }) {
+  const [busy, setBusy] = useState<'spawn' | 'observe' | null>(null)
   // The whole title: the agents menu shows names in full (it only caps runaway ones).
   const name = (session.title || cwdLabel(session.cwd) || 'agent').slice(0, 120)
 
-  const spawn = () => {
+  const spawn = async () => {
     if (!session.cwd) return
     let fork = false
     if (session.live) {
-      const ok = window.confirm(
-        `"${session.title}" is open right now (pid ${session.live.pid}, ${session.live.entrypoint || session.live.kind || 'claude'}, ${session.live.status || '?'}).\n\n` +
-        'Driving one session from two places silently forks its transcript. OK spawns a forked copy (safe); Cancel does nothing.',
-      )
+      const ok = await kitConfirm({
+        title: 'It is open somewhere else',
+        body: `"${session.title}" is open right now (${session.live.entrypoint || session.live.kind || 'claude'}, ${session.live.status || 'live'}). Driving one session from two places splits its history, so this summons a copy of it; the original stays where it is.`,
+        confirm: 'Summon a copy',
+      })
       if (!ok) return
       fork = true
     }
     const args: SpawnAgentArgs = { name, cwd: session.cwd, sessionId: session.sessionId, fork }
-    if (defaults.model) args.model = defaults.model
-    if (defaults.permissionMode) args.permissionMode = defaults.permissionMode
+    if (choices.model) args.model = choices.model
+    if (choices.permissionMode) args.permissionMode = choices.permissionMode
     setBusy('spawn')
     onError(null)
-    client.spawnAgent(args)
+    spawnWith(args, choices)
       .then(agent => onDone(agent.id))
-      .catch(error => onError({ message: `Spawn failed: ${describeError(error)}` }))
+      .catch(error => onError({ message: `Summoning failed: ${describeError(error)}` }))
       .finally(() => setBusy(null))
   }
 
   const observe = () => {
     setBusy('observe')
     onError(null)
-    client.observe(session.path, name)
+    getAgentEngineClient().observe(session.path, name)
       .then(agent => onDone(agent.id))
-      .catch(error => onError({ message: `Observe failed: ${describeError(error)}` }))
+      .catch(error => onError({ message: `Watching failed: ${describeError(error)}` }))
       .finally(() => setBusy(null))
   }
 
   return (
-    <div className="flex items-start justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 hover:border-white/15">
+    <div className="flex items-center justify-between gap-3 px-1 py-2.5" style={{ borderBottom: HAIRLINE }} data-summon-session>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="truncate text-[12.5px] font-bold text-white" title={session.firstPrompt || session.title}>{session.title}</span>
+          <span className="truncate text-[13.5px] font-bold" title={session.firstPrompt || session.title}>{session.title}</span>
           {session.live && (
             <span className="rounded-full bg-amber-400/20 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.1em] text-amber-100" title={`open in pid ${session.live.pid} (${session.live.entrypoint || session.live.kind || ''})`}>
               open · {session.live.status || 'live'}
@@ -119,40 +513,29 @@ function SessionRow({ session, defaults, onDone, onError }: { session: EngineSes
           )}
           {!session.live && session.recentlyActive && <span className="rounded-full bg-sky-400/15 px-1.5 py-0.5 text-[9px] font-bold uppercase text-sky-100">active</span>}
         </div>
-        <div className="mt-0.5 truncate text-[10.5px] text-white/45" title={session.cwd || session.projectDir}>
-          {session.cwd || session.projectDir || 'unknown folder'} · {session.entrypoint || '?'} · {formatAgo(session.mtime)} · {formatBytes(session.size)}
+        <div className="mt-0.5 truncate text-[11px] opacity-50" title={session.cwd || session.projectDir}>
+          {cwdLabel(session.cwd) || session.projectDir || 'unknown folder'} · {formatAgo(session.mtime)} · {formatBytes(session.size)}
           {session.gitBranch ? ` · ${session.gitBranch}` : ''}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         {session.ownedBy || session.observedBy ? (
-          <button
-            type="button"
-            onClick={() => onDone((session.ownedBy || session.observedBy) as string)}
-            className="rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[10.5px] font-bold text-white/75 hover:bg-white/15"
-          >
-            {session.ownedBy ? 'in village' : 'observing'} · go
-          </button>
+          <KitButton onClick={() => onDone((session.ownedBy || session.observedBy) as string)} title="Walk to it">
+            {session.ownedBy ? 'In the village' : 'Watching'} · go
+          </KitButton>
         ) : (
           <>
-            <button
-              type="button"
-              disabled={busy !== null}
-              onClick={observe}
-              title="Watch it read-only. Nothing is written to the session."
-              className="rounded-md border border-cyan-300/35 bg-cyan-400/10 px-2 py-1 text-[10.5px] font-bold text-cyan-100 hover:bg-cyan-400/25 disabled:opacity-40"
-            >
-              {busy === 'observe' ? '…' : 'observe'}
-            </button>
-            <button
-              type="button"
+            <KitButton disabled={busy !== null} onClick={observe} title="Watch it read-only. Nothing is written to the session.">
+              {busy === 'observe' ? '…' : 'Watch'}
+            </KitButton>
+            <KitButton
+              variant="primary"
               disabled={busy !== null || !session.cwd}
               onClick={spawn}
-              title={session.live ? 'Open elsewhere: spawns a forked copy' : 'Resume it as an agent you can talk to'}
-              className="rounded-md border border-emerald-300/40 bg-emerald-400/15 px-2 py-1 text-[10.5px] font-bold text-emerald-50 hover:bg-emerald-400/30 disabled:opacity-40"
+              title={session.live ? 'Open elsewhere: summons a forked copy' : 'Resume it as an agent you can talk to'}
             >
-              {busy === 'spawn' ? '…' : session.live ? 'fork' : 'spawn'}
-            </button>
+              {busy === 'spawn' ? '…' : session.live ? 'Fork' : 'Continue'}
+            </KitButton>
           </>
         )}
       </div>
@@ -160,199 +543,134 @@ function SessionRow({ session, defaults, onDone, onError }: { session: EngineSes
   )
 }
 
-function NewAgentForm({ defaults, onDone, onError, initialCwd = '', recentFolders = [] }: { defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink; initialCwd?: string; recentFolders?: string[] }) {
-  const [name, setName] = useState('')
-  const [cwd, setCwd] = useState(initialCwd)
-  const [browsing, setBrowsing] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const submit = (createCwd = false) => {
-    const folder = cwd.trim()
-    if (!folder) return
-    const args: SpawnAgentArgs = { name: name.trim() || cwdLabel(folder), cwd: folder }
-    if (createCwd) args.createCwd = true
-    if (defaults.model) args.model = defaults.model
-    if (defaults.permissionMode) args.permissionMode = defaults.permissionMode
-    setBusy(true)
-    onError(null)
-    getAgentEngineClient().spawnAgent(args)
-      .then(agent => onDone(agent.id))
-      .catch(error => {
-        const message = describeError(error)
-        if (!createCwd && message.startsWith('cwd does not exist')) {
-          onError({ message: `The folder ${folder} does not exist yet.`, action: { label: 'create it and spawn', run: () => submit(true) } })
-        } else {
-          onError({ message: `Spawn failed: ${message}` })
-        }
-      })
-      .finally(() => setBusy(false))
-  }
+function ContinueClaude({ choices, onDone, onError, loader }: { choices: SpawnChoices; onDone: (agentId: string) => void; onError: ErrorSink; loader: ReturnType<typeof useSessionLoader> }) {
+  const sessions = useOasisStore(s => s.agentEngine.sessions)
+  const anorakCwd = useVillageSettings().anorakProCwd
+  const [query, setQuery] = useState('')
+  const [shown, setShown] = useState(PAGE)
+  useEffect(() => { setShown(PAGE) }, [query])
+  const filtered = useMemo(() => filterSessions(sessions.items, query), [sessions.items, query])
+  const anorak = useMemo(() => (query ? null : pickSuggestions(sessions.items, anorakCwd).anorak), [sessions.items, anorakCwd, query])
+  const list = anorak ? filtered.filter(session => session.path !== anorak.path) : filtered
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const endRef = useRef<HTMLDivElement>(null)
+  const moreHere = list.length > shown
+  const moreThere = sessions.status === 'ready' && sessions.items.length >= loader.limit
+  // Scrolling to the end shows more: the next page of the list, then older sessions from the engine.
+  useEffect(() => {
+    const end = endRef.current
+    if (!end || (!moreHere && !moreThere)) return
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return
+      if (moreHere) setShown(n => n + PAGE)
+      else if (moreThere && sessions.status === 'ready') loader.loadOlder()
+    }, { root: scrollRef.current, rootMargin: '200px' })
+    observer.observe(end)
+    return () => observer.disconnect()
+  }, [moreHere, moreThere, sessions.status, loader])
+
   return (
-    <form
-      className="flex flex-wrap items-center gap-1.5"
-      onSubmit={event => { event.preventDefault(); submit() }}
-    >
-      <input value={name} onChange={event => setName(event.target.value)} onKeyDown={event => event.stopPropagation()} placeholder="name" className="w-32 rounded-md border border-white/15 bg-black/45 px-2 py-1 text-[12px] text-white placeholder:text-white/30 focus:outline-none max-[700px]:w-full" />
-      <input value={cwd} onChange={event => setCwd(event.target.value)} onKeyDown={event => event.stopPropagation()} placeholder="working folder, e.g. C:\7p_nocrastination" className="min-w-[200px] flex-1 rounded-md border border-white/15 bg-black/45 px-2 py-1 text-[12px] text-white placeholder:text-white/30 focus:outline-none" />
-      <button type="button" onClick={() => setBrowsing(true)} title="Pick the folder from this machine's drives" className="rounded-md border border-white/20 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-white/85 hover:bg-white/15">
-        Browse…
-      </button>
-      {browsing && (
-        <FolderBrowser
-          initialPath={cwd.trim()}
-          recent={recentFolders}
-          onPick={folder => { setCwd(folder); setBrowsing(false) }}
-          onClose={() => setBrowsing(false)}
-        />
-      )}
-      <button type="submit" disabled={busy || !cwd.trim()} className="rounded-md border border-emerald-300/40 bg-emerald-400/15 px-3 py-1 text-[11px] font-bold text-emerald-50 hover:bg-emerald-400/30 disabled:opacity-40">
-        {busy ? '…' : 'new agent'}
-      </button>
-    </form>
-  )
-}
-
-interface HermesForm {
-  name: string
-  where: 'here' | 'ssh'
-  host: string
-  /** An address for the host when its name does not resolve from here (og.local, 2026-11-19). */
-  address?: string
-  profile: string
-  cwd: string
-}
-
-const HERMES_BLANK: HermesForm = { name: '', where: 'here', host: '', profile: '', cwd: '' }
-
-function readHermesForm(): HermesForm {
-  try { return { ...HERMES_BLANK, ...JSON.parse(window.localStorage.getItem(HERMES_FORM_KEY) || '{}') } } catch { return HERMES_BLANK }
-}
-
-/**
- * A Hermes agent (engine hermes.js): on this PC with a profile folder (its model and SOUL.md), or on another machine
- * over ssh (an alias from ~/.ssh/config like `og`). A new Hermes session each time; its history lives in Hermes.
- */
-function HermesAgentForm({ defaults, onDone, onError, recentFolders = [] }: { defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink; recentFolders?: string[] }) {
-  const [form, setForm] = useState<HermesForm>(readHermesForm)
-  const [browsing, setBrowsing] = useState<null | 'profile' | 'cwd'>(null)
-  const [busy, setBusy] = useState(false)
-  const set = (patch: Partial<HermesForm>) => setForm(current => ({ ...current, ...patch }))
-  const host = form.host.trim()
-  const cwd = form.cwd.trim()
-  const ready = form.where === 'ssh' ? Boolean(host) : Boolean(cwd)
-  const submit = (createCwd = false) => {
-    if (!ready) return
-    const profile = form.profile.trim()
-    const args: SpawnAgentArgs = form.where === 'ssh'
-      ? { runtime: 'hermes', name: form.name.trim() || host, cwd, remote: { host, ...(form.address?.trim() ? { address: form.address.trim() } : {}) } }
-      : { runtime: 'hermes', name: form.name.trim() || cwdLabel(cwd), cwd, ...(profile ? { hermesHome: profile } : {}) }
-    if (createCwd) args.createCwd = true
-    if (defaults.permissionMode) args.permissionMode = defaults.permissionMode
-    try { window.localStorage.setItem(HERMES_FORM_KEY, JSON.stringify(form)) } catch { /* private mode */ }
-    setBusy(true)
-    onError(null)
-    getAgentEngineClient().spawnAgent(args)
-      .then(agent => onDone(agent.id))
-      .catch(error => {
-        const message = describeError(error)
-        if (!createCwd && message.startsWith('cwd does not exist')) {
-          onError({ message: `The folder ${cwd} does not exist yet.`, action: { label: 'create it and spawn', run: () => submit(true) } })
-        } else {
-          onError({ message: `Spawn failed: ${message}` })
-        }
-      })
-      .finally(() => setBusy(false))
-  }
-  const input = 'rounded-md border border-white/15 bg-black/45 px-2 py-1 text-[12px] text-white placeholder:text-white/30 focus:outline-none'
-  const browse = 'rounded-md border border-white/20 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-white/85 hover:bg-white/15'
-  return (
-    <form className="flex flex-col gap-1.5 rounded-lg border border-violet-300/25 bg-violet-500/[0.07] px-3 py-2" onSubmit={event => { event.preventDefault(); submit() }}>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <input value={form.name} onChange={event => set({ name: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder="name, e.g. Og" className={`w-32 ${input} max-[700px]:w-full`} />
-        <select value={form.where} onChange={event => set({ where: event.target.value === 'ssh' ? 'ssh' : 'here' })} className="rounded border border-white/15 bg-black/50 px-1 py-1 text-[12px] text-white">
-          <option value="here">on this PC</option>
-          <option value="ssh">on another machine (ssh)</option>
-        </select>
-        {form.where === 'ssh' ? (
-          <>
-            <input value={form.host} onChange={event => set({ host: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder="ssh host, e.g. og" className={`w-40 ${input}`} />
-            <input value={form.address || ''} onChange={event => set({ address: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder="address, if its name does not resolve" title="An IP address for the host, e.g. 192.168.1.149. Its host key is still checked under its own name." className={`w-52 ${input}`} />
-          </>
-        ) : (
-          <>
-            <input value={form.profile} onChange={event => set({ profile: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder="profile folder (empty: Hermes's default)" title="A Hermes profile folder (HERMES_HOME): its model, its SOUL.md, its memory" className={`min-w-[180px] flex-1 ${input}`} />
-            <button type="button" onClick={() => setBrowsing('profile')} className={browse}>Browse…</button>
-          </>
-        )}
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <input value={form.cwd} onChange={event => set({ cwd: event.target.value })} onKeyDown={event => event.stopPropagation()} placeholder={form.where === 'ssh' ? 'folder on this PC for its desk (optional)' : 'working folder, e.g. C:\\9b_localai'} className={`min-w-[200px] flex-1 ${input}`} />
-        <button type="button" onClick={() => setBrowsing('cwd')} className={browse}>Browse…</button>
-        <button type="submit" disabled={busy || !ready} className="rounded-md border border-violet-300/40 bg-violet-400/15 px-3 py-1 text-[11px] font-bold text-violet-50 hover:bg-violet-400/30 disabled:opacity-40">
-          {busy ? '…' : 'new Hermes agent'}
-        </button>
-      </div>
-      <div className="text-[10.5px] text-white/45">
-        {form.where === 'ssh'
-          ? 'Needs `ssh <host>` to work from this PC with a key (no password) and Hermes installed there. It works in its home folder there; the world tools reach it through the same line (free tools only).'
-          : 'Hermes runs here with that profile: its model, its SOUL.md and its memory. World tools: free ones only. Its shell runs most commands without asking.'}
-      </div>
-      {browsing && (
-        <FolderBrowser
-          initialPath={(browsing === 'profile' ? form.profile : form.cwd).trim()}
-          recent={recentFolders}
-          onPick={folder => { set(browsing === 'profile' ? { profile: folder } : { cwd: folder }); setBrowsing(null) }}
-          onClose={() => setBrowsing(null)}
-        />
-      )}
-    </form>
-  )
-}
-
-/** Anorak Pro is always on offer; the 5 most recent sessions only while the village is empty. */
-function Suggestions({ sessions, defaults, onDone, onError, showRecent }: { sessions: EngineSessionMeta[]; defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink; showRecent: boolean }) {
-  // Anorak Pro's home folder is this machine's (`anorakProCwd`); a machine without one gets no such entry.
-  const ANORAK_PRO_CWD = useVillageSettings().anorakProCwd
-  const { anorak, recent } = useMemo(() => pickSuggestions(sessions, ANORAK_PRO_CWD), [sessions, ANORAK_PRO_CWD])
-  const [busy, setBusy] = useState(false)
-  const newAnorak = () => {
-    const args: SpawnAgentArgs = { name: 'Anorak Pro', cwd: ANORAK_PRO_CWD }
-    if (defaults.model) args.model = defaults.model
-    if (defaults.permissionMode) args.permissionMode = defaults.permissionMode
-    setBusy(true)
-    onError(null)
-    getAgentEngineClient().spawnAgent(args)
-      .then(agent => onDone(agent.id))
-      .catch(error => onError({ message: `Spawn failed: ${describeError(error)}` }))
-      .finally(() => setBusy(false))
-  }
-  return (
-    <div className="flex flex-col gap-2">
-      {ANORAK_PRO_CWD && <div className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200/80">Start here</div>}
-      {ANORAK_PRO_CWD && <div className="rounded-lg border border-fuchsia-300/30 bg-fuchsia-500/10 px-3 py-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="text-[13px] font-black text-white">Anorak Pro</div>
-            <div className="truncate text-[10.5px] text-white/50">{ANORAK_PRO_CWD}{anorak ? ` · latest: ${anorak.title} (${formatAgo(anorak.mtime)})` : ' · no session there yet'}</div>
-          </div>
-          <button type="button" disabled={busy} onClick={newAnorak} className="rounded-md border border-fuchsia-300/40 bg-fuchsia-400/15 px-2.5 py-1 text-[11px] font-bold text-fuchsia-50 hover:bg-fuchsia-400/30 disabled:opacity-40">
-            {busy ? '…' : 'new session'}
-          </button>
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <KitTextField value={query} autoFocus onChange={event => setQuery(event.target.value)} onKeyDown={stopKeys} placeholder="Find a session: title, folder, prompt, branch…" />
         </div>
-        {anorak && <div className="mt-2"><SessionRow session={{ ...anorak, title: `Anorak Pro: ${anorak.title}` }} defaults={defaults} onDone={onDone} onError={onError} /></div>}
-      </div>}
-      {showRecent && recent.length > 0 && <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/45">Most recent</div>}
-      {showRecent && recent.map(session => <SessionRow key={session.path} session={session} defaults={defaults} onDone={onDone} onError={onError} />)}
+        <KitButton onClick={loader.reload} title="Read the sessions again">↻</KitButton>
+      </div>
+      <div className="text-[11px] opacity-45">
+        {sessions.status === 'loading' ? 'Reading your sessions…' : sessions.status === 'error' ? `Could not list sessions: ${sessions.error}` : `${filtered.length} sessions${query ? ' found' : ''}, newest first`}
+        <span className="opacity-70"> · continues with the model and permissions set under New session</span>
+      </div>
+      <div ref={scrollRef} className="flex min-h-[220px] flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]">
+        {anorak && <SessionRow session={{ ...anorak, title: `Anorak Pro: ${anorak.title}` }} choices={choices} onDone={onDone} onError={onError} />}
+        {list.slice(0, shown).map(session => <SessionRow key={session.path} session={session} choices={choices} onDone={onDone} onError={onError} />)}
+        <div ref={endRef} className="py-2 text-center text-[11px] opacity-35">
+          {moreHere || moreThere ? (sessions.status === 'loading' ? 'Loading older sessions…' : 'Scroll for more') : list.length ? 'That is all of them' : ''}
+        </div>
+      </div>
     </div>
   )
 }
+
+function ContinueHermes() {
+  const hermesAgents = useOasisStore(s => s.agentEngine.order.map(id => s.agentEngine.agents[id]).filter(a => a && (a as { runtime?: string }).runtime === 'hermes').map(a => ({ id: a!.id, name: a!.name })))
+  return (
+    <div className="flex flex-col gap-3 text-[13px] opacity-85">
+      <div>A Hermes agent keeps its own history in Hermes: after a restart it picks its last session up again by itself. There is no list of old Hermes sessions to continue yet.</div>
+      {hermesAgents.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="kit-label">Hermes agents in the village</span>
+          {hermesAgents.map(agent => (
+            <KitButton key={agent.id} onClick={() => { openVillagePicker(false); window.setTimeout(() => focusVillageAgent(agent.id), 0) }} title="Walk to it" className="self-start">
+              {agent.name} · go
+            </KitButton>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── not in the engine yet ──────────────────────────────────────────────────
+
+function useKeychain() {
+  const state = useSyncExternalStore(subscribeKeychain, getKeychainState, getKeychainState)
+  useEffect(() => { void refreshKeychain() }, [])
+  return state
+}
+
+function KeyChip({ id, label, have, onAdd }: { id: string; label: string; have: boolean | null; onAdd: (id: string) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-1 py-2.5" style={{ borderBottom: HAIRLINE }} data-summon-key={id}>
+      <div>
+        <div className="text-[13.5px] font-bold">{label}</div>
+        <div className="text-[11px] opacity-50">{have === null ? 'checking your keys…' : have ? 'key found' : 'no key yet'}</div>
+      </div>
+      {have === false && <KitButton variant="primary" onClick={() => onAdd(id)} title="Opens the Keychain, where a key is stored safely">Add key</KitButton>}
+      {have && <span className="text-[11px] font-bold uppercase tracking-[0.1em] opacity-60">ready when it is</span>}
+    </div>
+  )
+}
+
+function NotYet({ kind, onAddKey }: { kind: 'codex' | 'phone'; onAddKey: (id: string) => void }) {
+  const keychain = useKeychain()
+  const states = keyStates(keychain)
+  const have = (id: string): boolean | null => (keychain.scannedAt ? states.get(id) === 'have' : null)
+  if (kind === 'codex') {
+    const login = keychain.sources?.codexLogin || ''
+    return (
+      <div className="flex flex-col gap-3" data-summon-not-yet="codex">
+        <div className="px-1 py-1 text-[13px] leading-relaxed opacity-85">
+          <div className="mb-1 text-[14px] font-black uppercase tracking-[0.12em]">Coming: Codex agents</div>
+          A Codex agent cannot be summoned into the village yet. What is missing: a Codex runtime in the agent engine, which today runs only Claude Code and Hermes (it would drive the Codex CLI the way it drives Claude: a session, its messages, permissions and the world tools).
+        </div>
+        <KeyChip id="chatgpt" label={`ChatGPT login for Codex${login ? ` · ${login}` : ''}`} have={keychain.scannedAt ? Boolean(login) || have('chatgpt') === true : null} onAdd={onAddKey} />
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-3" data-summon-not-yet="phone">
+      <div className="px-1 py-1 text-[13px] leading-relaxed opacity-85">
+        <div className="mb-1 text-[14px] font-black uppercase tracking-[0.12em]">Coming: phone-call agents</div>
+        An agent you talk with live, like a phone call. Not in the engine yet: nothing there holds a live voice line to a provider yet. Which providers you can pick depends on the keys you have:
+      </div>
+      <KeyChip id="openai" label="OpenAI Realtime" have={have('openai')} onAdd={onAddKey} />
+      <KeyChip id="google" label="Gemini Live" have={have('google')} onAdd={onAddKey} />
+      <KeyChip id="xai" label="Grok Voice" have={have('xai')} onAdd={onAddKey} />
+    </div>
+  )
+}
+
+// ─── the menu ───────────────────────────────────────────────────────────────
 
 export function SessionPicker() {
   const open = useOasisStore(s => s.agentEngine.pickerOpen)
   const sessions = useOasisStore(s => s.agentEngine.sessions)
+  const connected = useOasisStore(s => s.agentEngine.connection.status === 'open')
   // The models the running agents know, merged (a newer agent brings new models to the menu).
   const spawnModelsKey = useOasisStore(s => JSON.stringify(mergeModelLists(Object.values(s.agentEngine.agents).map(a => a.models)).filter(model => model.value !== 'default')))
   const spawnModels = useMemo(() => JSON.parse(spawnModelsKey) as ModelOption[], [spawnModelsKey])
-  // Folders your sessions ran in, newest first: one tap away in the folder browser.
+  // Folders your sessions ran in, newest first: the default folder and one tap away in the folder browser.
   const recentFolders = useMemo(() => {
     const seen = new Set<string>()
     return [...sessions.items]
@@ -361,164 +679,126 @@ export function SessionPicker() {
       .filter(dir => Boolean(dir) && !seen.has(dir) && Boolean(seen.add(dir)))
       .slice(0, 8)
   }, [sessions.items])
-  const rosterEmpty = useOasisStore(s => s.agentEngine.order.length === 0)
-  const connected = useOasisStore(s => s.agentEngine.connection.status === 'open')
-  const [query, setQuery] = useState('')
-  const [shown, setShown] = useState(PAGE)
-  const [defaults, setDefaults] = useState<SpawnDefaults>({ model: '', permissionMode: '', runtime: 'claude' })
-  const hermes = defaults.runtime === 'hermes'
+  const summonDefaults = useSummonDefaults(open)
+  const [kind, setKind] = useState<SummonKind>('claude')
+  const [half, setHalf] = useState<'new' | 'continue'>('new')
+  const [claude, setClaude] = useState<SpawnChoices>({ model: '', permissionMode: '', account: 'auto' })
+  const [hermesMode, setHermesMode] = useState('')
+  const [lastCwd, setLastCwd] = useState('')
+  const [pickedCwd, setPickedCwd] = useState('')
+  const [browsing, setBrowsing] = useState(false)
   const [error, setError] = useState<PickerError | null>(null)
   useUILayer(VILLAGE_PICKER_LAYER, open)
-  const { reload, loadOlder, limit } = useSessionLoader(open)
-
+  const loader = useSessionLoader(open)
   const close = useCallback(() => openVillagePicker(false), [])
 
-  useEffect(() => { if (!open) setError(null) }, [open])
+  // On open: the remembered choices, and the kind a spell asked for.
+  useEffect(() => {
+    if (!open) { setError(null); setPickedCwd(''); return }
+    const saved = readRemembered()
+    setLastCwd(saved.lastCwd || '')
+    setHalf(saved.half === 'continue' ? 'continue' : 'new')
+    setClaude({ model: saved.model || '', permissionMode: saved.claudeMode || '', account: saved.account || 'auto' })
+    setHermesMode(saved.hermesMode || '')
+    setKind(takeSummonKind() || (saved.kind === 'hermes' ? 'hermes' : 'claude'))
+  }, [open])
 
   useEffect(() => {
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape' || browsing) return
       event.preventDefault()
       event.stopImmediatePropagation()
       close()
     }
     window.addEventListener('keydown', onKeyDown, { capture: true })
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
-  }, [open, close])
-
-  useEffect(() => { setShown(PAGE) }, [query])
-
-  const filtered = useMemo(() => filterSessions(sessions.items, query), [sessions.items, query])
+  }, [open, close, browsing])
 
   if (!open) return null
 
-  const onDone = (agentId: string) => {
+  const fallback = pickDefaultFolder(lastCwd, recentFolders, summonDefaults?.workspace || '')
+  const folder = pickedCwd ? { path: pickedCwd, create: false } : fallback
+  const folderNote = pickedCwd ? '' : fallback.path ? FOLDER_SOURCE_WORD[fallback.source] : ''
+  const hermes = kind === 'hermes'
+  const choices: SpawnChoices = hermes ? { model: '', permissionMode: hermesMode, account: 'auto' } : claude
+
+  const pickKind = (next: SummonKind) => {
+    setKind(next)
+    setError(null)
+    if (next === 'claude' || next === 'hermes') remember({ kind: next })
+  }
+  const pickHalf = (next: 'new' | 'continue') => { setHalf(next); remember({ half: next }) }
+  const setChoices = (patch: Partial<SpawnChoices>) => {
+    if (hermes) {
+      if (patch.permissionMode !== undefined) { setHermesMode(patch.permissionMode); remember({ hermesMode: patch.permissionMode }) }
+      return
+    }
+    setClaude(current => ({ ...current, ...patch }))
+    remember({
+      ...(patch.model !== undefined ? { model: patch.model } : {}),
+      ...(patch.permissionMode !== undefined ? { claudeMode: patch.permissionMode } : {}),
+      ...(patch.account !== undefined ? { account: patch.account } : {}),
+    })
+  }
+  const onDone = (agentId: string, cwd?: string) => {
+    if (cwd) remember({ lastCwd: cwd })
     close()
     window.setTimeout(() => focusVillageAgent(agentId), 0)
   }
+  const onAddKey = (id: string) => {
+    close()
+    openKeychain(id)
+  }
 
   return (
-    <div
-      data-ui-panel="village-picker"
-      className="fixed inset-0 z-[9600] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm max-[700px]:p-0"
-      onPointerDown={event => { if (event.target === event.currentTarget) close() }}
-    >
-      <div className="flex max-h-[86vh] w-[min(780px,100%)] flex-col gap-3 rounded-2xl border border-white/15 bg-slate-950/95 p-4 text-white shadow-[0_30px_90px_rgba(0,0,0,0.6)] max-[700px]:h-full max-[700px]:max-h-none max-[700px]:rounded-none">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <div className="text-[15px] font-black tracking-wide">Summon an agent</div>
-            <div className="text-[11px] text-white/45">Spawn resumes a session as an agent you can talk to. Observe watches it read-only.</div>
-          </div>
-          <button type="button" onClick={close} className="rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[12px] font-bold text-white/70 hover:bg-white/15">✕</button>
+    <SummonFrame onClose={close}>
+      {!connected ? (
+        <div className="rounded-xl border border-amber-300/30 bg-amber-400/10 px-4 py-3 text-[13px] text-amber-100">
+          The agent engine is offline. Start it next to the Oasis with <code className="rounded bg-black/40 px-1">pnpm dev:engine</code>.
         </div>
-
-        {!connected ? (
-          <div className="rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-100">
-            The agent engine is offline. Start it next to the Oasis with <code className="rounded bg-black/40 px-1">pnpm dev:engine</code>.
-          </div>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
-              <label className="flex items-center gap-1" title="Claude Code: a Claude session. Hermes: a Hermes agent (Nous Research), here or on another machine.">
-                runtime
-                <select
-                  value={defaults.runtime}
-                  onChange={event => setDefaults(d => ({ ...d, runtime: event.target.value === 'hermes' ? 'hermes' : 'claude', permissionMode: '', model: '' }))}
-                  className="rounded border border-white/15 bg-black/50 px-1 py-0.5 text-white"
-                >
-                  <option value="claude">Claude Code</option>
-                  <option value="hermes">Hermes</option>
-                </select>
-              </label>
-              {!hermes && <label className="flex items-center gap-1">
-                model
-                <select
-                  value={defaults.model}
-                  onChange={event => {
-                    let model: string | null = event.target.value
-                    if (model === CUSTOM_MODEL_VALUE) {
-                      model = cleanModelId(window.prompt('Model id (any the Claude Code CLI takes, e.g. claude-fable-5-2)', ''))
-                      if (!model) return
-                    }
-                    setDefaults(d => ({ ...d, model: model || '' }))
-                  }}
-                  className="max-w-[170px] rounded border border-white/15 bg-black/50 px-1 py-0.5 text-white"
-                >
-                  <option value="">(from settings)</option>
-                  {spawnModels.map(model => <option key={model.value} value={model.value}>{model.displayName || model.value}</option>)}
-                  {defaults.model && !spawnModels.some(model => model.value === defaults.model) && <option value={defaults.model}>{defaults.model}</option>}
-                  <option value={CUSTOM_MODEL_VALUE}>Other model id…</option>
-                </select>
-              </label>}
-              <label className="flex items-center gap-1">
-                permissions
-                <select value={defaults.permissionMode} onChange={event => setDefaults(d => ({ ...d, permissionMode: event.target.value }))} className="rounded border border-white/15 bg-black/50 px-1 py-0.5 text-white">
-                  {(hermes ? HERMES_MODES : MODES).map(mode => <option key={mode} value={mode}>{mode || (hermes ? '(default)' : '(from settings)')}</option>)}
-                </select>
-              </label>
-              <span className="text-white/35">apply to spawns below</span>
-            </div>
-
-            {hermes
-              ? <HermesAgentForm defaults={defaults} onDone={onDone} onError={setError} recentFolders={recentFolders} />
-              : <NewAgentForm defaults={defaults} onDone={onDone} onError={setError} recentFolders={recentFolders} />}
-
-            {error && (
-              <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-red-300/35 bg-red-500/15 px-3 py-2 text-[12px] text-red-50">
-                <span className="min-w-0 flex-1 break-words">{error.message}</span>
-                {error.action && (
-                  <button
-                    type="button"
-                    onClick={() => { const run = error.action?.run; setError(null); run?.() }}
-                    className="rounded-md border border-red-200/40 bg-red-400/20 px-2 py-1 text-[11px] font-bold hover:bg-red-400/35"
-                  >
-                    {error.action.label}
-                  </button>
+      ) : (
+        <>
+          <KindTabs kind={kind} onPick={pickKind} />
+          {kind === 'codex' || kind === 'phone' ? (
+            <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]"><NotYet kind={kind} onAddKey={onAddKey} /></div>
+          ) : (
+            <>
+              <HalfTabs half={half} onPick={pickHalf} />
+              <ErrorBox error={error} onClear={() => setError(null)} />
+              <div className="flex min-h-0 flex-1 flex-col pt-1">
+                {half === 'new' ? (
+                  hermes ? (
+                    <NewHermes
+                      folder={folder}
+                      folderNote={folderNote}
+                      onBrowse={() => setBrowsing(true)}
+                      profiles={summonDefaults ? summonDefaults.hermes.profiles : null}
+                      hermesHome={summonDefaults?.hermes.home || ''}
+                      choices={choices}
+                      setChoices={setChoices}
+                      onDone={onDone}
+                      onError={setError}
+                    />
+                  ) : (
+                    <NewClaude folder={folder} folderNote={folderNote} onBrowse={() => setBrowsing(true)} choices={choices} setChoices={setChoices} models={spawnModels} onDone={onDone} onError={setError} />
+                  )
+                ) : hermes ? <ContinueHermes /> : (
+                  <ContinueClaude choices={choices} onDone={id => onDone(id)} onError={setError} loader={loader} />
                 )}
-                <button type="button" aria-label="dismiss" onClick={() => setError(null)} className="rounded-md px-1.5 py-0.5 text-[12px] font-bold text-red-100/70 hover:bg-white/10">✕</button>
               </div>
-            )}
-
-            {hermes ? (
-              <div className="text-[11px] text-white/45">A Hermes agent starts a new Hermes session (after a restart it picks the same one up again); its history lives in Hermes. Your Claude Code sessions are listed under the Claude Code runtime.</div>
-            ) : (
-            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
-              {!query && sessions.status === 'ready' && (
-                <Suggestions sessions={sessions.items} defaults={defaults} onDone={onDone} onError={setError} showRecent={rosterEmpty} />
-              )}
-              <div className="sticky top-0 z-10 flex items-center gap-2 bg-slate-950/95 py-1">
-                <input
-                  value={query}
-                  autoFocus
-                  onChange={event => setQuery(event.target.value)}
-                  onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation() }}
-                  placeholder="filter by title, folder, prompt, branch…"
-                  className="flex-1 rounded-md border border-white/15 bg-black/45 px-2.5 py-1.5 text-[12.5px] text-white placeholder:text-white/30 focus:border-emerald-300/40 focus:outline-none"
-                />
-                <button type="button" onClick={reload} className="rounded-md border border-white/15 bg-white/5 px-2 py-1.5 text-[11px] font-bold text-white/70 hover:bg-white/15">refresh</button>
-              </div>
-              <div className="text-[10.5px] text-white/40">
-                {sessions.status === 'loading' ? 'reading session metadata…' : sessions.status === 'error' ? `could not list sessions: ${sessions.error}` : `${filtered.length} of ${sessions.items.length} newest sessions${filtered.length > shown ? ` · showing ${shown}` : ''}`}
-              </div>
-              {filtered.slice(0, shown).map(session => (
-                <SessionRow key={session.path} session={session} defaults={defaults} onDone={onDone} onError={setError} />
-              ))}
-              {filtered.length > shown && (
-                <button type="button" onClick={() => setShown(n => n + PAGE)} className="rounded-md border border-white/10 bg-white/5 py-1.5 text-[11px] font-bold text-white/70 hover:bg-white/10">
-                  show {Math.min(PAGE, filtered.length - shown)} more
-                </button>
-              )}
-              {sessions.status === 'ready' && sessions.items.length >= limit && filtered.length <= shown && (
-                <button type="button" onClick={loadOlder} className="rounded-md border border-white/10 bg-white/5 py-1.5 text-[11px] font-bold text-white/60 hover:bg-white/10">
-                  load older sessions
-                </button>
-              )}
-            </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+            </>
+          )}
+        </>
+      )}
+      {browsing && (
+        <FolderBrowser
+          initialPath={folder.path}
+          recent={recentFolders}
+          onPick={dir => { setPickedCwd(dir); setBrowsing(false) }}
+          onClose={() => setBrowsing(false)}
+        />
+      )}
+    </SummonFrame>
   )
 }
