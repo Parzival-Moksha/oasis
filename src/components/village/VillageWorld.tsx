@@ -758,8 +758,9 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
           </mesh>
         )}
         {/* Not in the F view: there its face fills the left of the picture, and the sign would sit on it. */}
-        {/* Its name, status and marker; and while the owner is near it (not in its panel), its T / E / F keys. */}
-        {!(focused && onScreen) && <StationTag agentId={agentId} colorKey={followKey} avatarKey={avatarUrl} keys={nearby && !focused} />}
+        {/* Its name, status and marker; and while the owner is near it (not in its panel), its T / E / F keys. Not on a
+            stage (the Council): the circle is filmed, and the keys would float over whoever stands next to him. */}
+        {!(focused && onScreen) && <StationTag agentId={agentId} colorKey={followKey} avatarKey={avatarUrl} keys={nearby && !focused && !bare} />}
         {!(focused && onScreen) && extras && (
           <Html position={EXTRAS_AT} center distanceFactor={9} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>
             <StationExtras agentId={agentId} />
