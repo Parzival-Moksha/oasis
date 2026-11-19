@@ -21,8 +21,7 @@ Use this skill when the user asks to open, start, install, enter or stop "the Oa
 ## Before anything
 
 - It needs Node.js 20 or later (`node --version`) and git. If either is missing, tell the user and stop.
-- The install folder is `.oasis/app` inside the user's home folder. Print it with:
-  `node -e "console.log(require('path').join(require('os').homedir(), '.oasis', 'app'))"`
+- The install folder is `.oasis/app` inside the user's home folder: `~/.oasis/app` on macOS and Linux, `%USERPROFILE%\.oasispp` on Windows. Check whether it is there with a plain listing (`ls ~/.oasis/app/scripts` or `dir "%USERPROFILE%\.oasispp\scripts"`); do not run inline code to find it.
 
 ## Open it (already installed)
 
