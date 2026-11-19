@@ -193,7 +193,7 @@ export function AgentSessionPanel() {
             <span className="min-w-0 break-words text-[17px] font-bold leading-tight tracking-wide" style={{ fontFamily: VILLAGE_FONT_DISPLAY }}>{agentDisplayName(agent)}</span>
             <StatusPill
               status={shownStatus}
-              label={`${statusLabel({ status: shownStatus, unseen: agent.unseen })}${agent.bridged ? ' · desktop app' : agent.readOnly ? ' · read-only' : ''}`}
+              label={`${statusLabel({ status: shownStatus, unseen: agent.unseen, parked: agent.parked })}${agent.bridged ? ' · desktop app' : agent.readOnly ? ' · read-only' : ''}`}
             />
           </div>
           <div className="mt-0.5 truncate text-[10.5px] text-white/70" title={`${agent.cwd || ''}\nsession ${agent.sessionId || '?'}`}>

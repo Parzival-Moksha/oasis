@@ -21,6 +21,7 @@ import {
   VILLAGE_TYPE_CLASS,
 } from './village-status'
 import { openVillageImages, toggleVillageScreen } from './village-actions'
+import { ParkedBanner } from './ParkedBanner'
 import { agentEngineFileUrl } from '../../lib/agent-engine-client'
 import { groupThread, threadImages, toolRunShape, type ThreadItem } from '../../lib/village/village-thread'
 import { hasInjectedText, parseInjectedUserText, type TaskNotice } from '../../lib/village/village-injected'
@@ -703,6 +704,8 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
     <SpokenAgentContext.Provider value={agent.id}>
     <div className={`flex h-full min-h-0 flex-col gap-2 ${VILLAGE_TYPE_CLASS}`} style={{ fontFamily: VILLAGE_FONT_BODY }}>
       {header}
+      {/* Every Claude account is out of usage: said large and plain, with when it goes on (engine accounts.js). */}
+      <ParkedBanner agent={agent} compact={compact} />
       {subagent && <SubagentHeader agent={agent} subagent={subagent} />}
       {compact && decisions[0] && <DecisionCard agentId={agent.id} decision={decisions[0]} compact />}
       <div className="flex shrink-0 flex-col gap-1.5">

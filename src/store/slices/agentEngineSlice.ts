@@ -493,8 +493,10 @@ export function runningSubagentCount(agent: { subagents?: EngineSubagentState[];
   return count
 }
 
-export function attentionRank(agent: Pick<EngineAgentState, 'status' | 'unseen' | 'decisions'> & { subagents?: EngineSubagentState[]; lastEventAt?: number }): number | null {
+export function attentionRank(agent: Pick<EngineAgentState, 'status' | 'unseen' | 'decisions'> & { subagents?: EngineSubagentState[]; lastEventAt?: number; parked?: EngineAgentState['parked'] }): number | null {
   if (agent.status === 'needs-decision' || agent.decisions.length > 0) return 0
+  // Waiting for an account's usage (engine accounts.js) is not stuck: it goes on by itself; no one walks up for it.
+  if (agent.parked) return null
   if (agent.status === 'error') return 1
   // idle too: a restarted engine resumes a finished agent as a fresh, idle process. Not while its helpers
   // still work: there is nothing to do yet, and their reports start its next turn by themselves.
@@ -506,8 +508,10 @@ export function attentionRank(agent: Pick<EngineAgentState, 'status' | 'unseen' 
  * The status to show (ring, label, chips): an open decision always reads as needs-decision, and
  * a finished agent the owner hasn't seen reads as waiting even after an engine restart (idle).
  */
-export function effectiveStatus(agent: Pick<EngineAgentState, 'status' | 'decisions' | 'unseen'>): EngineAgentStatus {
+export function effectiveStatus(agent: Pick<EngineAgentState, 'status' | 'decisions' | 'unseen'> & { parked?: EngineAgentState['parked'] }): EngineAgentStatus {
   if (agent.decisions.length > 0) return 'needs-decision'
+  // Waiting for usage: calm, not an error (the engine reports it as one so the agent's turn reads as cut off).
+  if (agent.parked) return 'waiting'
   if (agent.status === 'idle' && agent.unseen) return 'waiting'
   return agent.status
 }

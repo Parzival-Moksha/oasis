@@ -25,7 +25,8 @@ export function statusColor(status: string | null | undefined): string {
   return VILLAGE_STATUS_COLOR[(status || 'idle') as EngineAgentStatus] || VILLAGE_STATUS_COLOR.idle
 }
 
-export function statusLabel(agent: Pick<EngineAgentState, 'status' | 'unseen'>): string {
+export function statusLabel(agent: Pick<EngineAgentState, 'status' | 'unseen'> & { parked?: EngineAgentState['parked'] }): string {
+  if (agent.parked) return 'waiting for usage'
   if (agent.status === 'waiting' && !agent.unseen) return 'waiting'
   return VILLAGE_STATUS_LABEL[agent.status] || agent.status
 }
@@ -43,7 +44,7 @@ export interface VillageAgentLook {
 }
 
 /** What an agent's sign, desk and menu row show: its own status, unless only its helpers are still at it. */
-export function villageAgentLook(agent: Pick<EngineAgentState, 'status' | 'unseen' | 'decisions' | 'subagents' | 'lastEventAt'> & { resumedAt?: number | null }, now?: number): VillageAgentLook {
+export function villageAgentLook(agent: Pick<EngineAgentState, 'status' | 'unseen' | 'decisions' | 'subagents' | 'lastEventAt'> & { resumedAt?: number | null; parked?: EngineAgentState['parked'] }, now?: number): VillageAgentLook {
   const status = effectiveStatus(agent)
   const helpers = runningSubagentCount(agent, now)
   if (helpers > 0 && (status === 'waiting' || status === 'idle')) {
@@ -51,7 +52,7 @@ export function villageAgentLook(agent: Pick<EngineAgentState, 'status' | 'unsee
   }
   // The engine restarted while it worked and told it to carry on: say so while that turn runs.
   const resumed = status === 'working' && agent.resumedAt ? ' · resumed' : ''
-  return { status, color: statusColor(status), label: `${statusLabel({ status, unseen: agent.unseen })}${resumed}`, helpers }
+  return { status, color: statusColor(status), label: `${statusLabel({ status, unseen: agent.unseen, parked: agent.parked })}${resumed}`, helpers }
 }
 
 /** Agents the Oasis runs, and desktop-app sessions running the Oasis plugin (bridged), get a text box. */
