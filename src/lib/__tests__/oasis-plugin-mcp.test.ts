@@ -23,11 +23,18 @@ const { createServer, offered, annotate, isExcluded, webUrl, parseReply } = prox
 const { pluginShipsWorldTools } = worldtoolsModule as unknown as { pluginShipsWorldTools: (cwd?: string, configDir?: string) => boolean }
 
 describe('plugin world tools: what is offered', () => {
-  it('never offers AI generation of pictures, video, music or speech', () => {
-    for (const name of ['generate_image', 'generate_video', 'generate_voice', 'text_to_pic', 'text_to_pic_building', 'text_to_video', 'text_to_music', 'conjure_framed_picture', 'avatarpic_user', 'generate_something_new']) {
-      expect(isExcluded(name)).toBe(true)
+  it('offers every tool the Oasis has; OASIS_PLUGIN_NO_GENERATION=1 leaves the AI generation tools out', () => {
+    const names = ['generate_image', 'generate_video', 'generate_voice', 'text_to_pic', 'text_to_pic_building', 'text_to_video', 'text_to_music', 'conjure_framed_picture', 'avatarpic_user', 'generate_something_new']
+    for (const name of names) expect(isExcluded(name)).toBe(false)
+    expect(offered([{ name: 'text_to_music' }, { name: 'place_object' }, { name: 'generate_voice' }]).map(t => t.name)).toEqual(['text_to_music', 'place_object', 'generate_voice'])
+    process.env.OASIS_PLUGIN_NO_GENERATION = '1'
+    try {
+      for (const name of names) expect(isExcluded(name)).toBe(true)
+      expect(isExcluded('place_object')).toBe(false)
+      expect(offered([{ name: 'text_to_music' }, { name: 'place_object' }, { name: 'generate_voice' }]).map(t => t.name)).toEqual(['place_object'])
+    } finally {
+      delete process.env.OASIS_PLUGIN_NO_GENERATION
     }
-    expect(offered([{ name: 'text_to_music' }, { name: 'place_object' }, { name: 'generate_voice' }]).map(t => t.name)).toEqual(['place_object'])
   })
 
   it('gives each tool a title and read-only / destructive hints', () => {
@@ -112,18 +119,23 @@ describe('plugin world tools: a session talking through it', () => {
     const { ask, proxy } = client(base)
     expect((await ask('initialize', { protocolVersion: '2025-06-18' })).result).toMatchObject({ serverInfo: { name: 'oasis' }, capabilities: { tools: { listChanged: true } } })
     const tools = (await ask('tools/list')).result?.tools as Tool[]
-    expect(tools.map(t => t.name)).toEqual(['get_world_info', 'clear_world'])
-    expect(tools[1].annotations).toMatchObject({ destructiveHint: true })
+    expect(tools.map(t => t.name)).toEqual(['get_world_info', 'text_to_pic', 'clear_world'])
+    expect(tools[2].annotations).toMatchObject({ destructiveHint: true })
     expect((await ask('tools/call', { name: 'get_world_info', arguments: {} })).result).toMatchObject({ content: [{ text: 'ran get_world_info' }] })
     proxy.stop()
   })
 
-  it('refuses an excluded tool without asking the Oasis', async () => {
-    const { ask, proxy } = client(base)
-    const before = seen.length
-    expect((await ask('tools/call', { name: 'text_to_pic', arguments: {} })).result).toMatchObject({ isError: true })
-    expect(seen.length).toBe(before)
-    proxy.stop()
+  it('refuses a left-out tool without asking the Oasis, when generation is switched off', async () => {
+    process.env.OASIS_PLUGIN_NO_GENERATION = '1'
+    try {
+      const { ask, proxy } = client(base)
+      const before = seen.length
+      expect((await ask('tools/call', { name: 'text_to_pic', arguments: {} })).result).toMatchObject({ isError: true })
+      expect(seen.length).toBe(before)
+      proxy.stop()
+    } finally {
+      delete process.env.OASIS_PLUGIN_NO_GENERATION
+    }
   })
 
   it('opens a new session when the Oasis restarted in between', async () => {

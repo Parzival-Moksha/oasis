@@ -22,7 +22,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { fileURLToPath } from 'node:url'
-import { ARCHIVE_LIMIT_MIB, FILE_LIMIT, assetLicences, avatars, exclude, firstWorld, include, transforms } from './slim/cut.config.mjs'
+import { ARCHIVE_LIMIT_MIB, FILE_LIMIT, assetLicences, avatars, exclude, firstWorld, full, fullLeftOut, include, transforms } from './slim/cut.config.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
@@ -30,6 +30,14 @@ const flag = (name) => args.includes(name)
 const value = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined)
 const OUT = path.resolve(value('--out') || path.join(ROOT, '..', 'oasis-slim'))
 const MIB = 1024 * 1024
+// Two editions from one script: the lite one (small, for a quick first look) and the full one (--edition full:
+// every feature, every asset whose licence allows passing it on).
+const FULL = value('--edition') === 'full'
+const INCLUDE = FULL ? [...include.filter((p) => !full.include.some((f) => p.startsWith(f))), ...full.include] : include
+const EXCLUDE = FULL ? exclude.filter((p) => !full.keep.includes(p)) : exclude
+const WORLDS = FULL ? full.worlds : [firstWorld]
+const LIMIT_MIB = FULL ? full.archiveLimitMib : ARCHIVE_LIMIT_MIB
+const LIMIT_FILES = FULL ? full.fileLimit : FILE_LIMIT
 
 /** 'dir/', a glob with * and **, or an exact path -> a test for a forward-slash path. */
 export function rule(pattern) {
@@ -78,7 +86,7 @@ function contents(files) {
     for (const file of files) map.set(file, fs.readFileSync(path.join(ROOT, file)))
     return map
   }
-  const out = execFileSync('git', ['cat-file', '--batch'], { cwd: ROOT, input: files.map((f) => `HEAD:${f}\n`).join(''), maxBuffer: 1024 * MIB })
+  const out = execFileSync('git', ['cat-file', '--batch'], { cwd: ROOT, input: files.map((f) => `HEAD:${f}\n`).join(''), maxBuffer: 3072 * MIB })
   let at = 0
   for (const file of files) {
     const eol = out.indexOf(10, at)
@@ -97,41 +105,54 @@ const thumbOf = (file) => `${file.replace(/\.vrm$/, '').replace(/([a-z0-9])([A-Z
 function plan() {
   const problems = []
   const files = tracked()
-  const take = chooser(include, exclude)
+  const take = chooser(INCLUDE, EXCLUDE)
   const chosen = new Set(files.filter(take))
-  for (const pattern of include) if (!files.some(rule(pattern))) problems.push(`nothing matches the include rule ${pattern}`)
+  for (const pattern of INCLUDE) if (!files.some(rule(pattern))) problems.push(`nothing matches the include rule ${pattern}`)
 
-  // Avatars: named one by one, each checked against what the file says about itself.
+  // Avatars: named one by one (lite) or every one in the gallery (full); each is shipped only when the file
+  // itself says CC0.
   const thumbs = files.filter((f) => f.startsWith('public/avatars/gallery/thumbs/'))
   const wanted = []
-  for (const a of avatars) {
-    const rel = `public/avatars/gallery/${a.file}`
-    if (!files.includes(rel)) { problems.push(`avatar not in the repository: ${rel}`); continue }
-    if (a.licence !== 'CC0') { problems.push(`${rel}: licence "${a.licence}" is not one the cut ships`); continue }
-    wanted.push(rel)
-    const stem = a.file.replace(/\.vrm$/, '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (FULL) {
+    for (const f of files) if (/^public\/avatars\/gallery\/[^/]+\.vrm$/.test(f)) wanted.push(f)
+  } else {
+    for (const a of avatars) {
+      const rel = `public/avatars/gallery/${a.file}`
+      if (!files.includes(rel)) { problems.push(`avatar not in the repository: ${rel}`); continue }
+      if (a.licence !== 'CC0') { problems.push(`${rel}: licence "${a.licence}" is not one the cut ships`); continue }
+      wanted.push(rel)
+    }
+  }
+  const worldSeeds = WORLDS.map((w) => w.seed)
+  for (const file of [...worldSeeds, 'package.json', 'data/asset-catalog-extras.json', 'src/components/scene-lib/constants.ts', 'plugins/oasis/mcp/directory.mcp.json', 'plugins/oasis/.claude-plugin/plugin.json']) {
+    if (!files.includes(file)) problems.push(`not in the repository: ${file}`)
+  }
+  const data = contents([...new Set([...chosen, ...wanted, ...worldSeeds, 'package.json', 'data/asset-catalog-extras.json', ...fs.readdirSync(path.join(ROOT, 'scripts', 'slim', 'root')).map((n) => `scripts/slim/root/${n}`)])].sort().filter((f) => files.includes(f)))
+
+  const avatarRows = []
+  const leftOutAvatars = []
+  for (const rel of wanted) {
+    const meta = vrmLicence(data.get(rel))
+    if (meta?.licence !== 'CC0') {
+      if (FULL) leftOutAvatars.push(`${path.basename(rel)} (${meta?.licence || 'no licence stated'})`)
+      else problems.push(`${rel}: listed as CC0, but the file says "${meta?.licence ?? 'nothing'}"`)
+      data.delete(rel)
+      continue
+    }
+    chosen.add(rel)
+    avatarRows.push({ file: rel, licence: 'CC0 1.0', source: meta.author, title: meta.title || path.basename(rel) })
+    const stem = path.basename(rel, '.vrm').toLowerCase().replace(/[^a-z0-9]/g, '')
     const thumb = thumbs.find((t) => path.basename(t, path.extname(t)).toLowerCase().replace(/[^a-z0-9]/g, '') === stem)
     if (thumb) chosen.add(thumb)
   }
-  for (const rel of wanted) chosen.add(rel)
-  for (const file of [firstWorld.seed, 'package.json', 'data/asset-catalog-extras.json', 'src/components/scene-lib/constants.ts', 'plugins/oasis/mcp/directory.mcp.json', 'plugins/oasis/.claude-plugin/plugin.json']) {
-    if (!files.includes(file)) problems.push(`not in the repository: ${file}`)
-  }
-  const sorted = [...chosen].sort()
-  const data = contents([...new Set([...sorted, firstWorld.seed, 'package.json', 'data/asset-catalog-extras.json', ...fs.readdirSync(path.join(ROOT, 'scripts', 'slim', 'root')).map((n) => `scripts/slim/root/${n}`)])].filter((f) => files.includes(f)))
-
-  const avatarRows = []
-  for (const rel of wanted) {
-    const meta = vrmLicence(data.get(rel))
-    if (meta?.licence !== 'CC0') { problems.push(`${rel}: listed as CC0, but the file says "${meta?.licence ?? 'nothing'}"`); chosen.delete(rel); continue }
-    avatarRows.push({ file: rel, licence: 'CC0 1.0', source: meta.author, title: meta.title || path.basename(rel) })
-  }
+  const missing = [...chosen].filter((f) => !data.has(f))
+  if (missing.length) for (const [f, c] of contents(missing)) data.set(f, c)
 
   for (const file of chosen) {
     if (!file.startsWith('public/') || file.startsWith('public/avatars/')) continue
-    if (!/\.(png|jpe?g|webp|gif|svg|hdr|glb|gltf|vrm|mp3|ogg|wav|woff2?|ttf|otf|json|bin|mjs|js|md|txt)$/i.test(file)) problems.push(`unexpected kind of file under public/: ${file}`)
+    if (!/\.(png|jpe?g|webp|gif|svg|hdr|glb|gltf|vrm|mp3|ogg|wav|woff2?|ttf|otf|json|bin|mjs|js|md|txt|fbx|obj|mtl)$/i.test(file)) problems.push(`unexpected kind of file under public/: ${file}`)
   }
-  return { chosen: [...chosen].sort(), avatarRows, problems, data }
+  return { chosen: [...chosen].sort(), avatarRows, problems, data, leftOutAvatars }
 }
 
 /** Catalog entries (id and file) written in src/components/scene-lib/constants.ts, one per line. */
@@ -192,7 +213,7 @@ function printTable(rows, archiveBytes) {
   const total = rows.reduce((a, r) => ({ files: a.files + r.files, bytes: a.bytes + r.bytes }), { files: 0, bytes: 0 })
   console.log('  ---------------------------------  -----  -------')
   console.log(`  ${'Total on disk'.padEnd(33)}  ${String(total.files).padStart(5)}  ${mb(total.bytes)}`)
-  if (archiveBytes !== undefined) console.log(`  ${'As a .tar.gz archive (about)'.padEnd(33)}         ${mb(archiveBytes)}   (limit here ${ARCHIVE_LIMIT_MIB}, the directory's 50)`)
+  if (archiveBytes !== undefined) console.log(`  ${'As a .tar.gz archive (about)'.padEnd(33)}         ${mb(archiveBytes)}   (limit here ${LIMIT_MIB})`)
   return total
 }
 
@@ -204,7 +225,7 @@ function emptyExceptGit(dir) {
   }
 }
 
-function assetsDoc(files, avatarRows) {
+function assetsDoc(files, avatarRows, leftOutAvatars = []) {
   const lines = [
     '# Assets and their licences',
     '',
@@ -234,11 +255,14 @@ function assetsDoc(files, avatarRows) {
     groups.set(entry.match, g)
   }
   for (const { entry, count } of groups.values()) lines.push(`| \`${entry.match}\` | ${count} | ${entry.source} | ${entry.licence} |`)
+  lines.push('', '## What is not here, and why', '', 'The workshop this is cut from holds more. These stay out of every edition:', '')
+  for (const item of fullLeftOut) lines.push(`- ${item.what} (\`${item.match}\`): ${item.why}.`)
+  if (leftOutAvatars.length) lines.push('', `Avatars left out by their own metadata: ${leftOutAvatars.join(', ')}.`)
   lines.push('')
   return { text: lines.join('\n'), unknown }
 }
 
-function writeCut({ chosen, avatarRows, data }, problems) {
+function writeCut({ chosen, avatarRows, data, leftOutAvatars }, problems) {
   emptyExceptGit(OUT)
   const put = (file, content) => {
     const to = path.join(OUT, file)
@@ -264,20 +288,29 @@ function writeCut({ chosen, avatarRows, data }, problems) {
   const extras = slimCatalogExtras(JSON.parse(data.get('data/asset-catalog-extras.json').toString('utf8')), catalogEntries(data.get('src/components/scene-lib/constants.ts').toString('utf8')), shipped)
   put('data/asset-catalog-extras.json', `${JSON.stringify(extras, null, 1)}\n`)
 
-  // The first world: one seed, its sky changed to a shipped one, and a manifest that lists only it.
-  const seed = JSON.parse(data.get(firstWorld.seed).toString('utf8'))
-  seed.data.skyBackgroundId = firstWorld.sky
-  for (const placement of seed.data.catalogPlacements || []) {
-    if (placement.glbPath && !shipped.has(`public${placement.glbPath}`)) problems.push(`the first world places ${placement.glbPath}, which the cut does not ship`)
+  // The worlds a new install has: each seed (the lite one with its sky changed to a shipped one), and a
+  // manifest that lists only them. A world that places a file the cut does not ship stops the cut.
+  const manifest = []
+  for (const world of WORLDS) {
+    const seed = JSON.parse(data.get(world.seed).toString('utf8'))
+    if (world.sky) seed.data.skyBackgroundId = world.sky
+    for (const placement of seed.data.catalogPlacements || []) {
+      if (placement.glbPath && !shipped.has(`public${decodeURIComponent(placement.glbPath)}`)) problems.push(`the world ${seed.name} places ${placement.glbPath}, which the cut does not ship`)
+    }
+    for (const avatar of seed.data.agentAvatars || []) {
+      const url = avatar.avatar3dUrl || avatar.url
+      if (url && url.startsWith('/avatars/') && !shipped.has(`public${url}`)) problems.push(`the world ${seed.name} has the avatar ${url}, which the cut does not ship`)
+    }
+    const seedName = path.basename(world.seed)
+    put(`prisma/default-worlds/${seedName}`, `${JSON.stringify(seed)}\n`)
+    manifest.push({ slug: seed.slug, id: seed.id, file: seedName, name: seed.name, visibility: seed.visibility })
   }
-  const seedName = path.basename(firstWorld.seed)
-  put(`prisma/default-worlds/${seedName}`, `${JSON.stringify(seed)}\n`)
-  put('prisma/default-worlds/manifest.json', `${JSON.stringify({ seedVersion: 1, worlds: [{ slug: seed.slug, id: seed.id, file: seedName, name: seed.name, visibility: seed.visibility }] }, null, 2)}\n`)
+  put('prisma/default-worlds/manifest.json', `${JSON.stringify({ seedVersion: 1, worlds: manifest }, null, 2)}\n`)
 
   // package.json: the same dependencies (the lockfile must still match), the slim Oasis's own name and scripts.
   const pkg = JSON.parse(data.get('package.json').toString('utf8'))
   const plugin = JSON.parse(data.get('plugins/oasis/.claude-plugin/plugin.json').toString('utf8'))
-  pkg.name = 'oasis-lite'
+  pkg.name = FULL ? 'oasis' : 'oasis-lite'
   pkg.version = plugin.version
   pkg.description = 'The Oasis: your Claude Code sessions as characters in a 3D village on your own machine.'
   pkg.license = 'MIT'
@@ -293,7 +326,7 @@ function writeCut({ chosen, avatarRows, data }, problems) {
     start: 'next start -p 4516 -H 127.0.0.1',
   }
   put('package.json', `${JSON.stringify(pkg, null, 2)}\n`)
-  const doc = assetsDoc(chosen, avatarRows)
+  const doc = assetsDoc(chosen, avatarRows, leftOutAvatars)
   put('ASSETS.md', doc.text)
   return doc.unknown
 }
@@ -340,7 +373,7 @@ function main() {
     const total = printTable(sizes(cut.chosen, (f) => cut.data.get(f).length))
     const doc = assetsDoc(cut.chosen, cut.avatarRows)
     for (const file of doc.unknown) problems.push(`no licence line for ${file} (scripts/slim/cut.config.mjs, assetLicences)`)
-    if (total.files > FILE_LIMIT) problems.push(`${total.files} files: over ${FILE_LIMIT}`)
+    if (total.files > LIMIT_FILES) problems.push(`${total.files} files: over ${LIMIT_FILES}`)
     return finish(problems)
   }
   const unknown = writeCut(cut, problems)
@@ -358,8 +391,8 @@ function main() {
   const archive = flag('--release') ? writeRelease(files) : flag('--no-archive') ? undefined : archiveSize(OUT, files)
   const total = printTable(sizes(files, (f) => fs.statSync(path.join(OUT, f)).size), archive)
   console.log(`\n  Written to ${OUT}`)
-  if (total.files > FILE_LIMIT) problems.push(`${total.files} files: over ${FILE_LIMIT}`)
-  if (archive !== undefined && archive > ARCHIVE_LIMIT_MIB * MIB) problems.push(`the archive is ${(archive / MIB).toFixed(1)} MiB: over ${ARCHIVE_LIMIT_MIB}`)
+  if (total.files > LIMIT_FILES) problems.push(`${total.files} files: over ${LIMIT_FILES}`)
+  if (archive !== undefined && archive > LIMIT_MIB * MIB) problems.push(`the archive is ${(archive / MIB).toFixed(1)} MiB: over ${LIMIT_MIB}`)
   return finish(problems)
 }
 

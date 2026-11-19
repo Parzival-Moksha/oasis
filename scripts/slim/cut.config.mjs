@@ -130,6 +130,74 @@ export const transforms = [
   { file: 'src/lib/forge/animation-library.ts', from: "{ id: 'sprint',      filename: 'Running.fbx',                     label: 'Sprint',        category: 'locomotion' },", to: "{ id: 'sprint',      filename: 'ual/UAL1_Standard.glb', glbClipName: 'Sprint_Loop', label: 'Sprint',        category: 'locomotion' }," },
 ]
 
+/**
+ * The full edition (`--edition full`): every feature on, and every asset whose licence allows passing it on.
+ * Size is no longer the rule (Anthropic's directory, with its 50 MiB, is closed to this plugin anyway);
+ * the licence is. What stays out is listed in `fullLeftOut`, with the reason.
+ */
+export const full = {
+  archiveLimitMib: 1500,
+  fileLimit: 20000,
+  include: [
+    'public/models/quaternius-scifi/',
+    'public/models/scifi-essentials/',
+    'public/models/quaternius-medieval-village/',
+    'public/models/quaternius-base-characters/',
+    'public/models/cyberpunk/',
+    'public/models/stylized-nature/',
+    'public/models/fantasy-props/',
+    'public/models/scifi-megakit/',
+    'public/models/quaternius-animations/',
+    'public/models/quaternius-animations-2/',
+    'public/models/trains/',
+    'public/models/kenney-furniture/',
+    'public/models/kenney-animated-characters/',
+    'public/hdri/',
+    'public/ground/',
+    'public/splash/',
+    'public/ui/',
+    'public/thumbs/',
+    'public/portal-thumbs/',
+    'prisma/seed-default-worlds.ts',
+  ],
+  /** Rules of `exclude` that the full edition does not apply: the AI generation routes are back (each needs the user's own key). */
+  keep: [
+    'src/app/api/imagine/',
+    'src/app/api/media/image/',
+    'src/app/api/media/video/',
+    'src/app/api/media/voice/',
+    'src/app/api/media/music/',
+    'src/app/api/conjure/',
+  ],
+  /** Every avatar whose own metadata says CC0. */
+  avatars: 'all-cc0',
+  /** The worlds a new install has; the first is where it opens. Each is checked: a world that places an unshipped file stops the cut. */
+  worlds: [
+    { seed: 'prisma/default-worlds/oasis-dusk.world.json' },
+    { seed: 'prisma/default-worlds/zen-workshop.world.json' },
+    { seed: 'prisma/default-worlds/the-council.world.json' },
+    { seed: 'prisma/default-worlds/floating-isle.world.json' },
+    { seed: 'prisma/default-worlds/neon-harbor.world.json' },
+  ],
+}
+
+/** What no edition ships, and why (printed by the cut, written into ASSETS.md). */
+export const fullLeftOut = [
+  { match: 'public/avatars/', what: 'avatars whose metadata is not CC0', why: 'CC BY for named licensees only, "Other", "Redistribution Prohibited", or made with a 3D generation service' },
+  { match: 'public/animations/', what: 'the Mixamo animations (.fbx)', why: 'Adobe allows them inside a product, not as files in a public repository' },
+  { match: 'public/models/random-objects/', what: '12 low-poly objects', why: 'source and licence unknown' },
+  { match: 'public/models/characters/', what: '4 characters', why: 'source and licence unknown' },
+  { match: 'public/models/psx-derelict-furniture/', what: '6 pieces of furniture', why: 'source and licence unknown' },
+  { match: 'public/models/highlands-fantasy/', what: '17 buildings', why: 'a free itch.io pack with no licence that allows passing it on' },
+  { match: 'public/conjured/', what: 'showcase 3D models made with Meshy and Tripo', why: 'the generation service\'s terms, not checked' },
+  { match: 'public/audio/spells/', what: 'Mixkit spell sounds and the owner\'s recordings', why: 'Mixkit forbids passing its files on; the recordings are personal' },
+  { match: 'public/audio/bg/', what: 'two music tracks', why: 'source unknown' },
+  { match: 'public/audio/04515/', what: 'the hosted site\'s welcome voice', why: 'personal recording' },
+  { match: 'public/_quality-check/', what: 'test files of the asset pipeline', why: 'not part of the product' },
+  { match: 'public/images/', what: 'uploaded pictures', why: 'the owner\'s own uploads' },
+  { match: 'public/generated-images/', what: 'showcase generated pictures', why: 'not part of the product' },
+]
+
 /** Asset folders and the licence each ships under, for ASSETS.md. `match` is a path prefix. */
 export const assetLicences = [
   { match: 'public/ui/', licence: 'Made for the Oasis (generated art); MIT with the code', source: 'the Oasis' },
@@ -143,8 +211,24 @@ export const assetLicences = [
   { match: 'public/fonts/inter-', licence: 'SIL Open Font License 1.1', source: 'Rasmus Andersson, Inter' },
   { match: 'public/lipsync/wlipsync/', licence: 'MIT', source: 'mrxz, wLipSync (browser runtime and starter profile)' },
   { match: 'public/voice/', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
+  { match: 'public/ground/sbs1/', licence: 'CC0 1.0', source: 'Screaming Brain Studios, Tiny Texture Pack' },
+  { match: 'public/ground/sbs2/', licence: 'CC0 1.0', source: 'Screaming Brain Studios, Tiny Texture Pack 2' },
   { match: 'public/ground/', licence: 'CC0 1.0', source: 'Poly Haven (polyhaven.com)' },
+  { match: 'public/hdri/', licence: 'CC0 1.0', source: 'Poly Haven (polyhaven.com) and ambientCG night skies' },
   { match: 'public/models/stylized-nature/', licence: 'CC0 1.0', source: 'Quaternius, Stylized Nature MegaKit' },
+  { match: 'public/models/quaternius-scifi/', licence: 'CC0 1.0', source: 'Quaternius, Sci-Fi Essentials Kit' },
+  { match: 'public/models/scifi-essentials/', licence: 'CC0 1.0', source: 'Quaternius, Sci-Fi Essentials Kit' },
+  { match: 'public/models/scifi-megakit/', licence: 'CC0 1.0', source: 'Quaternius, Modular Sci-Fi MegaKit' },
+  { match: 'public/models/quaternius-medieval-village/', licence: 'CC0 1.0', source: 'Quaternius, Medieval Village MegaKit' },
+  { match: 'public/models/quaternius-base-characters/', licence: 'CC0 1.0', source: 'Quaternius, Ultimate Modular Characters' },
+  { match: 'public/models/quaternius-animations', licence: 'CC0 1.0', source: 'Quaternius, Universal Animation Library' },
+  { match: 'public/models/cyberpunk/', licence: 'CC0 1.0', source: 'Quaternius, Cyberpunk Game Kit' },
+  { match: 'public/models/fantasy-props/', licence: 'CC0 1.0', source: 'Quaternius, Fantasy RPG Pack' },
+  { match: 'public/models/trains/', licence: 'CC0 1.0', source: 'Quaternius, Train Pack' },
+  { match: 'public/models/kenney-', licence: 'CC0 1.0', source: 'Kenney (kenney.nl)' },
+  { match: 'public/splash/', licence: 'Made for the Oasis (generated art); MIT with the code', source: 'the Oasis' },
+  { match: 'public/thumbs/', licence: 'Made for the Oasis (pictures of the models above); MIT with the code', source: 'the Oasis' },
+  { match: 'public/portal-thumbs/', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
   { match: 'public/favicon.svg', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
   { match: 'public/oasislogo.jpg', licence: 'Made for the Oasis; MIT with the code', source: 'the Oasis' },
 ]

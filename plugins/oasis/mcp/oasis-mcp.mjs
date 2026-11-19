@@ -7,8 +7,9 @@
 //
 //   - The Oasis is not running: the tool list is empty, and it fills by itself once the Oasis is up
 //     (a `tools/list_changed` notification), so a session opened before /oasis gets the tools later.
-//   - Tools that generate pictures, video, music or speech with AI models are never offered here
-//     (EXCLUDED below), whatever the local Oasis has.
+//   - Every tool the local Oasis has is offered, the ones that generate pictures, video, music, speech or 3D
+//     models included: each of those works with the user's own key in the Oasis and says so when it is missing.
+//     OASIS_PLUGIN_NO_GENERATION=1 leaves them out (EXCLUDED below).
 //   - Each tool gets a title and read-only / destructive hints when the Oasis did not send them.
 //
 // No dependencies: Node 18 or later (global fetch).
@@ -39,14 +40,15 @@ export function webUrl(value = process.env.OASIS_WEB_URL) {
   return DEFAULT_WEB
 }
 
-/** AI generation of pictures, video, music and speech is not part of this plugin. */
+/** The tools that generate with AI services; left out only with OASIS_PLUGIN_NO_GENERATION=1. */
 export const EXCLUDED = new Set([
   'generate_image', 'generate_video', 'generate_voice',
   'text_to_pic', 'text_to_pic_building', 'text_to_video', 'text_to_music',
   'conjure_framed_picture', 'avatarpic_merlin', 'avatarpic_user',
   'conjure_asset', 'process_conjured_asset',
 ])
-export const isExcluded = (name) => EXCLUDED.has(name) || /^(generate|text_to)_/.test(name)
+export const isGeneration = (name) => EXCLUDED.has(name) || /^(generate|text_to)_/.test(name)
+export const isExcluded = (name, env = process.env) => env.OASIS_PLUGIN_NO_GENERATION === '1' && isGeneration(name)
 
 const READ_ONLY = /^(get|list|query|search|screenshot)_/
 const DESTRUCTIVE = /^(remove|delete|clear)_|^load_world$/

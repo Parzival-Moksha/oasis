@@ -18,7 +18,7 @@ The first `/oasis` installs the Oasis itself (see below): a few minutes, once. A
 - `/oasis` and `/oasis status`, answered by the plugin itself: no model turn is spent.
 - A bridge: once a second the session asks the Oasis engine on this machine whether you said something to it in the village, and submits that as a prompt of this session. While the session replies, the text is sent to the engine so the village shows it word by word.
 - One short note in the system prompt (about 200 tokens) while the Oasis is running, saying that the session has an avatar there.
-- The Oasis world tools (look at the world, place and change things in it, take a screenshot), through a small local server in this plugin (`mcp/oasis-mcp.mjs`) that passes each call to the Oasis on this machine. It offers no tool that generates pictures, video, music or speech.
+- The Oasis world tools (look at the world, place and change things in it, take a screenshot), through a small local server in this plugin (`mcp/oasis-mcp.mjs`) that passes each call to the Oasis on this machine. The tools that generate pictures, video, music, speech or 3D models work only with your own key for that service, set in the Oasis; `OASIS_PLUGIN_NO_GENERATION=1` leaves them out.
 
 ## What it runs, sends and fetches
 
