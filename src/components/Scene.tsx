@@ -111,6 +111,7 @@ import { GAME_HUD_TEXT, GameKeycap } from './forge/GameKeycap'
 import { VoiceTypeMic } from './forge/VoiceTypeMic'
 import { PerfHeartbeat } from './forge/PerfHeartbeat'
 import { SunShadows } from './forge/SunShadows'
+import { RenderHygiene } from './forge/RenderHygiene'
 import { GameMenu, OPEN_CONFIG_EVENT, OPEN_HELP_EVENT } from './game-menu/GameMenu'
 import { GameMenuRailButton } from './game-menu/GameMenuRailButton'
 import { GameMenuCameraDrift } from './game-menu/GameMenuCameraDrift'
@@ -2109,6 +2110,8 @@ export default function Scene() {
         {!hostedMode && <PerfHeartbeat readFps={readLatestFps} />}
         {/* Soft shadows from the world's sun (Config → Graphics → Shadows) */}
         <SunShadows />
+        {/* Scene-wide three.js cost fixes (see-through flat meshes drawn in one pass) */}
+        <RenderHygiene />
         {/* The camera's slow drift behind the main menu (Esc). No frame callback while the menu is closed. */}
         <GameMenuCameraDrift />
         {/* The selected agent's effect and right-click-to-send. Nothing mounted while no agent is selected. */}
