@@ -118,6 +118,7 @@ import { GameMenuCameraDrift } from './game-menu/GameMenuCameraDrift'
 import { AgentSelectionLayer } from './village/AgentSelectionLayer'
 import { GameTooltip } from './forge/GameTooltip'
 import { AnimationBrowser } from './forge/AnimationBrowser'
+import { SkyTransition } from './forge/SkyTransition'
 import { settingsLookStyle, useSettingsLook } from '@/lib/settings-look'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
@@ -2061,6 +2062,8 @@ export default function Scene() {
         <color attach="background" args={['#07111a']} />
 
         {worldSkyBackground && <SkyBackground backgroundId={worldSkyBackground} />}
+        {/* One sky melts, rips or glitches into the next (Settings > World VFX > Sky change). */}
+        <SkyTransition />
 
         {/* ─═̷─═̷─🎮 CAMERA CONTROLLER — ONE owner, ONE useFrame, ZERO fights ─═̷─═̷─🎮 */}
         <CameraControllerComponent />

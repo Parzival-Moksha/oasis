@@ -9,6 +9,7 @@
 import { useOasisStore } from '@/store/oasisStore'
 import type { PlacementVfxType } from '@/lib/forge/placement-types'
 import { PortalTransitionSettingsPanel } from '../../PortalTransitionSettingsPanel'
+import { SkyTransitionSettings } from '../SkyTransitionSettings'
 
 const CONJURE_VFX_OPTIONS = [
   { id: 'random' as const, label: 'Random', desc: 'Different effect each time', icon: '\u{1F3B2}' },
@@ -57,6 +58,7 @@ export function WorldVfxTab() {
 
   return (
     <div className="space-y-4">
+      <SkyTransitionSettings />
       <section>
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Conjuration Effect</div>
         <div className="grid grid-cols-2 gap-1.5">
