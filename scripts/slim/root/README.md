@@ -39,4 +39,4 @@ node scripts/oasis.mjs start
 
 ## Licences
 
-The code is MIT (see `LICENSE`). Every avatar, sound, picture, animation and font is listed with its source and licence in `ASSETS.md`.
+The code is MIT (see `LICENSE`). Pictures, 3D models, avatars, animations, sounds and fonts keep the licences of their authors. Every avatar, sound, picture, animation and font is listed with its source and licence in `ASSETS.md`.
