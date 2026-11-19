@@ -73,7 +73,7 @@ export interface EngineAgentSnapshot {
   resolvedEffort?: string | null
   /** Eyes: each message the owner sends carries a picture from this agent's avatar. Missing on older engines. */
   eyes?: boolean
-  /** Claude in Chrome: the owner's real browser, each call asking first (engine chrome.js). */
+  /** Claude in Chrome: the owner's real browser, under the session's permission mode (engine chrome.js). */
   chrome?: boolean
   /** Voice: its replies end with a <spoken> line that its avatar says out loud (engine agent.js VOICE_NOTE). Missing on older engines. */
   speak?: boolean

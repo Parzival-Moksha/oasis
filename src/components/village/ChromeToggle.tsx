@@ -22,8 +22,8 @@ export function ChromeToggle({ agent }: { agent: EngineAgentState }) {
   if (!agent.owned) return null
   const on = agent.chrome === true
   const label = on
-    ? 'Chrome on: this agent can use your Chrome through the Claude in Chrome extension; every browser action asks you first. Click to turn off (restarts it).'
-    : 'Chrome off. Click to let this agent use your Chrome (Claude in Chrome extension); every browser action will ask you first. It restarts with the same session.'
+    ? 'Chrome on: this agent can use your Chrome through the Claude in Chrome extension, under its permission mode like your other sessions. Click to turn off (restarts it).'
+    : 'Chrome off. Click to let this agent use your Chrome (Claude in Chrome extension), under its permission mode like your other sessions. It restarts with the same session.'
   return (
     <button
       type="button"

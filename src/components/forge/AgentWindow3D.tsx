@@ -66,7 +66,8 @@ function FocusPrompt({ visible, label }: { visible: boolean; label: string }) {
           animation: 'focusPromptPulse 1.5s ease-in-out infinite',
         }}
       >
-        HIT N · {label}
+        {/* Shown on the selected window (its golden border): Enter zooms into it; N only steps to the next agent window. */}
+        HIT ENTER · {label}
       </div>
       <style>{`
         @keyframes focusPromptPulse {
