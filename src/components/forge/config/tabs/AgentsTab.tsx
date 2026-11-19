@@ -121,7 +121,7 @@ export function AgentsTab() {
           <div>
             <div className="mb-1 text-sm text-gray-300">When an agent leaves</div>
             <KitTabs tabs={LEAVE_EFFECTS.map(choice => ({ id: choice.id, label: choice.label, title: choice.hint }))} active={looks.leave} onChange={leave => setVillageLooks({ leave })} />
-            <div className="mt-1 text-[10px] text-gray-500">{LEAVE_EFFECTS.find(choice => choice.id === looks.leave)?.hint} Dismiss an agent (its panel, or Delete) to see it.</div>
+            <div className="kit-hint mt-1">{LEAVE_EFFECTS.find(choice => choice.id === looks.leave)?.hint} Dismiss an agent (its panel, or Delete) to see it.</div>
           </div>
           <KitToggle
             checked={looks.leaveSound}
