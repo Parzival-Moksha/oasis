@@ -34,6 +34,7 @@ import { SPEECH_SPEED, VILLAGE_VOICES, villageVoice } from '../../lib/village/vi
 import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { AvatarGallery } from '../forge/AvatarGallery'
 import { pressVillageFollow, setVillageFollowFor, useVillageFollowView } from './follow-view'
+import { HomeSection } from './HomeSection'
 import { showNotice } from '../forge/GlobalNotice'
 import {
   agentVoiceChosenBy,
@@ -210,6 +211,7 @@ export function AgentSettingsButton({ agent, large = false }: { agent: Pick<Engi
           {agent.owned && <ScheduleSection agent={agent} name={name} />}
           {agent.owned && <VoiceSection agent={agent} agentKey={agentKey} />}
           <WalkingSection agentId={agent.id} agentKey={agentKey} name={agent.name} />
+          <HomeSection agentKey={agentKey} name={name} />
           <AgentSelectionSection agentId={agent.id} agentKey={agentKey} name={agent.name} />
 
           <div className={HEADING}>Avatar · {name}</div>

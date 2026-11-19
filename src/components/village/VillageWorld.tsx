@@ -69,6 +69,7 @@ import { AcademyLevelTag, AcademyVillageBody, useAcademyStone, useAcademyTrainee
 import { VillageVoice } from './VillageVoice'
 import { VillageTag, VillageTagDriver } from './VillageTags'
 import { isStageWorldName, stationAtAnchor } from '../../lib/village/village-stage'
+import { getVillageHome, getVillageHomesVersion, subscribeVillageHomes, useVillageHomesSync } from './village-homes'
 import { readableAccent, tagMarker } from '../../lib/village/village-tags'
 import { getAgentAccent, getPanelLookVersion, subscribePanelLook } from '../../lib/village/panel-look'
 import { getVillageCombatVersion, getVillageVitals, subscribeVillageCombat } from '../../lib/village/village-combat'
@@ -586,9 +587,11 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
   return { mover, away, walking }
 }
 
-function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLabelsVisible, overlayZ, bare = false }: {
+function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLabelsVisible, overlayZ, bare = false, homed = false }: {
   /** On a stage (the Council's world): the agent alone, no desk, no screen, no helpers. */
   bare?: boolean
+  /** At its own home (village-homes.ts): no desk; its screen floats where the desk's would be, its marker stays. */
+  homed?: boolean
   agentId: string
   placement: VillageStationPlacement
   avatarUrl: string
@@ -691,7 +694,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
     <>
       {/* The desk: it and its screen stay where they are, also while the agent walks with you. */}
       {!bare && <group position={placement.position} rotation-y={placement.rotationY}>
-        <VillageDesk color={color} working={status === 'working'} observed={observed} />
+        {!homed && <group name="village-desk"><VillageDesk color={color} working={status === 'working'} observed={observed} /></group>}
         {/* Click target enclosing the desk and the avatar's place at it (in front of the VRM's own proxy box). */}
         <mesh position={STATION.hitCenter} {...hitHandlers}>
           <boxGeometry args={STATION.hitSize} />
@@ -955,6 +958,10 @@ export function VillageWorld() {
   // plaza, mission wall, skill tree or helpers. The cast comes and goes with the Council (village-council.ts).
   const stage = useOasisStore(s => isStageWorldName(s.worldRegistry.find(world => world.id === (s.viewingWorldId || s.activeWorldId))?.name))
   useSyncExternalStore(subscribeCouncil, getCouncilVersion, () => 0)
+  // Homes (village-homes.ts): an agent with one in this world stands there, without a desk, instead of on the ring.
+  useVillageHomesSync()
+  const worldId = useOasisStore(s => s.viewingWorldId || s.activeWorldId || null)
+  useSyncExternalStore(subscribeVillageHomes, getVillageHomesVersion, () => 0)
   const castKey = stage ? [...getStageCast()].map(([id, at]) => `${id}\u0001${at.x.toFixed(2)}\u0001${at.z.toFixed(2)}\u0001${at.yaw.toFixed(4)}`).join('\u0002') : ''
 
   const roster = useMemo<VillageRosterAgent[]>(() => (rosterKey ? rosterKey.split('\u0002').map(item => {
@@ -980,6 +987,10 @@ export function VillageWorld() {
   }, [village])
   const avatars = village.avatars
   const seatsKey = roster.map(agent => `${agent.id}:${village.seats[agent.id] ?? 0}`).join('|')
+  const homesKey = stage ? '' : roster.map(agent => {
+    const home = getVillageHome(worldId, agent.sessionId || agent.id)
+    return home ? `${agent.id}\u0001${home.x}\u0001${home.z}\u0001${home.yaw}` : ''
+  }).filter(Boolean).join('\u0002')
 
   const placements = useMemo(() => {
     const map = new Map<string, VillageStationPlacement>()
@@ -1002,20 +1013,32 @@ export function VillageWorld() {
     }
     return map
   }, [stage, castKey, seatsKey, terrainHeights, origin])
+  // The ring as seated, with the homed ones moved to their homes (the mission wall stays with the ring).
+  const homed = useMemo(() => {
+    const ids = new Set<string>()
+    const map = new Map(placements)
+    for (const entry of homesKey ? homesKey.split('\u0002') : []) {
+      const [id, x, z, yaw] = entry.split('\u0001')
+      const ground = sampleTerrainHeightAt(terrainHeights, Number(x), Number(z))
+      map.set(id, stationAtAnchor([Number(x), ground, Number(z)], Number(yaw)))
+      ids.add(id)
+    }
+    return { ids, placements: map }
+  }, [placements, homesKey, terrainHeights])
 
   // The desks, and out of the registry again when they change or the village goes. One effect for both: a
   // separate cleanup-only effect used to run after this one on a hot reload (React re-runs every effect then)
   // and left the registry empty, so no agent was "nearby" any more (no T/E/F prompt) until a full reload.
   useLayoutEffect(() => {
-    setVillageStations(placements)
-    return () => clearVillageStations(placements)
-  }, [placements])
+    setVillageStations(homed.placements)
+    return () => clearVillageStations(homed.placements)
+  }, [homed])
   // Who wears which body, for the report to the engine (VillagePresence).
   useLayoutEffect(() => {
     setVillageAvatars(avatars)
   }, [avatars])
 
-  const visible = useVisibleDeskWindows(placements)
+  const visible = useVisibleDeskWindows(homed.placements)
   const mobile = useIsMobileOasis()
   const overlayZ = mobile ? OVERLAY_Z_MOBILE : OVERLAY_Z
 
@@ -1025,7 +1048,7 @@ export function VillageWorld() {
       {/* Blood when the player's bolts hit an agent (VillageGore, village-combat.ts). */}
       <VillageGore />
       {roster.map(agent => {
-        const placement = placements.get(agent.id)
+        const placement = homed.placements.get(agent.id)
         if (!placement) return null
         return (
           <VillageStation
@@ -1037,6 +1060,7 @@ export function VillageWorld() {
             helperLabelsVisible={visible.near.has(agent.id)}
             overlayZ={overlayZ}
             bare={stage}
+            homed={homed.ids.has(agent.id)}
           />
         )
       })}

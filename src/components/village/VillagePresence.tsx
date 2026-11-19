@@ -13,6 +13,8 @@ import type { EnginePresence } from '../../lib/agent-engine-types'
 import { AGENT_AVATAR_CATALOG } from '../../lib/agent-avatar-catalog'
 import { villageAgentKey, type Vec3 } from '../../lib/village/village-layout'
 import { describePlace, type PlaceThing } from '../../lib/village/village-place'
+import { HOME } from '../../lib/village/village-homes'
+import { currentVillageWorld, getVillageHome } from './village-homes'
 import { villageVoice } from '../../lib/village/village-voices'
 import { getLiveObjectTransform } from '../../lib/live-object-transforms'
 import { getAgentVoiceSettings } from './village-companion'
@@ -82,6 +84,8 @@ function buildPresence(): EnginePresence[] {
         anchor: desk!.anchor,
         rotationY: desk!.rotationY,
         plaza,
+        // A home instead of a desk (village-homes.ts): where it is, and its ground to build on.
+        home: getVillageHome(currentVillageWorld(), key) ? { buildRadius: HOME.buildRadius, objects: HOME.objects, lights: HOME.lights } : null,
         things,
         neighbours: desks.filter(other => other.id !== id).map(other => ({ name: agentDisplayName(other.agent), position: other.desk!.anchor })),
       }),
