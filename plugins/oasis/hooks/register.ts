@@ -62,7 +62,8 @@ async function oasisSection($: EngineInterface, fallback: string, canSendFiles: 
 
 const WORLD_URL = 'http://localhost:4516/?profile=village'
 // A first run downloads the slim Oasis, installs its packages and builds it: minutes, once.
-const LAUNCH_TIMEOUT_MS = 15 * 60_000
+// Ten minutes is the longest a mod may let a program run.
+const LAUNCH_TIMEOUT_MS = 600_000
 
 /** /oasis status: what is running, in two lines. */
 async function oasisStatus($: EngineInterface, engine: string): Promise<string> {
@@ -105,7 +106,7 @@ async function openOasis($: EngineInterface, engine: string, sessionId: string, 
     }
     return said.slice(-2).join(' ') || `The Oasis launcher failed (exit ${ran.exitCode}).`
   } catch {
-    return 'The Oasis launcher could not run. It needs Node.js 20 or later on the PATH (node --version).'
+    return 'The Oasis launcher did not finish. If this was the first run, it may still be installing: type /oasis again in a minute. Otherwise check that Node.js 20 or later is on the PATH (node --version).'
   }
 }
 
