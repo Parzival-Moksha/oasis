@@ -123,7 +123,7 @@ import { AgentSelectionLayer } from './village/AgentSelectionLayer'
 import { GameTooltip } from './forge/GameTooltip'
 import { AnimationBrowser } from './forge/AnimationBrowser'
 import { SkyTransition } from './forge/SkyTransition'
-import { KitConfirmHost } from './ui-kit'
+import { KitButton, KitConfirmHost } from './ui-kit'
 import { settingsLookStyle, useSettingsLook } from '@/lib/settings-look'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
@@ -2162,7 +2162,8 @@ export default function Scene() {
         enabled={mobileOasis && (settings.controlMode === 'noclip' || settings.controlMode === 'third-person')}
         spellControlsEnabled={effectiveRp1Mode}
       />
-      {!villageProfile && <PlayerVitalsHud visible={effectiveRp1Mode && !isPortalZeroWorld} />}
+      {/* HP / mana / XP. In the village only while a combat spell is armed. */}
+      <PlayerVitalsHud visible={effectiveRp1Mode && !isPortalZeroWorld} combatOnly={villageProfile} />
       {!villageProfile && <PvPOverlay visible={effectiveRp1Mode && !isPortalZeroWorld} />}
       {!villageProfile && <WorldChatOverlay visible={Boolean(activeWorldId) && !activeWorldIsGoogleForm} />}
       {villageProfile && (
@@ -2467,32 +2468,16 @@ export default function Scene() {
 
       <ObjectHtmlOverlay />
 
-      {/* EXIT RP1 — floating escape hatch when Ready Player 1 mode is active */}
+      {/* Play mode (RP1) is on: spells fire, editing is hidden. This goes back to build mode. */}
       {effectiveRp1Mode && !readOnlyForcesRp1 && (
-        <button
-          onClick={() => updateSetting('rp1Mode', false)}
-          style={{
-            position: 'fixed',
-            bottom: 88,
-            right: 24,
-            zIndex: 9999,
-            padding: '6px 16px',
-            borderRadius: 8,
-            background: 'rgba(0,0,0,0.7)',
-            border: '1px solid rgba(20,184,166,0.4)',
-            color: '#14b8a6',
-            fontSize: 12,
-            fontWeight: 600,
-            letterSpacing: '0.05em',
-            cursor: 'pointer',
-            backdropFilter: 'blur(8px)',
-            transition: 'all 0.2s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(20,184,166,0.2)'; e.currentTarget.style.borderColor = 'rgba(20,184,166,0.8)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.7)'; e.currentTarget.style.borderColor = 'rgba(20,184,166,0.4)' }}
-        >
-          EXIT RP1
-        </button>
+        <div style={{ position: 'fixed', bottom: 88, right: 24, zIndex: 9999 }}>
+          <KitButton
+            onClick={() => updateSetting('rp1Mode', false)}
+            title="Play mode: spells fire, editing is hidden. Click to go back to build mode (select, move, create)."
+          >
+            Build mode
+          </KitButton>
+        </div>
       )}
 
       {/* ░▒▓ LOADING OVERLAY — removed. WorldLoadingBar (subscribe via
