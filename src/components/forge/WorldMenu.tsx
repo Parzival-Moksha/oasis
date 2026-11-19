@@ -1,6 +1,7 @@
 'use client'
 
 import { useContext, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useMindcraftLook } from '@/components/village/mindcraft-look'
 
 import { useOasisStore } from '@/store/oasisStore'
 import { useAudioManager } from '@/lib/audio-manager'
@@ -153,6 +154,7 @@ function formatWizardSeenAt(updatedAt: number): string {
 }
 
 export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }) {
+  useMindcraftLook() // the frame's stylesheet
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -607,7 +609,9 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
       {isOpen && (
         <div
           data-ui-panel
-          className="absolute left-full top-0 z-[260] ml-2 max-h-[82vh] w-[360px] overflow-y-auto rounded-lg border border-white/10 bg-black/[0.92] p-3 font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(34,211,238,0.14)] backdrop-blur-md max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto max-[700px]:p-2"
+          // The spell book's jewelled iron frame (mindcraft-look.tsx, nine-sliced), like Mindcraft.
+          style={{ ['--frame-k' as string]: 0.24 }}
+          className="oasis-frame absolute left-full top-0 z-[260] ml-2 max-h-[82vh] w-[410px] overflow-y-auto px-1 pb-1 pt-0 font-mono text-white max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto max-[700px]:p-2"
           onMouseDown={event => event.stopPropagation()}
         >
           <style>{`
