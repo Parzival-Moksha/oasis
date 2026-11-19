@@ -169,6 +169,14 @@ try {
   const s6 = (await c.cmd('listAgents')).find((a) => a.id === bad.id);
   check('no session: stopped, the sign says why', s6.status === 'error' && /no session/.test(s6.statusReason) && !s6.alive, s6.statusReason);
 
+  // 7. a working folder given as the Hermes home (2026-11-19: Hermes set up a new home in C:\7c_oasis): refused, no process
+  m = c.mark();
+  const wrong = await c.cmd('spawnAgent', { name: 'Hermes wrong home', cwd: DESK, runtime: 'hermes', hermesHome: DESK });
+  await sleep(500);
+  const s7 = (await c.cmd('listAgents')).find((a) => a.id === wrong.id);
+  check('a folder that is not a Hermes home is refused, nothing starts', s7.status === 'error' && /not a Hermes home/.test(s7.statusReason) && !s7.alive && !fs.existsSync(path.join(DESK, 'auth.json')), s7.statusReason);
+  await c.cmd('kill', { agentId: wrong.id }).catch(() => {});
+
   for (const a of [id, bad.id]) await c.cmd('kill', { agentId: a }).catch(() => {});
   c.ws.close();
 } catch (e) {

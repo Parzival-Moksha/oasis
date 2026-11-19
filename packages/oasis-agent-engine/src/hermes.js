@@ -134,6 +134,21 @@ export function sshCommand(remote, { worldTools = true } = {}) {
   ];
 }
 
+/**
+ * The Hermes home a local Hermes runs in: the profile folder given, else HERMES_HOME, else the Windows installer's
+ * (%LOCALAPPDATA%\hermes) or ~/.hermes. It must be an absolute path holding a config.yaml, which a working folder
+ * never has: Hermes would otherwise set up a new home wherever it is pointed. -> {ok, path} | {ok:false, error}
+ */
+export function resolveHermesHome(given, env = process.env) {
+  const local = env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+  const fallback = process.platform === 'win32' ? path.join(local, 'hermes') : path.join(os.homedir(), '.hermes');
+  const home = (typeof given === 'string' && given.trim()) || (env.HERMES_HOME || '').trim() || fallback;
+  const from = given ? 'the profile folder' : env.HERMES_HOME ? 'HERMES_HOME' : 'the default Hermes home';
+  if (!path.isAbsolute(home)) return { ok: false, error: `${from} "${home}" is not a full path: give a Hermes profile folder (one with a config.yaml)` };
+  if (!fs.existsSync(path.join(home, 'config.yaml'))) return { ok: false, error: `${from} ${home} is not a Hermes home (no config.yaml): give a Hermes profile folder, e.g. ${path.join(fallback, 'profiles', '<name>')}` };
+  return { ok: true, path: home };
+}
+
 /** The argv that starts `hermes acp` (see the header). */
 export function hermesCommand(spec = {}) {
   if (spec.remote) return sshCommand(spec.remote, { worldTools: spec.worldTools !== false });
@@ -290,8 +305,19 @@ export class HermesAgent {
     const [exe, ...args] = hermesCommand(this);
     const env = { ...process.env, PYTHONIOENCODING: 'utf-8', OASIS_AGENT_ID: this.id, ...(this.hub.url ? { OASIS_ENGINE_URL: this.hub.url } : {}) };
     for (const key of Object.keys(env)) if (key === 'CLAUDECODE' || key.startsWith('CLAUDE_CODE_')) delete env[key];
-    if (this.hermesHome) env.HERMES_HOME = this.hermesHome;
-    this.hub.log(`[${this.name}] spawn ${exe} ${args.join(' ')} (hermes, cwd ${this.cwd}${this.hermesHome ? `, HERMES_HOME ${this.hermesHome}` : ''})`);
+    // A Hermes here only ever runs in a real Hermes home: one with a config.yaml (the profile folder given, else
+    // HERMES_HOME, else the installer's home). A folder that is not one (2026-11-19: a working folder typed into
+    // the profile field made Hermes set up a fresh home, with a copy of the gh token, in C:\7c_oasis) is refused.
+    if (!this.remote && !this.command) {
+      const home = resolveHermesHome(this.hermesHome);
+      if (!home.ok) {
+        this.setStatus(STATUS.ERROR, home.error);
+        this.emit('error', { message: home.error });
+        return;
+      }
+      env.HERMES_HOME = home.path;
+    }
+    this.hub.log(`[${this.name}] spawn ${exe} ${args.join(' ')} (hermes, cwd ${this.cwd}${env.HERMES_HOME && !this.remote ? `, HERMES_HOME ${env.HERMES_HOME}` : ''})`);
     clearTimeout(this.reconnect.timer);
     this.reconnect.timer = null;
     // A remote agent's world gate listens on its fixed port before ssh connects; the Pi only reaches it after
