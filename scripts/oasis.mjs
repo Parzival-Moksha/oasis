@@ -131,7 +131,12 @@ function setup() {
   }
   if (SLIM && !fs.existsSync(path.join(HOME, '.next', 'BUILD_ID'))) {
     say('Building the Oasis (once, a minute or two) …')
-    if (node(bin('next', 'dist', 'bin', 'next'), ['build'], { env: { ...process.env, ...webEnv() } }) !== 0) return fail('The build failed.')
+    // The build fetches its web fonts from Google; one hiccup there fails it, so it is tried twice.
+    const build = () => node(bin('next', 'dist', 'bin', 'next'), ['build'], { env: { ...process.env, ...webEnv() } })
+    if (build() !== 0) {
+      say('The build failed; trying once more …')
+      if (build() !== 0) return fail('The build failed twice. It needs the internet once (for its fonts); check the connection and start the Oasis again.')
+    }
     steps.push('build')
   }
   if (steps.length) say(`Set up: ${steps.join(', ')}.`)
