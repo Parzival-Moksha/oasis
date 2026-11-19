@@ -51,5 +51,5 @@ export async function POST(request: NextRequest) {
     : { key: body.key, action }
   const result = await keychainAction(input)
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status, headers: NO_STORE })
-  return NextResponse.json({ ok: true, key: result.key, ...(result.warning ? { warning: result.warning } : {}), ...(result.file ? { file: result.file } : {}) }, { headers: NO_STORE })
+  return NextResponse.json({ ok: true, key: result.key, ...(result.warning ? { warning: result.warning } : {}), ...(result.file ? { file: result.file } : {}), ...(result.restart ? { restart: true } : {}) }, { headers: NO_STORE })
 }

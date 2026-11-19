@@ -7,6 +7,8 @@
 // in a variable that outlives the call, not in a response (the server never sends one back).
 
 import type { KeychainKeyView, KeyState } from '../../lib/village/keychain'
+import { forgetFeatureKeyStates } from '../../lib/feature-keys-client'
+import { closeCharacter, getCharacterState, openCharacter } from './character-store'
 
 export const VILLAGE_ACADEMY_KEYCHAIN_LAYER = 'village-academy-keychain'
 const REFRESH_MS = 20_000
@@ -114,14 +116,25 @@ export function watchKeychainFromMap(on: boolean): void {
   if (on) void refreshKeychain()
 }
 
-export function openKeychain(): void {
-  if (state.open) return
-  set({ open: true, loading: state.keys.length === 0 })
-  void refreshKeychain()
+/**
+ * The keychain lives on the Character menu's Keys tab. `focusKey`: a key to scroll to and light up ("needs a
+ * key" on a spell opens it there).
+ */
+export function openKeychain(focusKey?: string | null): void {
+  openCharacter('keys', { focusKey: typeof focusKey === 'string' ? focusKey : null })
 }
 
+/** Close the menu if it shows the keychain. */
 export function closeKeychain(): void {
-  if (state.open) set({ open: false })
+  const character = getCharacterState()
+  if (character.open && character.tab === 'keys') closeCharacter()
+}
+
+/** The Character menu says whether the Keys tab is on screen: the list is polled only then (or for the map's gems). */
+export function setKeychainShown(on: boolean): void {
+  if (on === state.open) return
+  set({ open: on, loading: on && state.keys.length === 0 })
+  if (on) void refreshKeychain()
 }
 
 // ─── changing ───────────────────────────────────────────────────────────────
@@ -131,14 +144,16 @@ export type KeychainChange =
   | { key: string; action: 'store'; value: string; name?: string }
 
 /** Mark, unmark, or store a pasted key. The value is passed on and dropped; the answer holds none. */
-export async function changeKeychain(change: KeychainChange): Promise<{ ok: boolean; error?: string; warning?: string; file?: string }> {
+export async function changeKeychain(change: KeychainChange): Promise<{ ok: boolean; error?: string; warning?: string; file?: string; restart?: boolean }> {
   try {
     const response = await fetch('/api/academy/keychain', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(change) })
-    const data = await response.json().catch(() => ({})) as { error?: string; key?: KeychainKeyView; warning?: string; file?: string }
+    const data = await response.json().catch(() => ({})) as { error?: string; key?: KeychainKeyView; warning?: string; file?: string; restart?: boolean }
     if (!response.ok) return { ok: false, error: data.error || `HTTP ${response.status}` }
     lastBody = ''
+    // The spell book asks again which spells have their key.
+    forgetFeatureKeyStates()
     await refreshKeychain(true)
-    return { ok: true, ...(data.warning ? { warning: data.warning } : {}), ...(data.file ? { file: data.file } : {}) }
+    return { ok: true, ...(data.warning ? { warning: data.warning } : {}), ...(data.file ? { file: data.file } : {}), ...(data.restart ? { restart: true } : {}) }
   } catch {
     return { ok: false, error: 'could not reach the Oasis' }
   }

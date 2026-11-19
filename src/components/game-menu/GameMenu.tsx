@@ -12,10 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useInputManager } from '@/lib/input-manager'
 import { useOasisStore } from '@/store/oasisStore'
 import { openMindcraft } from '@/components/village/MindcraftView'
-import { openAcademyMap } from '@/components/village/academy-store'
-import { openKeychain } from '@/components/village/keychain-store'
-import { showNotice } from '@/components/forge/GlobalNotice'
-import { isVillageProfileClient } from '@/lib/oasis-profile'
+import { openCharacter } from '@/components/village/character-store'
 import { cellsPath, textCells, textWidth } from '@/components/forge/splash/intro-overlay'
 import { useGameMenu } from '@/lib/game-menu/menu-store'
 import { getSelectedVillageAgent, selectVillageAgent } from '@/lib/village/agent-selection'
@@ -362,17 +359,8 @@ function GameMenuScreen({ closing }: { closing: boolean }) {
     // Continue from mouse-look gives the mouse back to the camera once the menu is gone.
     menu.closeMenu({ relock: id === 'continue' && menu.openedFromMouseLook })
     if (id === 'mindcraft') openMindcraft()
-    // The Academy's skill map (also K): it lives in the Agent Village.
-    if (id === 'skills') {
-      if (isVillageProfileClient()) openAcademyMap()
-      else showNotice('Skills live in the Agent Village: open the Oasis with ?profile=village.', 'info')
-    }
-    // The Academy's keychain: which keys the agents hold.
-    if (id === 'keychain') {
-      if (isVillageProfileClient()) openKeychain()
-      else showNotice('The keychain lives in the Agent Village: open the Oasis with ?profile=village.', 'info')
-    }
-    if (id === 'profile') window.dispatchEvent(new CustomEvent(OPEN_PROFILE_EVENT))
+    // The player menu: Character, Skills (K) and Keys (CharacterMenu.tsx).
+    if (id === 'character') openCharacter()
     if (id === 'config') window.dispatchEvent(new CustomEvent(OPEN_CONFIG_EVENT))
     if (id === 'help') window.dispatchEvent(new CustomEvent(OPEN_HELP_EVENT))
   }, [])

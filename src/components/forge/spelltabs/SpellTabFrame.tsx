@@ -20,6 +20,8 @@ import { createPortal } from 'react-dom'
 import { useUILayer } from '@/lib/input-manager'
 import { useAudioManager } from '@/lib/audio-manager'
 import { useFeatureKey } from '@/lib/feature-keys-client'
+import { openKeychain } from '@/components/village/keychain-store'
+import { KitButton } from '@/components/ui-kit'
 
 const PANEL_MIN_WIDTH = 320
 const PANEL_MIN_HEIGHT = 420
@@ -331,8 +333,9 @@ export function SpellTabFrame({
       <div className="overflow-y-auto p-3 flex-1 min-h-0">
         {/* No key for this feature on this machine: one plain line, and the controls greyed out. */}
         {keyMissing && (
-          <div role="status" className="mb-3 rounded-md border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-[12px] leading-5 text-amber-100">
-            {keyState?.line}
+          <div role="status" className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-[12px] leading-5 text-amber-100">
+            <span>{keyState?.line}</span>
+            <KitButton variant="primary" data-spelltab-add-key onClick={() => openKeychain(keyState?.keychainKey || null)}>Add the key</KitButton>
           </div>
         )}
         <div className={keyMissing ? 'pointer-events-none select-none opacity-40 grayscale' : undefined} aria-disabled={keyMissing || undefined}>

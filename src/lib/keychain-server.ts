@@ -15,6 +15,7 @@ import path from 'node:path'
 import { resolveClaudeCli } from './claude-bin'
 import { buildClaudeCliEnv } from './claude-cli-env'
 import { loadAcademySets } from './academy-server'
+import { OASIS_FEATURE_KEYS } from './feature-keys'
 import {
   buildKeychain,
   formatEnvValue,
@@ -271,6 +272,8 @@ async function allKeysAndSkills(): Promise<{ keys: AcademyKey[]; skills: Academy
     for (const key of set.content.keys) if (!keys.some(item => item.id === key.id)) keys.push(key)
     for (const skill of set.content.skills) if (!skills.some(item => item.id === skill.id)) skills.push(skill)
   }
+  // The Oasis's own spells' keys (fal, Meshy, Tripo...): listed even when no Academy set names them.
+  for (const key of OASIS_FEATURE_KEYS) if (!keys.some(item => item.id === key.id)) keys.push(key)
   return { keys, skills }
 }
 
@@ -368,7 +371,7 @@ export type KeychainAction =
   | { key: string; action: 'have' | 'unmark' }
   | { key: string; action: 'store'; value: string; name?: string }
 
-export type KeychainResult = { ok: true; key: KeychainKeyView; warning?: string; file?: string } | { ok: false; status: number; error: string }
+export type KeychainResult = { ok: true; key: KeychainKeyView; warning?: string; file?: string; restart?: boolean } | { ok: false; status: number; error: string }
 
 let queue: Promise<unknown> = Promise.resolve()
 
@@ -430,7 +433,7 @@ export function keychainAction(action: KeychainAction, options: { paths?: Keycha
     const snapshot = await keychainSnapshot({ ...options, fresh: true })
     const view = snapshot.keys.find(item => item.id === key.id)
     if (!view) return { ok: false, status: 500, error: 'the key vanished' }
-    return { ok: true, key: view, ...(warning ? { warning } : {}), ...(written ? { file: written } : {}) }
+    return { ok: true, key: view, ...(warning ? { warning } : {}), ...(written ? { file: written } : {}), ...(written && process.env.NODE_ENV === 'production' ? { restart: true } : {}) }
   })
   queue = run.catch(() => {})
   return run.catch((error): KeychainResult => ({ ok: false, status: 500, error: error instanceof Error ? error.message.replace(/\s+/g, ' ').slice(0, 200) : 'keychain failed' }))

@@ -116,6 +116,7 @@ import { RenderHygiene } from './forge/RenderHygiene'
 import { FlopSaverDriver } from './forge/FlopSaverDriver'
 import { useFlopCaps } from '@/lib/use-flop-caps'
 import { GameMenu, OPEN_CONFIG_EVENT, OPEN_HELP_EVENT } from './game-menu/GameMenu'
+import { CharacterMenu } from './village/CharacterMenu'
 import { GameMenuRailButton } from './game-menu/GameMenuRailButton'
 import { GameMenuCameraDrift } from './game-menu/GameMenuCameraDrift'
 import { AgentSelectionLayer } from './village/AgentSelectionLayer'
@@ -2512,6 +2513,8 @@ export default function Scene() {
 
       {/* Main menu: Esc when nothing else is open. Renders nothing while closed. */}
       <GameMenu />
+      {/* The player menu: Character, Skills, Keys (village/CharacterMenu.tsx). */}
+      <CharacterMenu />
       {/* Every `title` tooltip in the Oasis's own material instead of the browser's grey box. */}
       <GameTooltip />
       {/* Every clip we may ship, played on your avatar (Settings > Experiments > Animations). */}

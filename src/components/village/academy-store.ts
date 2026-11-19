@@ -18,6 +18,7 @@ import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
 import { useOasisStore } from '../../store/oasisStore'
 import { leaveVillageFocus } from './village-actions'
+import { closeCharacter, getCharacterState, openCharacter } from './character-store'
 import { SettingsContext } from '../scene-lib/contexts'
 
 export const ACADEMY_REFRESH_MS = 2500
@@ -296,17 +297,24 @@ export function closeAcademyReader(): void {
 
 // ─── the skill map (the overlay) ────────────────────────────────────────────
 
+/** The skill map lives on the Character menu's Skills tab: K, the menu, the HUD button all open it there. */
 export function openAcademyMap(): void {
-  if (state.mapOpen) return
-  // An open agent panel would lie over the map and keep the sheet from showing: leave it first.
+  // An open agent panel would lie over the menu and keep the sheet from showing: leave it first.
   if (useOasisStore.getState().agentEngine.focusedAgentId) leaveVillageFocus()
-  set({ mapOpen: true, reader: null, readerMap: false })
-  void refreshAcademy()
+  openCharacter('skills')
 }
 
+/** Close the menu if it shows the skill map. */
 export function closeAcademyMap(): void {
-  if (!state.mapOpen) return
-  set({ mapOpen: false, ...(state.readerMap ? { reader: null, readerMap: false } : {}) })
+  const character = getCharacterState()
+  if (character.open && character.tab === 'skills') closeCharacter()
+}
+
+/** The Character menu says whether the Skills tab is on screen: the map's set is polled only then. */
+export function setAcademyMapShown(on: boolean): void {
+  if (on === state.mapOpen) return
+  set({ mapOpen: on, ...(!on && state.readerMap ? { reader: null, readerMap: false } : {}) })
+  if (on) void refreshAcademy()
 }
 
 /** Switch the map to another set of skills (remembered in this browser). */

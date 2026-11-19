@@ -3,7 +3,7 @@
 // The picture on each main-menu tile, drawn in SVG (no image files). Each has its own palette,
 // its own surface pattern and one emblem.
 
-export type MenuTileId = 'mindcraft' | 'skills' | 'keychain' | 'profile' | 'config' | 'help' | 'invite' | 'continue'
+export type MenuTileId = 'mindcraft' | 'character' | 'config' | 'help' | 'invite' | 'continue'
 
 export interface MenuTileDef {
   id: MenuTileId
@@ -14,9 +14,8 @@ export interface MenuTileDef {
 
 export const MENU_TILES: MenuTileDef[] = [
   { id: 'mindcraft', label: 'Mindcraft', sub: 'Your days, missions and XP', accent: '#5ef0a8' },
-  { id: 'skills', label: 'Skills', sub: "Your agents' skill map (K)", accent: '#ff8ad8' },
-  { id: 'keychain', label: 'Keychain', sub: 'The keys your agents hold', accent: '#ffcf5c' },
-  { id: 'profile', label: 'Profile', sub: 'Who you are here', accent: '#c59bff' },
+  // The player menu (CharacterMenu.tsx): Character, Skills (the skill map, K) and Keys (the keychain).
+  { id: 'character', label: 'Character', sub: 'Level, skills and keys', accent: '#c59bff' },
   { id: 'config', label: 'Settings', sub: 'Graphics, sound, controls', accent: '#6fe3ff' },
   { id: 'help', label: 'Help', sub: 'Keys, guide, glossary', accent: '#8fb4ff' },
   { id: 'invite', label: 'Invite a friend', sub: 'One paragraph to send', accent: '#ff9d7a' },
@@ -89,49 +88,7 @@ function Art({ id }: { id: MenuTileId }) {
           <path d="M48 78l1.6 4.4 4.4 1.6-4.4 1.6-1.6 4.4-1.6-4.4-4.4-1.6 4.4-1.6z" fill="#eafff6" opacity="0.7" />
         </>
       )
-    case 'skills':
-      return (
-        <>
-          <Surface id={id} from="#4a1640" to="#150612" pattern={
-            <pattern id={`ogm-pat-${id}`} width="16" height="16" patternUnits="userSpaceOnUse">
-              <circle cx="8" cy="8" r="0.9" fill="#ff8ad8" fillOpacity="0.2" />
-            </pattern>
-          } />
-          {/* a skill tree: a root, its branches, the learned nodes lit and the rest still dark */}
-          {[[100, 122, 62, 88], [100, 122, 138, 88], [62, 88, 40, 52], [62, 88, 84, 50], [138, 88, 118, 50], [138, 88, 160, 52], [84, 50, 100, 18], [118, 50, 100, 18]].map(([x1, y1, x2, y2], i) => (
-            <path key={i} d={`M${x1} ${y1}L${x2} ${y2}`} stroke="#ff8ad8" strokeOpacity={i < 4 ? 0.75 : 0.3} strokeWidth={i < 4 ? 2.5 : 1.5} strokeDasharray={i < 4 ? undefined : '3 4'} />
-          ))}
-          {[[100, 122, 1], [62, 88, 1], [138, 88, 1], [40, 52, 1], [84, 50, 1], [118, 50, 0], [160, 52, 0], [100, 18, 0]].map(([x, y, lit], i) => (
-            <g key={i}>
-              {lit ? <circle cx={x} cy={y} r="13" fill="#ff8ad8" opacity="0.22" /> : null}
-              <circle cx={x} cy={y} r="8" fill={lit ? '#ffd1f1' : '#2a0c24'} stroke={lit ? '#fff0fa' : '#ff8ad8'} strokeOpacity={lit ? 0.9 : 0.5} strokeWidth="1.5" />
-            </g>
-          ))}
-          <path d="M100 13l1.6 3.4 3.7.5-2.7 2.6.7 3.7-3.3-1.8-3.3 1.8.7-3.7-2.7-2.6 3.7-.5z" fill="#ff8ad8" opacity="0.8" />
-        </>
-      )
-    case 'keychain':
-      return (
-        <>
-          <Surface id={id} from="#4a3508" to="#150e03" pattern={
-            <pattern id={`ogm-pat-${id}`} width="14" height="14" patternUnits="userSpaceOnUse">
-              <circle cx="7" cy="7" r="0.9" fill="#ffcf5c" fillOpacity="0.2" />
-            </pattern>
-          } />
-          {/* a ring with a gold key and a blue one: subscriptions gold, API keys blue */}
-          <circle cx="100" cy="30" r="15" fill="none" stroke="#ffcf5c" strokeOpacity="0.55" strokeWidth="2.5" />
-          <g transform="rotate(-28 66 84)">
-            <circle cx="66" cy="84" r="17" fill="none" stroke="#ffcf5c" strokeWidth="4.5" />
-            <circle cx="66" cy="84" r="5" fill="#ffcf5c" opacity="0.5" />
-            <path d="M83 84H146M128 84v13M141 84v10" stroke="#ffcf5c" strokeWidth="4.5" strokeLinecap="round" />
-          </g>
-          <g transform="rotate(22 134 100)">
-            <circle cx="134" cy="100" r="13" fill="none" stroke="#6ea8ff" strokeWidth="3.5" />
-            <path d="M147 100H178M168 100v9" stroke="#6ea8ff" strokeWidth="3.5" strokeLinecap="round" />
-          </g>
-        </>
-      )
-    case 'profile':
+    case 'character':
       return (
         <>
           <Surface id={id} from="#34205c" to="#100a22" pattern={

@@ -8,6 +8,7 @@ import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import { resolveFontFamily } from '@/lib/fonts'
 import { useFeatureKeys } from '@/lib/feature-keys-client'
+import { openKeychain } from '@/components/village/keychain-store'
 import {
   SPELLBOOK_PAGE_IDS,
   SPELLBOOK_PAGES,
@@ -383,7 +384,15 @@ export function PlayerSpellbookPanel({
               <article
                 key={definition.id}
                 onPointerEnter={playMenuHover}
-                onClick={() => handleCardClick(definition.id)}
+                onClick={() => {
+                  // "Needs a key": the keychain opens at that key, its field ready (the Character menu, Keys tab).
+                  if (needsKey && !locked) {
+                    useAudioManager.getState().play('buttonClick')
+                    openKeychain(featureKeys[definition.id]?.keychainKey || null)
+                    return
+                  }
+                  handleCardClick(definition.id)
+                }}
                 className={[
                   'group relative cursor-pointer overflow-hidden rounded-lg border p-2 transition-all duration-200',
                   'hover:scale-[1.025] hover:border-amber-200/55 hover:shadow-[0_0_22px_rgba(251,191,36,0.32)]',

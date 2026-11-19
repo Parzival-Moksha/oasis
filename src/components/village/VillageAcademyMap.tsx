@@ -1,24 +1,20 @@
 'use client'
 
-// ░▒▓ VILLAGE ACADEMY MAP — the skill tree as an overlay: K (or the HUD's Skills button) opens it ▓▒░
-// The world stays behind it, dimmed and blurred, and takes no input while it is open. In front: a board
-// you drag and zoom (academy-map-engine.ts draws it on its own canvas), the core skills in the middle,
-// every lane a slice, every tier a ring. Click a skill for the same sheet the tree in the world opens:
-// prompt, proof, keys, "I did it", "Ask Anorak to check". Esc closes the sheet, then the map.
+// ░▒▓ VILLAGE ACADEMY MAP — the skill tree you drag and zoom: the Character menu's Skills tab ▓▒░
+// A board drawn on its own canvas (academy-map-engine.ts): the core skills in the middle, every lane a
+// slice, every tier a ring. Click a skill for its sheet: prompt, proof, keys, "I did it", "Ask Anorak to
+// check". The menu (CharacterMenu.tsx) owns the keys, the frame and closing; this file is the board, its
+// bar (set, trainee, zoom) and the HUD's way in.
 //
-// Closed, this is one key listener and nothing else: no canvas, no frame callback, no pointer work.
-// The DOM here is the frame around the board (a title, the set and trainee pickers, three buttons);
-// the skills themselves are never DOM or React.
+// Not on screen, it is nothing: no canvas, no frame callback, no pointer work. The DOM here is the bar
+// around the board; the skills themselves are never DOM or React.
 
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
-import { useOasisStore } from '../../store/oasisStore'
-import { useInputManager, useUILayer } from '../../lib/input-manager'
 import { academyLaneColor, nodeLook, type AcademyKeyKind } from '../../lib/village/village-academy'
-import { ACADEMY_MAP_KEY, academyLaneLook, academyMapKeyAction, layoutAcademyMap } from '../../lib/village/academy-map'
+import { academyLaneLook, layoutAcademyMap } from '../../lib/village/academy-map'
 import { AcademyMapEngine, type MapNodeSpec } from './academy-map-engine'
-import { getKeychainState, keyStates, openKeychain, subscribeKeychain, watchKeychainFromMap } from './keychain-store'
+import { getKeychainState, keyStates, subscribeKeychain, watchKeychainFromMap } from './keychain-store'
 import {
-  VILLAGE_ACADEMY_MAP_LAYER,
   closeAcademyMap,
   getAcademyState,
   mapContent,
@@ -31,16 +27,16 @@ import {
   subscribeAcademy,
   useAcademyEnabled,
 } from './academy-store'
-import { isTypingTarget } from './village-actions'
+import { getCharacterState, setCharacterTab, subscribeCharacter } from './character-store'
 import { showNotice } from '../forge/GlobalNotice'
-import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS } from './village-status'
+import { VILLAGE_FONT_BODY, VILLAGE_TYPE_CLASS } from './village-status'
 
 const BUTTON = 'rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[11px] font-bold text-white/85 transition hover:bg-white/15'
 
 /** The HUD's way in. */
 export function AcademyMapButton() {
   const enabled = useAcademyEnabled()
-  const open = useSyncExternalStore(subscribeAcademy, () => getAcademyState().mapOpen, () => false)
+  const open = useSyncExternalStore(subscribeCharacter, () => getCharacterState().open && getCharacterState().tab === 'skills', () => false)
   const has = useSyncExternalStore(subscribeAcademy, () => Boolean(getAcademyState().content), () => false)
   if (!enabled || !has) return null
   return (
@@ -56,7 +52,8 @@ export function AcademyMapButton() {
   )
 }
 
-function Board() {
+/** The board with its bar, filling the box it is put in (the Character menu's Skills tab). */
+export function SkillMapBoard() {
   const content = useSyncExternalStore(subscribeAcademy, () => mapContent(), () => null)
   const trainee = useSyncExternalStore(subscribeAcademy, () => mapTrainee(), () => null)
   const { sets, trainees, reader, readerMap } = useSyncExternalStore(subscribeAcademy, getAcademyState, getAcademyState)
@@ -89,7 +86,6 @@ function Board() {
       // No second WebGL context to be had (a lost GPU, a browser at its limit): say so and step back.
       showNotice(`The skill map could not start its canvas: ${error instanceof Error ? error.message : String(error)}`, 'error')
       canvas.remove()
-      closeAcademyMap()
       return
     }
     engine.current = made
@@ -145,19 +141,14 @@ function Board() {
   return (
     <div
       data-ui-panel="village-academy-map"
-      className={`fixed inset-0 text-white ${VILLAGE_TYPE_CLASS}`}
-      style={{ zIndex: 9300, fontFamily: VILLAGE_FONT_BODY, background: 'radial-gradient(ellipse at center, rgba(5,8,18,0.56) 0%, rgba(2,4,10,0.8) 100%)', backdropFilter: 'blur(9px) saturate(0.8)', WebkitBackdropFilter: 'blur(9px) saturate(0.8)', animation: 'academyMapIn 260ms ease-out' }}
+      className={`absolute inset-0 overflow-hidden text-white ${VILLAGE_TYPE_CLASS}`}
+      style={{ fontFamily: VILLAGE_FONT_BODY }}
       onContextMenu={event => event.preventDefault()}
     >
-      <style>{'@keyframes academyMapIn { from { opacity: 0 } to { opacity: 1 } }'}</style>
       <div ref={frame} className="absolute inset-0" />
 
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-4">
         <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
-          <div className="pr-1">
-            <div className="text-[9.5px] uppercase tracking-[0.26em] text-amber-200/90">Oasis Academy</div>
-            <div className="text-[17px] font-bold leading-tight tracking-wide" style={{ fontFamily: VILLAGE_FONT_DISPLAY }}>Skill map</div>
-          </div>
           {sets.length > 1 && (
             <div className="flex overflow-hidden rounded-md border border-white/15" role="radiogroup" aria-label="Skill set">
               {sets.map(item => (
@@ -198,11 +189,10 @@ function Board() {
           )}
         </div>
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-slate-950/70 px-2 py-2">
-          <button type="button" data-academy-map-keychain className={BUTTON} onClick={openKeychain} title="Which keys you hold: a key you hold lights its gem here">Keychain</button>
+          <button type="button" data-academy-map-keychain className={BUTTON} onClick={() => setCharacterTab('keys')} title="Which keys you hold: a key you hold lights its gem here">Keys</button>
           <button type="button" className={BUTTON} onClick={() => engine.current?.zoomBy(-260)} title="Closer (wheel)">+</button>
           <button type="button" className={BUTTON} onClick={() => engine.current?.zoomBy(260)} title="Further (wheel)">−</button>
           <button type="button" data-academy-map-fit className={BUTTON} onClick={() => engine.current?.fit()} title="The whole map (double-click the background)">fit</button>
-          <button type="button" data-academy-map-close className={`${BUTTON} text-[12px]`} onClick={closeAcademyMap} title="Back to the world (Esc or K)">✕</button>
         </div>
       </div>
       <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/45 px-3 py-1 text-[10.5px] uppercase tracking-[0.18em] text-white/55">
@@ -210,62 +200,4 @@ function Board() {
       </div>
     </div>
   )
-}
-
-/** Mounted once with the village: the K and Esc keys, and the overlay while it is open. */
-export function VillageAcademyMap() {
-  const enabled = useAcademyEnabled()
-  const open = useSyncExternalStore(subscribeAcademy, () => getAcademyState().mapOpen, () => false) && enabled
-  const focusedAgentId = useOasisStore(s => s.agentEngine.focusedAgentId)
-  useUILayer(VILLAGE_ACADEMY_MAP_LAYER, open)
-
-  useEffect(() => {
-    if (!enabled) closeAcademyMap()
-  }, [enabled])
-
-  // The map needs a free mouse.
-  useEffect(() => {
-    if (open) useInputManager.getState().releasePointerLock()
-  }, [open])
-
-  // An agent was opened (N, a notification): its panel takes over.
-  useEffect(() => {
-    if (focusedAgentId) closeAcademyMap()
-  }, [focusedAgentId])
-
-  // Something popped every UI layer: the map goes with them.
-  useEffect(() => useInputManager.subscribe((state, prev) => {
-    if (prev._uiLayerStack.includes(VILLAGE_ACADEMY_MAP_LAYER) && !state._uiLayerStack.includes(VILLAGE_ACADEMY_MAP_LAYER)) closeAcademyMap()
-  }), [])
-
-  useEffect(() => {
-    if (!enabled) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code !== ACADEMY_MAP_KEY && event.code !== 'Escape') return
-      const current = getAcademyState()
-      const village = useOasisStore.getState().agentEngine
-      const action = academyMapKeyAction({
-        code: event.code,
-        ctrl: event.ctrlKey,
-        meta: event.metaKey,
-        alt: event.altKey,
-        repeat: event.repeat,
-        typing: isTypingTarget(event.target),
-        mapOpen: current.mapOpen,
-        readerOpen: Boolean(current.reader),
-        keychainOpen: getKeychainState().open,
-        agentOpen: Boolean(village.focusedAgentId),
-        worldKeysFree: useInputManager.getState().can().enterFocuses,
-      })
-      if (!action) return
-      if (action === 'open') openAcademyMap()
-      else closeAcademyMap()
-      event.preventDefault()
-      event.stopImmediatePropagation()
-    }
-    window.addEventListener('keydown', onKeyDown, { capture: true })
-    return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
-  }, [enabled])
-
-  return open ? <Board /> : null
 }

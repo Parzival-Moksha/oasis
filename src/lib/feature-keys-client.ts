@@ -11,6 +11,12 @@ let knownAt = 0
 let asking: Promise<States> | null = null
 const FRESH_MS = 60_000
 
+/** A key was just added (the keychain): the next look asks the server again. */
+export function forgetFeatureKeyStates(): void {
+  known = null
+  knownAt = 0
+}
+
 export function getFeatureKeyStates(): Promise<States> {
   if (known && Date.now() - knownAt < FRESH_MS) return Promise.resolve(known)
   return (asking ??= fetch('/api/keys/status')

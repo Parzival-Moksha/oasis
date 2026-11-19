@@ -40,8 +40,7 @@ import {
   useAcademyEnabled,
 } from './academy-store'
 import { KeyPrompt, PromptBanner } from './VillageHud'
-import { VillageAcademyMap } from './VillageAcademyMap'
-import { VillageAcademyKeychain } from './VillageAcademyKeychain'
+import { getCharacterState, subscribeCharacter } from './character-store'
 import { getKeychainState, openKeychain, refreshKeychain, subscribeKeychain } from './keychain-store'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, canTalkTo } from './village-status'
 
@@ -85,7 +84,7 @@ function Label({ children }: { children: string }) {
   return <div className="mb-1 text-[9.5px] uppercase tracking-[0.2em] text-white/45">{children}</div>
 }
 
-function AcademySheet({ skill, content, trainee, trainees }: { skill: AcademySkill; content: AcademyContent; trainee: AcademyTraineeView | null; trainees: AcademyTraineeView[] }) {
+export function AcademySheet({ skill, content, trainee, trainees }: { skill: AcademySkill; content: AcademyContent; trainee: AcademyTraineeView | null; trainees: AcademyTraineeView[] }) {
   const zIndex = useOasisStore(s => s.getPanelZIndex('village-academy', 9400))
   const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }))
   const [busy, setBusy] = useState(false)
@@ -235,7 +234,7 @@ function AcademySheet({ skill, content, trainee, trainees }: { skill: AcademySki
                 </div>
               ))}
               {skill.way && <div className="text-[11.5px] text-white/60">Easiest way: {skill.way}</div>}
-              <button type="button" data-academy-open-keychain className="self-start text-[11px] font-bold text-amber-200 hover:underline" onClick={openKeychain}>open the keychain</button>
+              <button type="button" data-academy-open-keychain className="self-start text-[11px] font-bold text-amber-200 hover:underline" onClick={() => openKeychain(skill.keys.find(id => getKeychainState().keys.find(item => item.id === id)?.state !== "have") || null)}>open the keychain</button>
             </div>
           </>
         )}
@@ -299,7 +298,9 @@ function AcademySheet({ skill, content, trainee, trainees }: { skill: AcademySki
 
 export function VillageAcademyReader() {
   const enabled = useAcademyEnabled()
-  const { content, trainees, nearby, reader, mapOpen } = useSyncExternalStore(subscribeAcademy, getAcademyState, getAcademyState)
+  const { content, trainees, nearby, reader, readerMap } = useSyncExternalStore(subscribeAcademy, getAcademyState, getAcademyState)
+  // The Character menu (skills, keys) covers the world: no prompts for the tree behind it.
+  const menuOpen = useSyncExternalStore(subscribeCharacter, () => getCharacterState().open, () => false)
   // The open sheet reads the set it was opened from: the map's, or the world's.
   const sheetContent = useSyncExternalStore(subscribeAcademy, () => readerContent(), () => null)
   const sheetTrainee = useSyncExternalStore(subscribeAcademy, () => readerTrainee(), () => null)
@@ -307,7 +308,7 @@ export function VillageAcademyReader() {
   const focusedAgentId = useOasisStore(s => s.agentEngine.focusedAgentId)
   const nearMini = useSyncExternalStore(subscribeNearbyVillageMini, getNearbyVillageMini, () => null)
   const open = enabled && reader ? sheetContent?.skills.find(skill => skill.id === reader) || null : null
-  const near = enabled && nearby && !mapOpen ? content?.skills.find(skill => skill.id === nearby) || null : null
+  const near = enabled && nearby && !menuOpen ? content?.skills.find(skill => skill.id === nearby) || null : null
   useUILayer(VILLAGE_ACADEMY_LAYER, Boolean(open))
 
   // Progress: every few seconds and when the window is looked at again.
@@ -357,7 +358,7 @@ export function VillageAcademyReader() {
         repeat: event.repeat,
         typing: isTypingTarget(event.target),
         readerOpen: Boolean(current.reader),
-        nearby: Boolean(current.nearby) && !current.mapOpen,
+        nearby: Boolean(current.nearby) && !getCharacterState().open,
         agent: Boolean(village.focusedAgentId || village.nearbyAgentId || getNearbyVillageMini()),
         worldKeysFree: useInputManager.getState().can().enterFocuses,
       })
@@ -374,16 +375,13 @@ export function VillageAcademyReader() {
   const shown = enabled && Boolean(content) && !focusedAgentId
   return (
     <>
-      {/* The skill map: K, or the HUD's Skills button. */}
-      <VillageAcademyMap />
-      {/* The keychain: which keys you hold (also from the menu and the map's bar). */}
-      <VillageAcademyKeychain />
       {shown && near && !open && !nearMini && (
         <PromptBanner accent={academyLaneColor(near.lane)} title={`${near.name} · ${LOOK_WORD[nodeLook(trainee, near)]}`}>
           <KeyPrompt k="E" label="Open skill" accent="#38bdf8" primary />
         </PromptBanner>
       )}
-      {shown && open && sheetContent && <AcademySheet skill={open} content={sheetContent} trainee={sheetTrainee} trainees={trainees} />}
+      {/* A sheet opened from the skill map is the Character menu's to show (CharacterMenu.tsx). */}
+      {shown && open && sheetContent && !readerMap && <AcademySheet skill={open} content={sheetContent} trainee={sheetTrainee} trainees={trainees} />}
     </>
   )
 }

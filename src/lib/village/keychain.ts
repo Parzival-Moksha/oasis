@@ -7,6 +7,7 @@
 // the CLI, not an API key. Subscriptions are gold, API keys blue.
 
 import type { AcademyKey, AcademyKeyKind, AcademySkill } from './village-academy'
+import { featuresForKey } from '../feature-keys'
 
 export type KeyState = 'have' | 'missing' | 'unknown'
 
@@ -186,6 +187,8 @@ export interface KeychainKeyView {
   marked: boolean
   /** The skills that list it, and whether each is open now (no key needed, or any key it lists is held). */
   skills: Array<{ id: string; name: string; open: boolean }>
+  /** The Oasis's own spells it opens (Text to Pic...). */
+  spells: string[]
 }
 
 function folderOf(file: string): string {
@@ -260,6 +263,7 @@ export function buildKeychain(keys: AcademyKey[], skills: AcademySkill[], facts:
     canMark: key.kind !== 'api',
     marked: Boolean(facts.marks[key.id]),
     skills: skills.filter(skill => skill.keys.includes(key.id)).slice(0, 80).map(skill => ({ id: skill.id, name: skill.name, open: skillOpen(skill, held) })),
+    spells: featuresForKey(key.id),
   }))
 }
 
