@@ -145,12 +145,27 @@ function plan() {
     const thumb = thumbs.find((t) => path.basename(t, path.extname(t)).toLowerCase().replace(/[^a-z0-9]/g, '') === stem)
     if (thumb) chosen.add(thumb)
   }
+  // Catalog thumbnails are pictures the Oasis made of its own models; most were never committed (they are
+  // regenerated on the owner's machine). A stranger's catalog must not be blank, so the picture of every
+  // shipped model comes along from disk.
+  if (FULL) {
+    const dir = path.join(ROOT, 'public', 'thumbs')
+    const shippedIds = new Set(catalogEntries(fs.readFileSync(path.join(ROOT, 'src/components/scene-lib/constants.ts'), 'utf8'))
+      .concat((JSON.parse(fs.readFileSync(path.join(ROOT, 'data/asset-catalog-extras.json'), 'utf8')).additions || []).filter((e) => e?.id && e?.path))
+      .filter((e) => chosen.has(`public${decodeURIComponent(e.path)}`)).map((e) => e.id))
+    for (const name of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
+      const rel = `public/thumbs/${name}`
+      if (chosen.has(rel) || !/\.(jpe?g|png|webp)$/i.test(name) || !shippedIds.has(name.replace(/\.[^.]+$/, ''))) continue
+      chosen.add(rel)
+      data.set(rel, fs.readFileSync(path.join(dir, name)))
+    }
+  }
   const missing = [...chosen].filter((f) => !data.has(f))
   if (missing.length) for (const [f, c] of contents(missing)) data.set(f, c)
 
   for (const file of chosen) {
     if (!file.startsWith('public/') || file.startsWith('public/avatars/')) continue
-    if (!/\.(png|jpe?g|webp|gif|svg|hdr|glb|gltf|vrm|mp3|ogg|wav|woff2?|ttf|otf|json|bin|mjs|js|md|txt|fbx|obj|mtl)$/i.test(file)) problems.push(`unexpected kind of file under public/: ${file}`)
+    if (!/\.(png|jpe?g|webp|gif|svg|hdr|glb|gltf|vrm|mp3|ogg|wav|woff2?|ttf|otf|json|bin|mjs|js|md|txt|fbx|obj|mtl|ico)$/i.test(file)) problems.push(`unexpected kind of file under public/: ${file}`)
   }
   return { chosen: [...chosen].sort(), avatarRows, problems, data, leftOutAvatars, allFiles: files }
 }
