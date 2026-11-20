@@ -26,7 +26,9 @@
 import type { Register, EngineInterface } from 'claude-code'
 
 /** Short, about 200 tokens: where the session is, its tools, and where things for the owner go. */
-function oasisNote(missions: string, grill: string, canSendFiles: boolean): string {
+function oasisNote(missions: string, grill: string, canSendFiles: boolean, questions = ''): string {
+  const dir = questions.replace(/\\/g, '/').replace(/\/+$/, '')
+  const list = grill ? ` (${grill.replace(/\\/g, '/').split('/').pop()})` : ''
   return [
     '# The Oasis',
     "This session is also an agent in the owner's Oasis, a 3D village on this machine where each Claude Code session has an avatar at a desk.",
@@ -34,27 +36,29 @@ function oasisNote(missions: string, grill: string, canSendFiles: boolean): stri
     'The Oasis MCP server (tools named oasis) can look at that world, place and change things in it, and take screenshots.',
     ...(canSendFiles ? ['To show the owner a picture, an audio file, a video or a document, send the file with SendUserFile (it plays or opens in the thread); a file path alone is not enough.'] : []),
     ...(missions ? [`The mission board is the folder ${missions}.`] : []),
-    ...(grill ? [`Questions for the owner that are not urgent go at the bottom of ${grill}, under "Added by agents", written like the questions above it: what the thing is, what a yes leads to, what a no leads to, and your recommendation, each in a plain line, with your name. Not in this thread: the owner reads them there.`] : []),
+    // Since 2026-11-20 one file per question; the owner's list is written from them by a script (engine character.js askLaterLine).
+    ...(dir ? [`Questions for the owner that are not urgent go in the folder ${dir}, one file per question, written as ${dir}/README.md says (read it first, and look through the folder so you don't ask twice): what the thing is, what a yes leads to, what a no leads to, and your recommendation, with your name. Not in this thread, and not typed into the owner's list${list}: a script writes that list from these files, so a line typed there is lost.`]
+      : grill ? [`Questions for the owner that are not urgent go at the bottom of ${grill}, under "Added by agents", written like the questions above it: what the thing is, what a yes leads to, what a no leads to, and your recommendation, each in a plain line, with your name. Not in this thread: the owner reads them there.`] : []),
   ].join('\n')
 }
 
 /**
  * The section, or null when the Oasis engine doesn't answer (then the session is told nothing).
  * Where the mission board and the list of questions are is the machine's own business: the engine says
- * (`places` in /health, from its settings), and OASIS_MISSIONS_DIR / OASIS_GRILL_FILE override it.
+ * (`places` in /health, from its settings), and OASIS_MISSIONS_DIR / OASIS_GRILL_FILE / OASIS_QUESTIONS_DIR override it.
  */
 async function oasisSection($: EngineInterface, fallback: string, canSendFiles: boolean): Promise<string | null> {
   try {
     const at = ((await $.env.get('OASIS_ENGINE_URL')) || fallback).replace(/\/+$/, '')
     const health = await $.http.fetch(`${at}/health`)
     if (!health.ok) return null
-    let places: { missions?: string; grill?: string } = {}
+    let places: { missions?: string; grill?: string; questions?: string } = {}
     try {
-      places = (JSON.parse(health.text) as { places?: { missions?: string; grill?: string } }).places || {}
+      places = (JSON.parse(health.text) as { places?: { missions?: string; grill?: string; questions?: string } }).places || {}
     } catch {
       places = {}
     }
-    return oasisNote((await $.env.get('OASIS_MISSIONS_DIR')) || places.missions || '', (await $.env.get('OASIS_GRILL_FILE')) || places.grill || '', canSendFiles)
+    return oasisNote((await $.env.get('OASIS_MISSIONS_DIR')) || places.missions || '', (await $.env.get('OASIS_GRILL_FILE')) || places.grill || '', canSendFiles, (await $.env.get('OASIS_QUESTIONS_DIR')) || places.questions || '')
   } catch {
     return null
   }

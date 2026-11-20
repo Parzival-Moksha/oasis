@@ -36,12 +36,22 @@ export const SHOW_FILES = 'To show the owner a picture, an audio file, a video o
 /**
  * Where questions for the owner that can wait go (his rule, 2026-11-17), instead of waiting in a thread he may not
  * open for days. Also in the plugin's note; here too, because a session that already exists keeps the system prompt
- * it started with, and this note reaches it with the next message. The file is this machine's `grillFile` setting (settings.js); without one the line is left out.
+ * it started with, and this note reaches it with the next message. Since 2026-11-20 a question is one file in this
+ * machine's `questionsDir` (C:/7c_oasis/docs/questions, format in its README.md), and the owner's list (`grillFile`,
+ * open.md) is written from those files by a script, so a line typed into the list is lost. A machine with only a
+ * `grillFile` keeps the old line; with neither, the line is left out. No "]" inside (the thread hides the note).
  */
+export function askLaterLine({ questionsDir = '', grillFile = '' } = {}) {
+  if (questionsDir) {
+    const dir = questionsDir.replace(/\\/g, '/').replace(/\/+$/, '');
+    return `Questions for the owner that are not urgent go in the folder ${dir}, one file per question, written as ${dir}/README.md says (read it first, and look through the folder so you don't ask twice): what the thing is, what a yes leads to, what a no leads to, and your recommendation, with your name. Not in your thread, and not typed into the owner's list${grillFile ? ` (${grillFile.replace(/\\/g, '/').split('/').pop()})` : ''}: a script writes that list from these files, so a line typed there is lost.`;
+  }
+  if (grillFile) return `Questions for the owner that are not urgent go at the bottom of ${grillFile}, under "Added by agents", written like the questions above it: what the thing is, what a yes leads to, what a no leads to, and your recommendation, each in a plain line, with your name. Not in your thread: the owner reads them there.`;
+  return '';
+}
 export const GRILL_FILE = setting('grillFile');
-export const ASK_LATER = GRILL_FILE
-  ? `Questions for the owner that are not urgent go at the bottom of ${GRILL_FILE}, under "Added by agents", written like the questions above it: what the thing is, what a yes leads to, what a no leads to, and your recommendation, each in a plain line, with your name. Not in your thread: the owner reads them there.`
-  : '';
+export const QUESTIONS_DIR = setting('questionsDir');
+export const ASK_LATER = askLaterLine({ questionsDir: QUESTIONS_DIR, grillFile: GRILL_FILE });
 export const ROLE_MAX = 240;
 export const WHO_MAX = 1200;
 

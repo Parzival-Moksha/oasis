@@ -4,7 +4,8 @@
 //
 //   key            environment            what
 //   missionsDir    OASIS_MISSIONS_DIR     the mission board's folder (default: data/missions in the Oasis folder)
-//   grillFile      OASIS_GRILL_FILE       where agents collect questions for the owner that can wait
+//   grillFile      OASIS_GRILL_FILE       the owner's list of open questions (a script writes it from questionsDir)
+//   questionsDir   OASIS_QUESTIONS_DIR    where agents put questions for the owner that can wait: one file each (its README.md)
 //   academyDir     OASIS_ACADEMY_DIR      the Academy's skill tree
 //   anorakProCwd   OASIS_ANORAK_PRO_CWD   the lead agent's home folder, offered in the session picker
 //   scribeEnv      OASIS_SCRIBE_ENV       a .env file holding ELEVENLABS_API_KEY (the Oasis's own .env is read first)
@@ -18,6 +19,7 @@ export const SETTINGS_FILE = process.env.OASIS_SETTINGS_FILE || path.join(ROOT, 
 const ENV = {
   missionsDir: 'OASIS_MISSIONS_DIR',
   grillFile: 'OASIS_GRILL_FILE',
+  questionsDir: 'OASIS_QUESTIONS_DIR',
   academyDir: 'OASIS_ACADEMY_DIR',
   anorakProCwd: 'OASIS_ANORAK_PRO_CWD',
   scribeEnv: 'OASIS_SCRIBE_ENV',

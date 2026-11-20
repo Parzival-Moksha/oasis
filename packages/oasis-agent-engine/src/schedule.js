@@ -33,7 +33,7 @@ export const REPEATS = ['daily', 'weekly'];
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export const DEFAULT_SETTINGS = { quiet: { from: '01:00', to: '08:00' }, dailyCap: 8 };
 /** The owner's words (2026-11-18), the standing prompt of an agent that has none of its own. */
-export const DEFAULT_PROMPT = 'You woke up on your schedule. The owner may be away. Look at what is yours to do (your missions, your open items, messages waiting), do what needs no decision from him, write what you did in your thread in three lines, and ' + (setting('grillFile') ? `add questions for him to ${setting('grillFile')}.` : 'put questions for him at the end of that.') + ' If something truly needs him now, tell him on Telegram, once.';
+export const DEFAULT_PROMPT = 'You woke up on your schedule. The owner may be away. Look at what is yours to do (your missions, your open items, messages waiting), do what needs no decision from him, write what you did in your thread in three lines, and ' + (setting('questionsDir') ? `write each question for him as a file in ${setting('questionsDir').replace(/\\/g, '/')} (its README.md says how).` : setting('grillFile') ? `add questions for him to ${setting('grillFile')}.` : 'put questions for him at the end of that.') + ' If something truly needs him now, tell him on Telegram, once.';
 export const PROMPT_MAX = 2000;
 const STALE_APPOINTMENT_MS = 24 * 3600_000;
 const DAY_MS = 24 * 3600_000;
