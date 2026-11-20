@@ -20,7 +20,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { guardAgentRoute } from '@/lib/local-request-guard'
-import { declareAgentMission, editManualTime, reportAgentWork, reportWorkBeat, setWorkSettings, switchWorkMission, workDaySummary, workMindcraft, workMissionTimers, workVowSnapshot } from '@/lib/work-vow-server'
+import { declareAgentMission, editManualTime, reportAgentWork, reportWorkBeat, setWorkSettings, switchWorkMission, workDaySummary, workAgentHours, workMindcraft, workMissionTimers, workVowSnapshot } from '@/lib/work-vow-server'
 import { clientLabel, isAutomationRequest, type AgentWorkReport } from '@/lib/village/work-vow'
 
 export const dynamic = 'force-dynamic'
@@ -38,6 +38,8 @@ export async function GET(request: NextRequest) {
     }
     // ?mindcraft=1: every day in the book as lists (the owner's, each agent's, the whole Oasis').
     if (new URL(request.url).searchParams.get('mindcraft')) return NextResponse.json(await workMindcraft())
+    // ?agentHours=1: the agents' working hours per day, oldest first, with the mark each day reached.
+    if (new URL(request.url).searchParams.get('agentHours')) return NextResponse.json({ marks: [24, 72, 168], days: await workAgentHours() })
     // ?missions=1: per mission, the owner's time on it and the agents' time on it.
     if (new URL(request.url).searchParams.get('missions')) return NextResponse.json({ missions: await workMissionTimers() })
     return NextResponse.json(await workVowSnapshot())

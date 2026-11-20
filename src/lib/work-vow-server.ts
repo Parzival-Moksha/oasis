@@ -18,6 +18,8 @@ import {
   daySummary,
   localDay,
   mindcraftBook,
+  agentHoursHistory,
+  type AgentHoursDay,
   missionTimers,
   emptyWorkFile,
   formatClock,
@@ -114,6 +116,11 @@ export function foldedOwnerXp(currentOldXp: number, now = Date.now()): Promise<{
     const fold = book.profileFold
     return { total: Math.max(0, Math.round(fold.oldXp + mindcraftXp)), oldXp: fold.oldXp, mindcraftXp, foldedAt: fold.at }
   })
+}
+
+/** The Oasis's own working hours, one line per day, oldest first (the curve). */
+export function workAgentHours(): Promise<AgentHoursDay[]> {
+  return serial(async () => agentHoursHistory(await readBook()))
 }
 
 /** Per mission: the owner's time and the agents' time, over every day. */

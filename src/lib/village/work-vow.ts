@@ -618,6 +618,63 @@ export function evaluateCommitment(file: WorkFile, commitment: WorkVow, today: s
   }
 }
 
+// ─── agent hours: how much the Oasis itself worked ──────────────────────────
+// The owner (2026-11-20): "when that number goes to 24h, the 04515 can be considered alive, at 72 hours
+// superalive and at 168h per 24h, uploaded". An agent-hour is time inside an agent's turns (from the
+// engine's turn ends: the turn's length minus the time it only waited on its helpers), plus its helpers'
+// running time in full. Time between turns (waiting for the owner, idle) is not counted. Helpers that run
+// at once each count, so a day can hold more than 24 agent-hours.
+
+export const AGENT_HOUR_MARKS = [
+  { hours: 24, label: 'alive' },
+  { hours: 72, label: 'superalive' },
+  { hours: 168, label: 'uploaded' },
+] as const
+
+export interface AgentHoursDay {
+  date: string
+  seconds: number
+  ownSeconds: number
+  helperSeconds: number
+  agents: number
+  turns: number
+  helpers: number
+  /** The highest mark this day reached, or null. */
+  mark: string | null
+}
+
+/** The highest mark reached, and the next one (null after "uploaded"). */
+export function agentHoursMark(seconds: number): { reached: string | null; next: { hours: number; label: string } | null } {
+  let reached: string | null = null
+  let next: { hours: number; label: string } | null = null
+  for (const mark of AGENT_HOUR_MARKS) {
+    if (seconds >= mark.hours * 3600) reached = mark.label
+    else if (!next) next = { hours: mark.hours, label: mark.label }
+  }
+  return { reached, next }
+}
+
+/** One line per day, oldest first: the curve of the Oasis's own working hours. */
+export function agentHoursHistory(file: WorkFile): AgentHoursDay[] {
+  return Object.keys(file.days).sort().flatMap(date => {
+    const hours = Object.values(file.days[date].hours || {})
+    if (!hours.length) return []
+    const own = hours.reduce((sum, h) => sum + h.ownSeconds, 0)
+    const helpers = hours.reduce((sum, h) => sum + h.helperSeconds, 0)
+    const seconds = Math.round(own + helpers)
+    return [{
+      date,
+      seconds,
+      ownSeconds: Math.round(own),
+      helperSeconds: Math.round(helpers),
+      agents: hours.filter(h => h.ownSeconds + h.helperSeconds > 0).length,
+      turns: hours.reduce((sum, h) => sum + h.turns, 0),
+      helpers: hours.reduce((sum, h) => sum + h.helpers, 0),
+      mark: agentHoursMark(seconds).reached,
+    }]
+  })
+}
+
 // ─── Mindcraft: the list of days ────────────────────────────────────────────
 
 /** One unit of work: one per mission, per agent, and one for "in the Oasis", each day. Never a single turn. */
@@ -836,6 +893,8 @@ export interface WorkSnapshot {
   active: WorkActive | null
   /** A page reported within the last minute. */
   counting: boolean
+  /** The agents' working hours: today, yesterday, the mark reached today and the next one. History: ?agentHours=1. */
+  agentHours: { today: number; yesterday: number; best: { date: string; seconds: number } | null; mark: string | null; next: { hours: number; label: string } | null }
   /** Valor with nothing in focus (the owner's setting, 0.7 by default) and when a day ends. */
   settings: { freeValor: number; dayStartsAt: string }
   rule: string
@@ -881,6 +940,14 @@ export function workSnapshot(file: WorkFile, now: number, offsetMinutes = localO
     active: file.active,
     counting: Boolean(file.holder && now - file.holder.at < 60_000),
     settings: { freeValor: freeValor(file), dayStartsAt: '04:20' },
+    agentHours: (() => {
+      const history = agentHoursHistory(file)
+      const at = (d: string) => history.find(day => day.date === d)?.seconds || 0
+      const today = at(date)
+      const best = history.reduce<{ date: string; seconds: number } | null>((top, day) => (!top || day.seconds > top.seconds ? { date: day.date, seconds: day.seconds } : top), null)
+      const mark = agentHoursMark(today)
+      return { today, yesterday: at(addDays(date, -1)), best, mark: mark.reached, next: mark.next }
+    })(),
     rule: WORK_RULE,
   }
 }

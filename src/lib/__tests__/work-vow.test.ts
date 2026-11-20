@@ -542,3 +542,29 @@ describe('what is left, in words', () => {
     expect(timeToGo(12_899, 10_800)).toBe('goal reached')
   })
 })
+
+describe('agent hours: how much the Oasis itself worked', () => {
+  it('marks 24 h alive, 72 h superalive, 168 h uploaded', async () => {
+    const { agentHoursMark } = await import('../village/work-vow')
+    expect(agentHoursMark(14 * 3600)).toEqual({ reached: null, next: { hours: 24, label: 'alive' } })
+    expect(agentHoursMark(24 * 3600)).toEqual({ reached: 'alive', next: { hours: 72, label: 'superalive' } })
+    expect(agentHoursMark(100 * 3600)).toEqual({ reached: 'superalive', next: { hours: 168, label: 'uploaded' } })
+    expect(agentHoursMark(168 * 3600)).toEqual({ reached: 'uploaded', next: null })
+  })
+  it('sums every agent\'s own time and helpers per day, oldest first; the snapshot has today and yesterday', async () => {
+    const { applyAgentWork, agentHoursHistory } = await import('../village/work-vow')
+    let book = emptyWorkFile()
+    book = applyAgentWork(book, { key: 'a', name: 'A', ts: at('10:00:00'), kind: 'turn', ms: 10 * 3600_000 }, TZ)
+    book = applyAgentWork(book, { key: 'a', name: 'A', ts: at('10:00:01'), kind: 'helper', ms: 9 * 3600_000 }, TZ)
+    book = applyAgentWork(book, { key: 'b', name: 'B', ts: at('11:00:00'), kind: 'turn', ms: 6 * 3600_000 }, TZ)
+    book = applyAgentWork(book, { key: 'b', name: 'B', ts: at('09:00:00', '2026-11-17'), kind: 'turn', ms: 3600_000 }, TZ)
+    expect(agentHoursHistory(book)).toEqual([
+      { date: '2026-11-16', seconds: 90_000, ownSeconds: 57_600, helperSeconds: 32_400, agents: 2, turns: 2, helpers: 1, mark: 'alive' },
+      { date: '2026-11-17', seconds: 3600, ownSeconds: 3600, helperSeconds: 0, agents: 1, turns: 1, helpers: 0, mark: null },
+    ])
+    const snap = workSnapshot(book, at('12:00:00', '2026-11-17'), TZ)
+    expect(snap.agentHours).toEqual({ today: 3600, yesterday: 90_000, best: { date: '2026-11-16', seconds: 90_000 }, mark: null, next: { hours: 24, label: 'alive' } })
+    // The owner's own time is a separate number: agent hours never move his vow.
+    expect(snap.today.seconds).toBe(0)
+  })
+})

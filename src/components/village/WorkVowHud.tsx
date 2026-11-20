@@ -130,6 +130,12 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
       <button type="button" onClick={() => { onClose(); openMindcraft() }} className="mc-btn mt-2" data-tone="go">
         Open Mindcraft: every day, mine and the agents&rsquo;
       </button>
+      {snapshot.agentHours && (
+        <div className="mt-2 rounded-md border border-violet-300/20 bg-violet-400/5 px-2 py-1.5 text-[11.5px] leading-snug text-white/80">
+          <div><b className="text-violet-200">Agents today {formatClock(snapshot.agentHours.today)}</b> · yesterday {formatClock(snapshot.agentHours.yesterday)}{snapshot.agentHours.best ? ` · best ${formatClock(snapshot.agentHours.best.seconds)} (${snapshot.agentHours.best.date.slice(5)})` : ''}</div>
+          <div className="text-white/55">{snapshot.agentHours.next ? `${snapshot.agentHours.mark ? `${snapshot.agentHours.mark} now; ` : ''}${snapshot.agentHours.next.label} at ${snapshot.agentHours.next.hours} h a day` : 'uploaded'} (24 h alive · 72 h superalive · 168 h uploaded). Time inside the agents&rsquo; turns, helpers included; not time waiting.</div>
+        </div>
+      )}
       <WhereTimeWent snapshot={snapshot} />
       {snapshot.active && (
         <button type="button" onClick={() => { void setWorkMission(null) }} className="mc-btn mt-2" data-tone="stop">
@@ -246,6 +252,16 @@ export function WorkVowHud() {
             <span className="whitespace-nowrap text-[11px] font-bold" style={{ color: done ? GREEN : '#fde68a' }} title={`The goal is ${formatClock(snapshot.targetSeconds)} a day`}>
               {timeToGo(liveSeconds, snapshot.targetSeconds)}
             </span>
+            {/* The agents' own working hours today, next to his (the owner, 2026-11-20). */}
+            {snapshot.agentHours && (
+              <span
+                className="whitespace-nowrap text-[11px] font-bold"
+                style={{ color: snapshot.agentHours.mark ? '#c084fc' : 'rgba(216,180,254,0.85)' }}
+                title={`Agent hours: time inside the agents' turns, helpers included, not time waiting. Yesterday ${formatClock(snapshot.agentHours.yesterday)}. 24 h: alive · 72 h: superalive · 168 h: uploaded.`}
+              >
+                · agents {formatClock(snapshot.agentHours.today)}{snapshot.agentHours.mark ? ` · ${snapshot.agentHours.mark}` : ''}
+              </span>
+            )}
           </span>
           <span className="mc-status flex max-w-[min(420px,calc(100vw-120px))] items-start gap-1.5 text-[9.5px] leading-snug" style={{ ...GAME_HUD_TEXT, color: statusColor }} title={state.running ? `Every minute like this earns ${rate} XP. With nothing open it is ${free}; with an agent or a mission open it is 1.` : 'Nothing is being counted right now'}>
             {state.running && <span className="mt-[3px] h-1.5 w-1.5 shrink-0 animate-pulse rounded-full" style={{ background: statusColor, boxShadow: `0 0 6px ${statusColor}` }} />}

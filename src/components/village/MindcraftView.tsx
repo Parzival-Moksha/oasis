@@ -9,7 +9,7 @@
 // row; click it and it opens into its units of work: one per mission, one for time with agents, one
 // for just being in the Oasis. Never a row per turn.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { useMindcraftLook } from './mindcraft-look'
 import { ManualTimeForm } from './ManualTimeForm'
 import { formatClock, type MindcraftBook, type MindcraftDay, type WorkSnapshot, type WorkUnit } from '../../lib/village/work-vow'
@@ -201,6 +201,12 @@ export function MindcraftView() {
         {tab === 'you' && <DayList days={book.owner} today={snapshot.date} target={snapshot.targetSeconds} onRemoveManual={removeManual} empty="Nothing counted yet. Time counts while the Oasis is in front and you are doing something." />}
         {tab === 'agents' && (
           <div className="flex flex-col gap-3">
+            {snapshot.agentHours && (
+              <div className="mc-card px-3 py-2 text-[14px] leading-snug">
+                <div className="mc-strong">The Oasis worked {hms(snapshot.agentHours.today)} today{snapshot.agentHours.mark ? `: ${snapshot.agentHours.mark}` : ''} · yesterday {hms(snapshot.agentHours.yesterday)}</div>
+                <div className="text-white/60">24 h of agent work in a day: alive · 72 h: superalive · 168 h: uploaded. An agent-hour is time inside an agent&rsquo;s turns (minus time it only waited on its helpers) plus its helpers&rsquo; time; time between turns doesn&rsquo;t count. Helpers working at once each count.</div>
+              </div>
+            )}
             {book.agents.length > 0 && (
               <div className="mc-card flex flex-col gap-1 px-3 py-2">
                 <div className="mc-strong text-[14px]">All days: who worked longest</div>
@@ -228,6 +234,46 @@ export function MindcraftView() {
   )
 }
 
+const WINDOW_Z = 9395
+const WINDOW_MAX_WIDTH = 900
+const WINDOW_GAP = 12
+
+/**
+ * Where the window may stand: between the always-on overlays that sit above it (the game rail on the
+ * left, the key hints on the right), so it opens beside them, never under them (the owner, 2026-11-20).
+ * Measured from the page, so a restyled rail or a phone layout needs no change here.
+ */
+export function clearBand(viewportWidth: number, obstacles: Array<{ left: number; right: number }>): { left: number; right: number } {
+  let left = 0
+  let right = viewportWidth
+  for (const box of obstacles) {
+    const middle = (box.left + box.right) / 2
+    if (middle < viewportWidth / 2) left = Math.max(left, box.right)
+    else right = Math.min(right, box.left)
+  }
+  // Too narrow beside them (a phone): use the whole width; the window then covers the rail, as before.
+  if (right - left < 360) return { left: 0, right: viewportWidth }
+  return { left, right }
+}
+
+function overlayObstacles(): Array<{ left: number; right: number }> {
+  const out: Array<{ left: number; right: number }> = []
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  for (const el of Array.from(document.body.querySelectorAll<HTMLElement>('body *'))) {
+    const style = getComputedStyle(el)
+    if (style.position !== 'fixed' || style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity) === 0) continue
+    const z = Number.parseInt(style.zIndex, 10)
+    if (!Number.isFinite(z) || z <= WINDOW_Z) continue
+    if (el.closest('[data-ui-panel="mindcraft"]')) continue
+    const box = el.getBoundingClientRect()
+    // Edge overlays only: narrow, inside the window's height band, not full-screen layers or bars.
+    if (box.width <= 0 || box.height <= 0 || box.width > vw * 0.4 || box.bottom < vh * 0.05 || box.top > vh * 0.95) continue
+    out.push({ left: box.left, right: box.right })
+  }
+  return out
+}
+
 /** The view as a window over the world. Esc or a click outside closes it. */
 export function MindcraftWindow() {
   const [open, setOpen] = useState(false)
@@ -246,14 +292,32 @@ export function MindcraftWindow() {
     window.addEventListener('keydown', onKey, { capture: true })
     return () => window.removeEventListener('keydown', onKey, { capture: true })
   }, [open])
+  // Beside the always-on buttons, not under them: measured on open and on every resize.
+  const [band, setBand] = useState<{ left: number; right: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!open) return
+    const measure = () => setBand(clearBand(window.innerWidth, overlayObstacles()))
+    measure()
+    const late = window.setTimeout(measure, 300) // overlays that settle after the first paint
+    window.addEventListener('resize', measure)
+    return () => {
+      window.clearTimeout(late)
+      window.removeEventListener('resize', measure)
+    }
+  }, [open])
   if (!open) return null
+  const vw = typeof window === 'undefined' ? 1280 : window.innerWidth
+  const area = band || { left: 0, right: vw }
+  const width = Math.max(0, Math.min(WINDOW_MAX_WIDTH, area.right - area.left - WINDOW_GAP * 2))
+  const left = area.left + (area.right - area.left - width) / 2
   return (
     <>
       <div className="fixed inset-0 z-[9390] bg-slate-950/70 backdrop-blur-sm" onClick={() => setOpen(false)} />
       <div
         data-ui-panel="mindcraft"
         data-jewels="1"
-        className="oasis-frame fixed left-1/2 top-[5%] z-[9395] flex h-[90%] w-[min(900px,calc(100vw-32px))] -translate-x-1/2 flex-col px-2 pb-1 pt-0"
+        className="oasis-frame fixed top-[5%] z-[9395] flex h-[90%] flex-col px-2 pb-1 pt-0"
+        style={{ left, width }}
       >
         <button type="button" onClick={() => setOpen(false)} title="Close (Esc)" className="mc-scope absolute right-1 top-1 z-10"><span className="mc-close flex items-center justify-center">✕</span></button>
         <MindcraftView />
