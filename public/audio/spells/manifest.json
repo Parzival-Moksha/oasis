@@ -15,6 +15,7 @@
     { "id": "mixkit-relaxing-harp-sweep",          "file": "/audio/spells/mixkit-relaxing-harp-sweep-2628.ogg",               "label": "Relaxing Harp Sweep",      "vibe": "menu / soft cast" },
     { "id": "mixkit-spellcaster-fairy-swoosh",     "file": "/audio/spells/mixkit-spellcaster-fairy-swoosh-1463.ogg",          "label": "Spellcaster Fairy Swoosh", "vibe": "cast / projectile" },
     { "id": "voice-1775536220869",                 "file": "/audio/spells/voice-1775536220869-8vaxl0.mp3",                    "label": "Voice 1",                  "vibe": "user-recorded incantation" },
-    { "id": "voice-1775545682433",                 "file": "/audio/spells/voice-1775545682433-9wal9b.mp3",                    "label": "Voice 2",                  "vibe": "user-recorded incantation" }
+    { "id": "voice-1775545682433",                 "file": "/audio/spells/voice-1775545682433-9wal9b.mp3",                    "label": "Voice 2",                  "vibe": "user-recorded incantation" },
+    { "id": "conjuration-incantation",             "file": "/audio/spells/conjuration-incantation.mp3",                       "label": "Conjuration (the owner)",  "vibe": "agents casting a world change; the owner's own voice, 2026-11-20 recording at 24:09, cut and levelled to -16 LUFS" }
   ]
 }

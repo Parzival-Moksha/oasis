@@ -10,6 +10,7 @@ import type { SpatialWebObject } from '@/lib/spatial-web'
 import type { PortalGate } from '@/lib/portal-gates'
 import { readEmbodiedAgentSettingsFromStorage, type EmbodiedAgentSettings } from '@/lib/agent-action-settings'
 import { SPELL_CAST_DURATION_MS, SPELL_CAST_SOUND_URL, withSpellCastAnimation, withoutSpellCastAnimation } from '@/lib/spell-casting'
+import { holdForCast } from '@/components/village/village-cast'
 import { getLiveObjectTransform } from '@/lib/live-object-transforms'
 import { resolveAgentAvatarUrl } from '@/lib/agent-avatar-catalog'
 
@@ -1072,7 +1073,9 @@ export function useWorldEvents() {
       }
     }
 
-    const enqueueRemoteEvent = (event: RemoteWorldEvent) => {
+    const enqueueRemoteEvent = (event: RemoteWorldEvent, released = false) => {
+      // A village agent is casting (components/village/village-cast.ts): its change lands on the spell's shoot.
+      if (!released && holdForCast(event.type, event.data, () => { if (!disposedRef.current) enqueueRemoteEvent(event, true) })) return
       eventQueueRef.current.push(event)
       if (!processingQueueRef.current) {
         void processQueuedEvents()

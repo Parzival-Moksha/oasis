@@ -35,7 +35,7 @@ import { extractModelStats } from './ModelPreview'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { loadAnimationClip, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation, LIB_PREFIX, getCachedClip } from '../../lib/forge/animation-library'
-import { measureStrideSpeed, pickGait, strideTimeScale, type Gait } from '../../lib/forge/stride-speed'
+import { pickGait, strideSpeedThisFrame, strideTimeScale, type Gait } from '../../lib/forge/stride-speed'
 import { dispatch } from '../../lib/event-bus'
 import { MindcraftWorld } from './MindcraftWorld'
 import { AgentWindow3D } from './AgentWindow3D'
@@ -1692,7 +1692,7 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
  */
 const posedVrmScenes = new WeakSet<THREE.Object3D>()
 
-export function VRMCatalogRenderer({ path, scale, objectId, displayName, activityAnimationId, activityOnce = false, still = false, moving = false, lipSyncId }: { path: string; scale: number; objectId?: string; displayName?: string; activityAnimationId?: string | null; /** Play the activity clip once and hold its last frame (a death, a flinch). */ activityOnce?: boolean; /** Hold the pose it has (the Academy's stone trainees): no mixer, blink or spring bones. */ still?: boolean; /** Its owner is moving it (a village agent following the player): play the walk clip. */ moving?: boolean; /** Lip-sync registry key for a body that is not a world object (village agents). */ lipSyncId?: string }) {
+export function VRMCatalogRenderer({ path, scale, objectId, displayName, activityAnimationId, activityOnce = false, activityFade, still = false, moving = false, lipSyncId }: { path: string; scale: number; objectId?: string; displayName?: string; activityAnimationId?: string | null; /** Play the activity clip once and hold its last frame (a death, a flinch). */ activityOnce?: boolean; /** Seconds to blend into the activity clip (a spell's quick steps); default 0.3, 0.6 between two standing clips. */ activityFade?: number; /** Hold the pose it has (the Academy's stone trainees): no mixer, blink or spring bones. */ still?: boolean; /** Its owner is moving it (a village agent following the player): play the walk clip. */ moving?: boolean; /** Lip-sync registry key for a body that is not a world object (village agents). */ lipSyncId?: string }) {
   const groupRef = useRef<THREE.Group>(null)
   const vrmRef = useRef<VRM | null>(null)
   const [vrm, setVrm] = useState<VRM | null>(null)
@@ -1954,7 +1954,8 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
     // Nothing playing yet in this mixer (a fresh mount): the first clip starts at full weight, no fade from the bind pose.
     const first = !currentActionRef.current
     // One standing clip into another (an agent's idles taking turns): a slower blend, so it reads as a change of pose.
-    const fade = activeAnimRef.current === 'activity' && target === 'activity' ? 0.6 : 0.3
+    const fade = target === 'activity' && activityFade !== undefined ? activityFade
+      : activeAnimRef.current === 'activity' && target === 'activity' ? 0.6 : 0.3
     // Fade out current action
     if (currentActionRef.current) {
       currentActionRef.current.fadeOut(fade)
@@ -2000,7 +2001,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
     activeAnimRef.current = target
     activeClipRef.current = targetClip
     console.log(`[VRM:NPC] ${displayName || objectId} → anim: ${target}`)
-  }, [isMoving, walkClip, idleClip, behaviorClip, activityClip, activityOnce, animConfig?.loop, animConfig?.speed, displayName, objectId])
+  }, [isMoving, walkClip, idleClip, behaviorClip, activityClip, activityOnce, activityFade, animConfig?.loop, animConfig?.speed, displayName, objectId])
 
   useEffect(() => {
     const mixer = mixerRef.current
@@ -2124,7 +2125,8 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
     // over each clip's stride measured on this body (stride-speed.ts); past a brisk walk it jogs, then sprints. ▓▒░
     const pace = walkPaceRef.current
     const moverAction = activeAnimRef.current === 'walk' ? currentActionRef.current : null
-    const walkNatural = moverAction && walkClip ? measureStrideSpeed(v, walkClip) : null
+    // One new measure per frame across the page (strideSpeedThisFrame): a body still waiting keeps its pace a frame.
+    const walkNatural = moverAction && walkClip ? strideSpeedThisFrame(v, walkClip) : null
     if (moverAction && walkClip && walkNatural && delta > 0) {
       const world = v.scene.matrixWorld.elements
       const size = Math.max(scale, 0.05)
@@ -2136,7 +2138,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
       pace.x = world[12]
       pace.z = world[14]
       const gaits = gaitClipsRef.current
-      const runNatural = gaits.run && gaits.run !== 'loading' ? measureStrideSpeed(v, gaits.run) : null
+      const runNatural = gaits.run && gaits.run !== 'loading' ? strideSpeedThisFrame(v, gaits.run) ?? null : null
       const wanted = pickGait(pace.speed / size, pace.gait, { walk: walkNatural, run: runNatural }) ?? 'walk'
       let action = moverAction
       if (wanted !== pace.gait) {
@@ -2151,7 +2153,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
           action = next
         }
       }
-      const natural = action.getClip() === walkClip ? walkNatural : measureStrideSpeed(v, action.getClip())
+      const natural = action.getClip() === walkClip ? walkNatural : strideSpeedThisFrame(v, action.getClip()) ?? null
       action.timeScale = strideTimeScale(pace.speed, natural ? natural * size : null, action.timeScale)
     } else {
       pace.has = false

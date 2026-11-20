@@ -110,6 +110,8 @@ export const ANIMATION_LIBRARY: LocalAnimation[] = [
   { id: 'ual-sword-idle',     filename: 'ual/UAL1_Standard.glb', glbClipName: 'Sword_Idle',        label: 'Sword Idle',     category: 'combat' },
   { id: 'ual-spell-idle',     filename: 'ual/UAL1_Standard.glb', glbClipName: 'Spell_Simple_Idle_Loop', label: 'Spell Idle', category: 'combat' },
   { id: 'ual-spell-shoot',    filename: 'ual/UAL1_Standard.glb', glbClipName: 'Spell_Simple_Shoot', label: 'Spell Shoot',   category: 'combat' },
+  { id: 'ual-spell-enter',    filename: 'ual/UAL1_Standard.glb', glbClipName: 'Spell_Simple_Enter', label: 'Spell Enter',   category: 'combat' },
+  { id: 'ual-spell-exit',     filename: 'ual/UAL1_Standard.glb', glbClipName: 'Spell_Simple_Exit',  label: 'Spell Exit',    category: 'combat' },
   { id: 'ual-hit-chest',      filename: 'ual/UAL1_Standard.glb', glbClipName: 'Hit_Chest',         label: 'Hit Chest',      category: 'combat' },
   { id: 'ual-hit-head',       filename: 'ual/UAL1_Standard.glb', glbClipName: 'Hit_Head',          label: 'Hit Head',       category: 'combat' },
   { id: 'ual-death',          filename: 'ual/UAL1_Standard.glb', glbClipName: 'Death01',           label: 'Death',          category: 'combat' },

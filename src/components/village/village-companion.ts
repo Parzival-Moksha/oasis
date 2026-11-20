@@ -212,6 +212,11 @@ function speechSource(agentId: string): THREE.Object3D | null {
   return bone || spot
 }
 
+/** Where an agent's other sounds come from (its incantation when it casts: village-cast.ts): the same spot as its voice. */
+export function villageSoundSource(agentId: string): THREE.Object3D | null {
+  return speechSource(agentId)
+}
+
 // How high each avatar's face is (the F view puts the camera there): measured from its own skeleton when asked.
 const faceHeights = new Map<string, number>()
 const _facePoint = new THREE.Vector3()

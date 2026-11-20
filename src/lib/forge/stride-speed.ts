@@ -117,3 +117,18 @@ export function pickGait(speed: number, current: Gait | null, natural: { walk?: 
   if (speed <= runTop) return 'run'
   return 'sprint'
 }
+
+let lastMeasureAt = -Infinity
+
+/**
+ * The same, but at most one new measure per frame across the page (Perf, 2026-11-20: a measure is 2-4 ms, and 24
+ * agents told to follow at once would each measure on the same frame). Undefined: not measured yet, ask again next
+ * frame and keep the pace you have meanwhile.
+ */
+export function strideSpeedThisFrame(vrm: VRM, clip: THREE.AnimationClip): number | null | undefined {
+  if (cache.has(clip)) return cache.get(clip) ?? null
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  if (now - lastMeasureAt < 12) return undefined
+  lastMeasureAt = now
+  return measureStrideSpeed(vrm, clip)
+}

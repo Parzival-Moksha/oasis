@@ -104,6 +104,8 @@ import {
 } from './village-companion'
 import { SettingsContext } from '../scene-lib/contexts'
 import { clipForPose, holdSeconds, type AgentPose } from '../../lib/village/agent-idles'
+import { CAST_CLIPS } from '../../lib/village/agent-cast'
+import { useCastPhase, useVillageCastWatcher } from './village-cast'
 import { DESK_SCREENS_DEFAULT, DESK_SCREEN_LIMIT, isDeskScreensMode, pickDeskScreens, type DeskDistance } from '../../lib/village/desk-screens'
 import { useKitStyle } from '@/components/ui-kit'
 
@@ -716,7 +718,9 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
   // until it is sent back to its desk. When it needs the owner it still comes, and goes back to that spot after.
   const sentSeq = useSyncExternalStore(subscribeAgentSelection, () => getSentGoalSeq(agentId), () => 0)
   const sent = sentSeq !== 0 && !staged && !visiting && !stone && !isCouncilOn()
-  const follower = useVillageFollower(agentId, placement, isVillageFollowOn(followKey, name) && !stone, visiting, staged ? Boolean(combatPose) : focused || Boolean(combatPose), ownerBusy, staged || sent)
+  // Casting a world change (village-cast.ts): it stays where it stands until the spell is done.
+  const castPhase = useCastPhase(agentId)
+  const follower = useVillageFollower(agentId, placement, isVillageFollowOn(followKey, name) && !stone, visiting, staged ? Boolean(combatPose) : focused || Boolean(combatPose) || castPhase !== null, ownerBusy, staged || sent)
   // Its voice (village-companion.ts): the clip plays from its head, and it gestures while it talks.
   const speaking = useSyncExternalStore(subscribeVillageSpeech, () => {
     const speech = getVillageSpeech()
@@ -795,8 +799,9 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
                 path={`${avatarUrl}#village`}
                 scale={1}
                 displayName={name}
-                activityAnimationId={combatPose ? combatPose.animationId : poseClip}
-                activityOnce={Boolean(combatPose)}
+                activityAnimationId={combatPose ? combatPose.animationId : castPhase ? CAST_CLIPS[castPhase] : poseClip}
+                activityOnce={Boolean(combatPose) || (castPhase !== null && castPhase !== 'charge')}
+                activityFade={castPhase ? 0.12 : undefined}
                 moving={follower.walking && !combatPose}
                 lipSyncId={villageLipSyncId(agentId)}
               />
@@ -1045,6 +1050,8 @@ function VillageCameraRig() {
 // ─── the layer ──────────────────────────────────────────────────────────────
 
 export function VillageWorld() {
+  // Agents cast their world changes: watches their tool calls (village-cast.ts).
+  useVillageCastWatcher()
   // Re-render the layout only when the roster's identity changes, not on every event.
   const rosterKey = useOasisStore(s => s.agentEngine.order
     .map(id => {
