@@ -675,6 +675,7 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
     repeat: event.repeat,
     typing: isTypingTarget(event.target),
     focusedAgentId: village.focusedAgentId,
+    onScreen: Boolean(village.focusedAgentId && screenAgentId === village.focusedAgentId),
     nearbyAgentId: village.nearbyAgentId,
     worldKeysFree: input.can().enterFocuses || input.inputState === 'agent-focus' || inSessionView,
     inPlaza: places.inPlaza,
@@ -690,6 +691,11 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
   switch (action) {
     case 'toggle-voice': return toggleVillageVoice()
     case 'toggle-screen': return toggleVillageScreen()
+    case 'close':
+      // E in the side panel, F on the full screen: the agent closes altogether.
+      setVillageScreen(null)
+      leaveVillageFocus()
+      return true
     // The box doesn't hold the keyboard until you click it: Enter sends what you dictated.
     case 'send': return triggerVillageSend()
     case 'escape':

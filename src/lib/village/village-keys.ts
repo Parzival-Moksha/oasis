@@ -3,8 +3,10 @@
 // Next to an agent: T opens its talk window with the mic on, E opens it quietly (to write), F opens it
 // straight on its full screen.
 // With an agent open (side panel or its screen, the text box not focused): T starts / stops the mic,
-// Enter sends what is in the box, F zooms onto its screen and back, Esc leaves the screen (one more Esc
-// leaves the agent, through the input manager; a screen opened with F straight from the world leaves in one).
+// Enter sends what is in the box. E and F are the two views (the owner, 2026-11-20): in the side panel E closes
+// it and F goes to the same agent's full screen; on the full screen F closes it and E goes back to the side panel.
+// Esc leaves the screen (one more Esc leaves the agent, through the input manager; a screen opened with F straight
+// from the world leaves in one).
 // Esc never stops the mic: dictation goes on after leaving (the voice widget, bottom left). Mouse-look comes
 // back with a click on the scene.
 // N jumps to the next agent that needs you. In the summoning circle E opens the picker.
@@ -12,6 +14,8 @@
 export type VillageKeyAction =
   | 'toggle-voice'
   | 'toggle-screen'
+  /** E in the side panel, F on the full screen: the agent closes. */
+  | 'close'
   | 'send'
   | 'escape'
   | 'talk'
@@ -30,6 +34,8 @@ export interface VillageKeyContext {
   /** The key went into a text field (the agent's box, a search field…): it is typing, not a command. */
   typing: boolean
   focusedAgentId: string | null
+  /** The open agent is on its full screen (F view), not in the side panel. */
+  onScreen?: boolean
   nearbyAgentId: string | null
   /** The world's keys are free for the village (walking around, or already in the session view). */
   worldKeysFree: boolean
@@ -43,7 +49,8 @@ export function villageKeyAction(c: VillageKeyContext): VillageKeyAction | null 
   if (c.ctrl || c.meta || c.alt || c.repeat || c.typing) return null
   if (c.focusedAgentId) {
     if (c.code === 'KeyT') return 'toggle-voice'
-    if (c.code === 'KeyF') return 'toggle-screen'
+    if (c.code === 'KeyF') return c.onScreen ? 'close' : 'toggle-screen'
+    if (c.code === 'KeyE') return c.onScreen ? 'toggle-screen' : 'close'
     if (c.code === 'Enter' && !c.shift) return 'send'
     if (c.code === 'Escape') return 'escape'
   }

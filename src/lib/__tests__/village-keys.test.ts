@@ -66,14 +66,21 @@ describe('villageKeyAction: with an agent open', () => {
     expect(keys('Escape', open)).toBe('escape')
   })
 
+  it('E and F are the two views: E closes the side panel, F closes the full screen, each goes to the other', () => {
+    expect(keys('KeyE', open)).toBe('close')
+    expect(keys('KeyF', { ...open, onScreen: true })).toBe('close')
+    expect(keys('KeyE', { ...open, onScreen: true })).toBe('toggle-screen')
+    expect(keys('KeyF', open)).toBe('toggle-screen')
+  })
+
   it('Shift+Enter is not a send', () => {
     expect(keys('Enter', { ...open, shift: true })).toBeNull()
   })
 
   it('T toggles the open agent\'s mic even when another agent is the nearest', () => {
     expect(keys('KeyT', { focusedAgentId: 'rick', nearbyAgentId: 'tyler' })).toBe('toggle-voice')
-    // E still switches to the nearest one
-    expect(keys('KeyE', { focusedAgentId: 'rick', nearbyAgentId: 'tyler' })).toBe('open')
+    // E closes the open one; it no longer jumps to the nearest (the owner, 2026-11-20)
+    expect(keys('KeyE', { focusedAgentId: 'rick', nearbyAgentId: 'tyler' })).toBe('close')
     // F toggles the open agent's screen, it does not jump to the nearest one
     expect(keys('KeyF', { focusedAgentId: 'rick', nearbyAgentId: 'tyler' })).toBe('toggle-screen')
   })
@@ -85,8 +92,8 @@ describe('villageKeyAction: with an agent open', () => {
     expect(keys('Space', { ...open, typing: true, ctrl: true })).toBe('toggle-voice')
   })
 
-  it('E on the agent that is already open does nothing', () => {
-    expect(keys('KeyE', open)).toBeNull()
+  it('E on the agent that is already open closes it', () => {
+    expect(keys('KeyE', open)).toBe('close')
   })
 
   it('N jumps to the next agent, unless the village is empty', () => {
