@@ -7,14 +7,14 @@
 //   an agent earns its working minutes × the priority (0 to 1) of the mission it is on.
 // The missions' priority is the agents' multiplier, not the owner's: "I don't even do them. You do the missions."
 
-export const WORK_VALOR = { mission: 1, agent: 1, free: 0.7 }
+export const WORK_VALOR = { mission: 1, agent: 1, mindcraft: 1, free: 0.7 }
 /** No key, mouse, walking or dictation for this long: the counter stops. */
 export const WORK_IDLE_MS = 3 * 60 * 1000
 /** The page reports this often. */
 export const WORK_BEAT_MS = 15_000
 /** A tab that hasn't reported for this long has gone: another tab may count. */
 export const WORK_HOLDER_STALE_MS = 50_000
-export const WORK_RULE = 'You earn 1 XP a minute with an agent or a mission open, 0.7 just being in the Oasis. An agent earns its working minutes × its mission\'s priority. A committed day that is hit counts double; a committed day that is missed costs 7 XP for every missing minute.'
+export const WORK_RULE = 'XP is time: 1 XP a minute of work, for you and for every agent. Your time with an agent, a mission or Mindcraft open counts at 1, time in the Oasis with nothing in focus at 0.7. A mission’s priority only decides what is done next. A committed day that is hit counts double; a committed day that is missed costs 7 XP for every missing minute.'
 
 /**
  * A commitment, the first Mindcraft's way (v0.1, 2025): what you commit to counts double, and what
@@ -321,7 +321,12 @@ export interface WorkBeat {
 export interface WorkFocus {
   agent?: { key: string; name: string } | null
   mission?: { file: string; title: string; priority: number } | null
+  /** Mindcraft is open in front of him (answering missions, planning): full work, valor 1. */
+  mindcraft?: boolean
 }
+
+/** Time with Mindcraft open is booked as its own unit of work. */
+export const MINDCRAFT_UNIT = { file: 'mindcraft', title: 'In Mindcraft', priority: 0 }
 
 export interface WorkBeatResult {
   file: WorkFile
@@ -343,7 +348,7 @@ export interface WorkBeatResult {
 function addSeconds(file: WorkFile, date: string, seconds: number, focus?: WorkFocus): void {
   if (seconds <= 0) return
   const day = file.days[date] || (file.days[date] = { freeSeconds: 0, freeXp: 0, missions: {} })
-  const on = file.active || focus?.mission || null
+  const on = file.active || focus?.mission || (focus?.mindcraft ? MINDCRAFT_UNIT : null)
   let xp: number
   if (on) {
     const mission = day.missions[on.file] || (day.missions[on.file] = { title: on.title, priority: on.priority, seconds: 0, xp: 0 })
@@ -520,8 +525,9 @@ export function applyAgentWork(input: WorkFile, report: AgentWorkReport, offsetM
   const day = file.days[date] || (file.days[date] = { freeSeconds: 0, freeXp: 0, missions: {} })
   const hours = (day.hours ||= {})[report.key] || (day.hours[report.key] = { name: report.name, ownSeconds: 0, helperSeconds: 0, turns: 0, helpers: 0, xp: 0 })
   hours.name = report.name || hours.name
+  // XP is time (the owner, 2026-11-20): 1 XP a minute, mission or not; the mission only says what the time went to.
+  hours.xp = (hours.xp || 0) + seconds / 60
   if (report.mission) {
-    hours.xp = (hours.xp || 0) + (seconds / 60) * Math.max(0, report.mission.priority)
     hours.mission = report.mission.title
     hours.priority = Math.max(0, report.mission.priority)
     if (report.mission.file) (hours.missions ||= {})[report.mission.file] = (hours.missions?.[report.mission.file] || 0) + seconds
@@ -616,6 +622,12 @@ export function evaluateCommitment(file: WorkFile, commitment: WorkVow, today: s
     penaltyXp: round1(penaltyXp),
     today: stake,
   }
+}
+
+/** An agent's XP for a day: its working minutes (own time plus helpers), 1 XP each. Days booked before
+ *  2026-11-20 stored minutes × mission priority; reading from the seconds puts every day on the same rule. */
+export function agentXp(h: Pick<AgentHours, 'ownSeconds' | 'helperSeconds'>): number {
+  return (h.ownSeconds + h.helperSeconds) / 60
 }
 
 // ─── agent hours: how much the Oasis itself worked ──────────────────────────
@@ -741,7 +753,7 @@ export function mindcraftBook(file: WorkFile, today = localDay(Date.now())): Min
     for (const [key, h] of Object.entries(day.hours || {})) {
       const seconds = Math.round(h.ownSeconds + h.helperSeconds)
       if (!seconds) continue
-      const unit: WorkUnit = { kind: 'agent', label: h.name, seconds, xp: round1(h.xp || 0), ...(h.mission ? { mission: h.mission } : {}), ...(typeof h.priority === 'number' ? { priority: h.priority } : {}), ...(h.helperSeconds ? { split: { own: Math.round(h.ownSeconds), helpers: Math.round(h.helperSeconds) } } : {}) }
+      const unit: WorkUnit = { kind: 'agent', label: h.name, seconds, xp: round1(agentXp(h)), ...(h.mission ? { mission: h.mission } : {}), ...(typeof h.priority === 'number' ? { priority: h.priority } : {}), ...(h.helperSeconds ? { split: { own: Math.round(h.ownSeconds), helpers: Math.round(h.helperSeconds) } } : {}) }
       agentUnits.push(unit)
       const agent = byAgent.get(key) || { key, name: h.name, seconds: 0, xp: 0, days: [] }
       byAgent.set(key, agent)
@@ -752,7 +764,7 @@ export function mindcraftBook(file: WorkFile, today = localDay(Date.now())): Min
         if (typeof h.priority === 'number') agent.priority = h.priority
       }
       agent.seconds += seconds
-      agent.xp = round1(agent.xp + (h.xp || 0))
+      agent.xp = round1(agent.xp + agentXp(h))
       agent.days.push({ date, seconds, xp: unit.xp, units: [{ ...unit, label: h.mission || 'No mission' }] })
     }
     if (agentUnits.length) {
@@ -848,7 +860,7 @@ export function daySummary(file: WorkFile, date: string, today: string): WorkDay
     ...(day?.manual || []).map(m => ({ label: `Added by hand: ${m.reason}`, xp: round1(m.xp), seconds: m.seconds, kind: 'manual' as const })),
   ].filter(item => item.seconds > 0).sort((a, b) => b.xp - a.xp)
   const hours = Object.entries(day?.hours || {})
-    .map(([key, h]) => ({ key, ...h, xp: round1(h.xp || 0), ownSeconds: Math.round(h.ownSeconds), helperSeconds: Math.round(h.helperSeconds), totalSeconds: Math.round(h.ownSeconds + h.helperSeconds) }))
+    .map(([key, h]) => ({ key, ...h, xp: round1(agentXp(h)), ownSeconds: Math.round(h.ownSeconds), helperSeconds: Math.round(h.helperSeconds), totalSeconds: Math.round(h.ownSeconds + h.helperSeconds) }))
     .sort((a, b) => b.totalSeconds - a.totalSeconds)
   const xp = dayXp(day)
   return {

@@ -228,6 +228,8 @@ export function WorkVowHud() {
   const free = snapshot.settings?.freeValor ?? WORK_VALOR.free
   const [what, rate]: [string, number] = snapshot.active
     ? [snapshot.active.title, WORK_VALOR.mission]
+    : state.inMindcraft
+      ? ['in Mindcraft', WORK_VALOR.mindcraft]
     : openMission
       ? [openMission.title, WORK_VALOR.mission]
       : agentFocus

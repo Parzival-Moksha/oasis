@@ -206,10 +206,10 @@ export function reportAgentWork(reports: AgentWorkReport[]): Promise<{ booked: n
   })
 }
 
-export function reportWorkBeat(input: Omit<WorkBeat, 'focus'> & { release?: boolean; focus?: { agent?: { key: string; name: string } | null; mission?: string | null } }, now = Date.now()): Promise<{ counting: boolean; credited: number; otherTab: boolean; other?: { client?: string; since: number }; snapshot: WorkSnapshot }> {
+export function reportWorkBeat(input: Omit<WorkBeat, 'focus'> & { release?: boolean; focus?: { agent?: { key: string; name: string } | null; mission?: string | null; mindcraft?: boolean } }, now = Date.now()): Promise<{ counting: boolean; credited: number; otherTab: boolean; other?: { client?: string; since: number }; snapshot: WorkSnapshot }> {
   return serial(async () => {
     const mission = input.focus?.mission ? await missionMeta(input.focus.mission) : null
-    const beat: WorkBeat & { release?: boolean } = { ...input, focus: { agent: input.focus?.agent || null, mission } }
+    const beat: WorkBeat & { release?: boolean } = { ...input, focus: { agent: input.focus?.agent || null, mission, mindcraft: input.focus?.mindcraft === true } }
     const before = await readBook()
     const result = applyWorkBeat(before, beat, now)
     // A closing page reports its last seconds and lets go.

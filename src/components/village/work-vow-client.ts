@@ -21,6 +21,8 @@ export interface WorkVowState {
   unsaved: boolean
   /** This page is driven by automation (a test browser): it shows the book and never reports. */
   automated: boolean
+  /** Mindcraft is open: its time counts at valor 1. */
+  inMindcraft?: boolean
   /** When another tab counts: its browser and since when (for the HUD). */
   other?: { client?: string; since: number }
 }
@@ -60,7 +62,7 @@ const listeners = G.listeners
 function set(patch: Partial<WorkVowState>): void {
   state = G.state
   const next = { ...state, ...patch }
-  if (next.snapshot === state.snapshot && next.pendingSeconds === state.pendingSeconds && next.running === state.running && next.otherTab === state.otherTab && next.unsaved === state.unsaved && next.automated === state.automated && next.other === state.other) return
+  if (next.snapshot === state.snapshot && next.pendingSeconds === state.pendingSeconds && next.running === state.running && next.otherTab === state.otherTab && next.unsaved === state.unsaved && next.automated === state.automated && next.other === state.other && next.inMindcraft === state.inMindcraft) return
   state = next
   G.state = next
   listeners.forEach(listener => listener())
@@ -92,6 +94,8 @@ export interface WorkFocusNow {
   agent: { key: string; name: string } | null
   /** A mission file. */
   mission: string | null
+  /** Mindcraft is open in front of him. */
+  mindcraft?: boolean
 }
 
 let focus: WorkFocusNow = { agent: null, mission: null }
@@ -100,7 +104,15 @@ let focus: WorkFocusNow = { agent: null, mission: null }
 export function setWorkFocus(next: WorkFocusNow): void {
   if ((next.agent?.key || '') === (focus.agent?.key || '') && next.mission === focus.mission) return
   if (pendingMs >= 1000) void beat()
-  focus = next
+  focus = { ...next, mindcraft: focus.mindcraft }
+}
+
+/** Mindcraft is open (or closed): its time is full work, valor 1 (the owner, 2026-11-20). */
+export function setWorkInMindcraft(open: boolean): void {
+  if (Boolean(focus.mindcraft) === open) return
+  if (pendingMs >= 1000) void beat()
+  focus = { ...focus, mindcraft: open }
+  set({ inMindcraft: open })
 }
 
 // ─── agent hours: finished turns and helpers, as the engine reports them ────

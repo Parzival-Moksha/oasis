@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
     const agent = body.focus?.agent && typeof body.focus.agent.key === 'string' && body.focus.agent.key
       ? { key: body.focus.agent.key.slice(0, 120), name: String(body.focus.agent.name || body.focus.agent.key).slice(0, 80) }
       : null
-    const focus = { agent, mission: typeof body.focus?.mission === 'string' ? body.focus.mission : null }
+    const focus = { agent, mission: typeof body.focus?.mission === 'string' ? body.focus.mission : null, mindcraft: (body.focus as { mindcraft?: unknown } | null)?.mindcraft === true }
     return NextResponse.json({ ok: true, ...(await reportWorkBeat({ tab: body.tab, seq: body.seq, seconds: body.seconds, release: body.release === true, back: body.back === true, focus, client: clientLabel(userAgent) })) })
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })

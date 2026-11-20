@@ -331,8 +331,9 @@ describe('agent hours', () => {
     const day = daySummary(book, '2026-11-16', '2026-11-16')
     expect(day.agentHours.totalSeconds).toBe(660)
     expect(day.agentHours.agents).toEqual([
-      { key: 's1', name: 'Anorak', ownSeconds: 250, helperSeconds: 350, turns: 1, helpers: 2, xp: 0, totalSeconds: 600 },
-      { key: 's2', name: 'Morrow', ownSeconds: 60, helperSeconds: 0, turns: 1, helpers: 0, xp: 0.5, mission: 'The vow', priority: 0.5, totalSeconds: 60 },
+      // XP is time: a minute is 1 XP, mission or not (the mission only says what the time went to).
+      { key: 's1', name: 'Anorak', ownSeconds: 250, helperSeconds: 350, turns: 1, helpers: 2, xp: 10, totalSeconds: 600 },
+      { key: 's2', name: 'Morrow', ownSeconds: 60, helperSeconds: 0, turns: 1, helpers: 0, xp: 1, mission: 'The vow', priority: 0.5, totalSeconds: 60 },
     ])
     expect(daySummary(book, '2026-11-17', '2026-11-17').agentHours.totalSeconds).toBe(30)
     // Agent hours are not the owner's time: the vow does not move.
@@ -393,12 +394,12 @@ describe('Mindcraft: days of work units, the free-time valor setting', () => {
       { kind: 'free', label: 'In the Oasis ×0.7', seconds: 600, xp: 7 },
     ])
     // Nine turns of Anorak are one unit for that day, not nine.
-    expect(m.oasis[1]).toMatchObject({ date: '2026-11-16', seconds: 2400, xp: 15 })
-    expect(m.oasis[1].units.map(unit => [unit.label, unit.seconds, unit.xp])).toEqual([['Anorak', 1800, 15], ['Morrow', 600, 0]])
-    expect(m.agents.map(agent => [agent.name, agent.seconds, agent.xp, agent.days.length])).toEqual([['Anorak', 1920, 16, 2], ['Morrow', 600, 0, 1]])
-    expect(m.agents[0].days[1].units[0]).toMatchObject({ label: 'A', seconds: 1800, xp: 15, split: { own: 1000, helpers: 800 } })
+    expect(m.oasis[1]).toMatchObject({ date: '2026-11-16', seconds: 2400, xp: 40 })
+    expect(m.oasis[1].units.map(unit => [unit.label, unit.seconds, unit.xp])).toEqual([['Anorak', 1800, 30], ['Morrow', 600, 10]])
+    expect(m.agents.map(agent => [agent.name, agent.seconds, agent.xp, agent.days.length])).toEqual([['Anorak', 1920, 32, 2], ['Morrow', 600, 10, 1]])
+    expect(m.agents[0].days[1].units[0]).toMatchObject({ label: 'A', seconds: 1800, xp: 30, split: { own: 1000, helpers: 800 } })
     expect(m.agents[0]).toMatchObject({ mission: 'A' })
-    expect(m.totals).toEqual({ owner: { seconds: 5460, xp: 87.7 }, oasis: { seconds: 2520, xp: 16 } })
+    expect(m.totals).toEqual({ owner: { seconds: 5460, xp: 87.7 }, oasis: { seconds: 2520, xp: 42 } })
   })
 })
 
@@ -469,7 +470,7 @@ describe('one XP number per day; where an agent\'s XP comes from; time per missi
     expect(m.totals.owner.xp).toBe(-1106)
     expect(m.totals.owner.xp).toBe(m.owner.reduce((sum, day) => sum + day.xp, 0))
   })
-  it('an agent\'s row carries the mission its time counted for and that mission\'s priority; none: no XP', async () => {
+  it('an agent row carries the mission its time went to; its XP is its minutes either way', async () => {
     const { applyAgentWork, mindcraftBook, missionTimers } = await import('../village/work-vow')
     const ts = at('10:00:00')
     let book = applyAgentWork(emptyWorkFile(), { key: 's1', name: 'Anorak', ts, kind: 'turn', ms: 600_000, mission: { file: 'a.md', title: 'A', priority: 0.48 } }, TZ)
@@ -478,8 +479,9 @@ describe('one XP number per day; where an agent\'s XP comes from; time per missi
     book.days['2026-11-16'].missions['a.md'] = { title: 'A', priority: 0.48, seconds: 90, xp: 1.5 }
     const day = mindcraftBook(book, '2026-11-16').oasis[0]
     expect(day.units).toEqual([
-      { kind: 'agent', label: 'Anorak', seconds: 900, xp: 7.2, mission: 'A', priority: 0.48, split: { own: 600, helpers: 300 } },
-      { kind: 'agent', label: 'Debugger', seconds: 120, xp: 0 },
+      // XP is time: 15 minutes is 15 XP; the mission and its priority only say what the time went to.
+      { kind: 'agent', label: 'Anorak', seconds: 900, xp: 15, mission: 'A', priority: 0.48, split: { own: 600, helpers: 300 } },
+      { kind: 'agent', label: 'Debugger', seconds: 120, xp: 2 },
     ])
     // The mission's timer: the owner's minutes on it and the agents'.
     expect(missionTimers(book)).toEqual({ 'a.md': { ownerSeconds: 90, agentSeconds: 900 } })
@@ -568,3 +570,15 @@ describe('agent hours: how much the Oasis itself worked', () => {
     expect(snap.today.seconds).toBe(0)
   })
 })
+
+describe('XP is time (2026-11-20)', () => {
+  it('time with Mindcraft open is full work: 1 XP a minute, booked as "In Mindcraft"', () => {
+    let book = applyWorkBeat(emptyWorkFile(), { tab: 'a', seq: 1, seconds: 0 }, at('09:00:00'), TZ).file
+    book = applyWorkBeat(book, { tab: 'a', seq: 2, seconds: 60, focus: { mindcraft: true } }, at('09:01:00'), TZ).file
+    book = applyWorkBeat(book, { tab: 'a', seq: 3, seconds: 60, focus: {} }, at('09:02:00'), TZ).file
+    const day = book.days['2026-11-16']
+    expect(day.missions.mindcraft).toMatchObject({ title: 'In Mindcraft', seconds: 60, xp: 1 })
+    expect(day).toMatchObject({ freeSeconds: 60, freeXp: 0.7 })
+  })
+})
+

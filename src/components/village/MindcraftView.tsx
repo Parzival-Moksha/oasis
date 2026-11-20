@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { useMindcraftLook } from './mindcraft-look'
 import { ManualTimeForm } from './ManualTimeForm'
+import { setWorkInMindcraft } from './work-vow-client'
 import { formatClock, type MindcraftBook, type MindcraftDay, type WorkSnapshot, type WorkUnit } from '../../lib/village/work-vow'
 
 const UNIT_COLOR = { mission: '#38bdf8', agent: '#c084fc', free: '#34d399', manual: '#f59e0b' }
@@ -120,6 +121,11 @@ function DayList({ days, today, target, empty, onRemoveManual }: { days: Mindcra
 
 export function MindcraftView() {
   useMindcraftLook() // the look (textures, typefaces) lives in mindcraft-look.tsx; this file carries its class names
+  // Time in Mindcraft is work at valor 1 (the owner, 2026-11-20), wherever this view is shown.
+  useEffect(() => {
+    setWorkInMindcraft(true)
+    return () => setWorkInMindcraft(false)
+  }, [])
   const [book, setBook] = useState<MindcraftBook | null>(null)
   const [snapshot, setSnapshot] = useState<WorkSnapshot | null>(null)
   const [tab, setTab] = useState<'you' | 'agents'>('you')
