@@ -14,6 +14,8 @@
 //     # Title
 //     ## What it is … ## Options … ## Recommendation …
 
+import type { Mission } from './village-missions'
+
 export type CarbonState = 'open' | 'parked' | 'answered'
 export type CarbonKind = 'question' | 'task'
 
@@ -169,6 +171,30 @@ export function quickAnswer(choice: 'yes' | 'no' | 'later' | 'done', mission: Pi
   if (choice === 'later') return { answer: 'later', state: 'parked' }
   if (choice === 'done') return { answer: 'done', state: 'answered' }
   return { answer: 'no', state: 'answered' }
+}
+
+/**
+ * The garden's mission wall shows his open missions (the owner, 2026-11-20: "the missions that are in the Zen
+ * garden are actually relevant to the agents"; they should be his). One panel per open mission, highest
+ * priority first, at most `max`; the caption says how long it takes him and what waits on it.
+ */
+export function carbonWallMissions(list: CarbonMission[], max = 24): Mission[] {
+  return sortCarbon(list.filter(m => m.state === 'open')).slice(0, max).map(m => ({
+    file: m.file,
+    title: m.title,
+    state: m.kind,
+    column: 'to do' as const,
+    who: m.by ? `asked by ${m.by}` : '',
+    doneWhen: '',
+    ease: m.ease,
+    impact: m.impact,
+    urgency: m.urgency,
+    priority: m.priority,
+    tldr: [m.minutes !== null ? `about ${m.minutes} min of your time` : '', m.blocks ? `waits: ${m.blocks}` : ''].filter(Boolean).join(' · ') || (m.kind === 'task' ? 'a thing to do' : 'a question for you'),
+    picture: '',
+    pictureUrl: null,
+    markdown: m.markdown,
+  }))
 }
 
 /** The message Anorak gets when the owner answers. */

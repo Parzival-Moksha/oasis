@@ -2,6 +2,7 @@
 // One small external store (useSyncExternalStore). The list comes from GET /api/village/missions and
 // is re-read every 30 s and when the window comes back, so a mission edited on disk shows up without F5.
 
+import { carbonWallMissions, type CarbonMission } from '../../lib/village/carbon-missions'
 import { findNearestStation, type Vec3 } from '../../lib/village/village-layout'
 import { MISSION_READ_RADIUS, type Mission } from '../../lib/village/village-missions'
 import { requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
@@ -49,16 +50,18 @@ export function refreshMissions(): Promise<void> {
   if (refused) return Promise.resolve()
   inFlight = (async () => {
     try {
-      const response = await fetch('/api/village/missions', { cache: 'no-store' })
+      // The wall shows the owner's missions (docs/questions); the agents' board is in Mindcraft's Silicon tab.
+      const response = await fetch('/api/village/questions', { cache: 'no-store' })
       if (response.status === 403 || response.status === 404) refused = true
       if (!response.ok) return
       const body = await response.text()
       if (body === lastBody) return
-      const data = JSON.parse(body) as { missions?: Mission[] }
+      const data = JSON.parse(body) as { missions?: CarbonMission[] }
       if (!Array.isArray(data.missions)) return
       lastBody = body
-      const reader = state.reader && data.missions.some(mission => mission.file === state.reader?.file) ? state.reader : null
-      set({ missions: data.missions, reader })
+      const missions = carbonWallMissions(data.missions)
+      const reader = state.reader && missions.some(mission => mission.file === state.reader?.file) ? state.reader : null
+      set({ missions, reader })
     } catch {
       // Offline or mid-reload: keep what we have, the next tick tries again.
     } finally {

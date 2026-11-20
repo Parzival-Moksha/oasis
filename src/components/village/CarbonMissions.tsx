@@ -164,12 +164,12 @@ function MissionView({ mission, onBack, onAnswered }: { mission: CarbonMission; 
   )
 }
 
-export function CarbonMissions() {
+export function CarbonMissions({ initialFile = null }: { initialFile?: string | null } = {}) {
   const [missions, setMissions] = useState<CarbonMission[] | null>(null)
   const [error, setError] = useState('')
   const [sort, setSort] = useState<CarbonSort>('priority')
   const [filter, setFilter] = useState<Filter>('open')
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(initialFile)
 
   const load = useCallback(async () => {
     try {

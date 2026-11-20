@@ -4,6 +4,7 @@
 // Plain DOM over the canvas (mounted by VillageController): the prompt reuses the agents' game banner,
 // the text the thread's markdown renderer and the agent panel's look. Esc closes it.
 
+import { openMindcraft } from './MindcraftView'
 import { useEffect, useSyncExternalStore } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { useInputManager, useUILayer } from '../../lib/input-manager'
@@ -84,7 +85,8 @@ export function VillageMissionReader() {
         if (!(event.code === 'Escape' && cancelMissionEditing())) closeMissionReader()
       }
       else if (action === 'toggle-full') toggleMissionReaderMode()
-      else if (current.nearby) openMissionReader(current.nearby, action === 'full' ? 'full' : 'side')
+      // A panel is one of his missions: it opens in Mindcraft's Carbon tab, where he answers it.
+      else if (current.nearby) openMindcraft(current.nearby)
       event.preventDefault()
       event.stopImmediatePropagation()
     }
@@ -97,8 +99,7 @@ export function VillageMissionReader() {
     <>
       {near && !open && !nearMini && (
         <PromptBanner accent={MISSION_COLUMN_COLOR[near.column]} title={near.title}>
-          <KeyPrompt k="E" label="Read" accent="#38bdf8" primary />
-          <KeyPrompt k="F" label="Full screen" accent="#c084fc" className="max-[700px]:hidden" />
+          <KeyPrompt k="E" label="Open in Mindcraft" accent="#38bdf8" primary />
         </PromptBanner>
       )}
       {open && reader && <MissionSheet mission={open} mode={reader.mode} />}

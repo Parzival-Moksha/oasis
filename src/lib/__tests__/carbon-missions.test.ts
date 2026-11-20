@@ -89,3 +89,17 @@ describe('answering', () => {
     expect(note).toContain('Your prediction was: yes')
   })
 })
+
+describe('the garden wall shows his open missions', () => {
+  it('open only, highest priority first, at most max; the caption says minutes and what waits', async () => {
+    const { carbonWallMissions } = await import('../village/carbon-missions')
+    const a = parseCarbonMission('a.md', FILE)
+    const b = parseCarbonMission('b.md', 'state: open\nkind: task\nscore: ease 5 · impact 5 · urgency 5\nminutes: 3\n\n# Pay the bill')
+    const c = parseCarbonMission('c.md', 'state: parked\nscore: ease 5 · impact 5 · urgency 5\n\n# Later')
+    const wall = carbonWallMissions([a, b, c], 24)
+    expect(wall.map(m => m.file)).toEqual(['b.md', 'a.md'])
+    expect(wall[0]).toMatchObject({ title: 'Pay the bill', column: 'to do', state: 'task', priority: 1, tldr: 'about 3 min of your time' })
+    expect(wall[1]).toMatchObject({ who: 'asked by Hustler', tldr: 'about 2 min of your time · waits: the install line, the npm name' })
+    expect(carbonWallMissions([a, b], 1)).toHaveLength(1)
+  })
+})

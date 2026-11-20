@@ -22,8 +22,8 @@ const UNIT_COLOR = { mission: '#38bdf8', agent: '#c084fc', free: '#34d399', manu
 export const MINDCRAFT_EVENT = 'oasis:open-mindcraft'
 
 /** Open the Mindcraft window from anywhere (a menu tile, a key, the work counter). */
-export function openMindcraft(): void {
-  window.dispatchEvent(new CustomEvent(MINDCRAFT_EVENT))
+export function openMindcraft(carbonFile?: string): void {
+  window.dispatchEvent(new CustomEvent(MINDCRAFT_EVENT, { detail: carbonFile ? { carbon: carbonFile } : {} }))
 }
 
 function dayLabel(date: string): string {
@@ -145,7 +145,7 @@ function AgentMissionBoard() {
   )
 }
 
-export function MindcraftView() {
+export function MindcraftView({ carbonFile }: { carbonFile?: string | null } = {}) {
   useMindcraftLook() // the look (textures, typefaces) lives in mindcraft-look.tsx; this file carries its class names
   // Time in Mindcraft is work at valor 1 (the owner, 2026-11-20), wherever this view is shown.
   useEffect(() => {
@@ -233,7 +233,7 @@ export function MindcraftView() {
       </div>
       {/* Carbon fills the space and scrolls inside its own list; the other tabs scroll here. */}
       <div className={`min-h-0 flex-1 pr-1 ${tab === 'carbon' ? 'flex flex-col' : 'overflow-y-auto'}`}>
-        {tab === 'carbon' && <CarbonMissions />}
+        {tab === 'carbon' && <CarbonMissions key={carbonFile || ''} initialFile={carbonFile || null} />}
         {tab === 'today' && <DayList days={book.owner} today={snapshot.date} target={snapshot.targetSeconds} onRemoveManual={removeManual} empty="Nothing counted yet. Time counts while the Oasis is in front and you are doing something." />}
         {tab === 'silicon' && (
           <div className="flex flex-col gap-3">
@@ -317,8 +317,13 @@ export function overlayObstacles(minZ = WINDOW_Z, ignore = '[data-ui-panel="mind
 export function MindcraftWindow() {
   const kitStyle = useKitStyle()
   const [open, setOpen] = useState(false)
+  const [carbonFile, setCarbonFile] = useState<string | null>(null)
   useEffect(() => {
-    const onOpen = () => setOpen(true)
+    const onOpen = (event: Event) => {
+      const file = (event as CustomEvent<{ carbon?: string }>).detail?.carbon
+      setCarbonFile(typeof file === 'string' ? file : null)
+      setOpen(true)
+    }
     window.addEventListener(MINDCRAFT_EVENT, onOpen)
     return () => window.removeEventListener(MINDCRAFT_EVENT, onOpen)
   }, [])
@@ -361,7 +366,7 @@ export function MindcraftWindow() {
         style={{ left, width }}
       >
         <button type="button" onClick={() => setOpen(false)} title="Close (Esc)" className="mc-scope absolute right-1 top-1 z-10"><span className="mc-close flex items-center justify-center">✕</span></button>
-        <MindcraftView />
+        <MindcraftView carbonFile={carbonFile} />
       </div>
     </>
   )
