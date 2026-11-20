@@ -142,8 +142,16 @@ export function PlayerSpellbookPanel({
     <div
       data-ui-panel
       data-spellbook-menu-panel
-      className="fixed left-[10.25rem] top-4 z-[285] w-[min(760px,calc(100vw-11.5rem))] max-h-[calc(100vh-2rem)] overflow-hidden rounded-lg border border-amber-200/28 bg-[#050403]/82 text-white shadow-[0_0_70px_rgba(251,146,60,0.24),0_0_28px_rgba(0,0,0,0.78)] max-[700px]:bottom-[170px] max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto max-[700px]:max-h-none"
-      style={{ fontFamily: spellbookFont }}
+      className="fixed left-[10.25rem] top-4 z-[285] w-[min(760px,calc(100vw-11.5rem))] max-h-[calc(100vh-2rem)] overflow-hidden bg-[#050403]/82 text-white max-[700px]:bottom-[170px] max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto max-[700px]:max-h-none"
+      style={{
+        fontFamily: spellbookFont,
+        // No border (the owner, 2026-11-19 and 20): the page fades into the world over its last 16 px.
+        WebkitMaskImage: 'linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%), linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%)',
+        WebkitMaskComposite: 'source-in',
+        maskImage: 'linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%), linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%)',
+        maskComposite: 'intersect',
+        padding: '6px 6px 10px',
+      }}
       onMouseDown={event => event.stopPropagation()}
     >
       <style>{`
@@ -265,7 +273,7 @@ export function PlayerSpellbookPanel({
       <div className="pointer-events-none absolute inset-0 bg-black/50" />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/16 via-transparent to-black/24" />
       <div
-        className="relative flex items-center justify-between gap-3 border-b border-amber-100/14 bg-black/18 px-4 py-3"
+        className="relative flex items-center justify-between gap-3 border-b border-[#6b4a1e]/50 bg-black/18 px-4 py-3"
         style={{
           // ─═̷─ Match the page texture so the header doesn't look like
           // dead chrome above a richly textured page. Same bg as the
@@ -315,7 +323,7 @@ export function PlayerSpellbookPanel({
       </div>
 
       <div
-        className="relative flex gap-1 overflow-x-auto border-b border-white/10 bg-black/22 px-2 py-2"
+        className="relative flex gap-1 overflow-x-auto border-b border-[#6b4a1e]/50 bg-black/22 px-2 py-2"
         style={{
           backgroundImage: 'none',
           backgroundSize: 'cover',
@@ -395,17 +403,17 @@ export function PlayerSpellbookPanel({
                 }}
                 className={[
                   'group relative cursor-pointer overflow-hidden rounded-lg border p-2 transition-all duration-200',
-                  'hover:scale-[1.025] hover:border-amber-200/55 hover:shadow-[0_0_22px_rgba(251,191,36,0.32)]',
+                  'hover:scale-[1.025] hover:border-amber-500/80 hover:shadow-[0_0_22px_rgba(251,191,36,0.32)]',
                   'active:scale-[0.985]',
                   selected
-                    ? 'border-amber-200/75 bg-gradient-to-br from-amber-900/42 via-orange-950/62 to-black/92 shadow-[0_0_22px_rgba(251,191,36,0.42)]'
-                    : 'border-orange-200/28 bg-gradient-to-br from-orange-950/44 via-black/60 to-black/88',
+                    ? 'border-amber-500/90 bg-gradient-to-br from-amber-900/42 via-orange-950/62 to-black/92 shadow-[0_0_22px_rgba(251,191,36,0.42)]'
+                    : 'border-[#6b4a1e]/70 bg-gradient-to-br from-orange-950/44 via-black/60 to-black/88',
                   locked || needsKey ? 'opacity-55 grayscale' : '',
                 ].join(' ')}
                 title={needsKey ? featureKeys[definition.id]?.line : undefined}
                 style={animation ? { animation } : undefined}
               >
-                <div className="mb-2 aspect-[3/4] w-full overflow-hidden rounded-md border border-white/10 bg-gradient-to-b from-black/30 to-black/70">
+                <div className="mb-2 aspect-[3/4] w-full overflow-hidden rounded-md border border-[#6b4a1e]/60 bg-gradient-to-b from-black/30 to-black/70">
                   <img
                     src={spellTileSrc(definition.id)}
                     alt={definition.name}
