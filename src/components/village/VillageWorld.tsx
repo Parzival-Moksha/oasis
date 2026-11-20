@@ -104,6 +104,7 @@ import {
 } from './village-companion'
 import { SettingsContext } from '../scene-lib/contexts'
 import { DESK_SCREENS_DEFAULT, DESK_SCREEN_LIMIT, isDeskScreensMode, pickDeskScreens, type DeskDistance } from '../../lib/village/desk-screens'
+import { useKitStyle } from '@/components/ui-kit'
 
 const WORK_ANIMATION_ID = 'ual-talking'
 /** Helper labels show for the agents near the camera (the rule desk screens had before the setting). */
@@ -286,6 +287,9 @@ function DeskWindow({ agentId, nearby, mode }: { agentId: string; nearby: boolea
   const look = usePanelLook(agent?.sessionId || agentId)
   // The page shown on the full screen (thread or settings): a hook, so above the early return.
   const panelTab = useAgentPanelTab()
+  // The one menu style (ui-kit): Glass keeps this agent's own look; a textured style dresses the screen like every menu.
+  const menuStyle = useKitStyle()
+  const textured = menuStyle !== 'glass'
   if (!agent) return null
   const color = agent.readOnly ? VILLAGE_OBSERVED_COLOR : statusColor(effectiveStatus(agent))
   const size = DESK_WINDOW_PX[mode]
@@ -294,8 +298,9 @@ function DeskWindow({ agentId, nearby, mode }: { agentId: string; nearby: boolea
     <div
       data-ui-panel="village-desk-window"
       data-desk-mode={mode}
-      className="relative flex flex-col overflow-hidden rounded-2xl text-white"
-      style={{
+      data-kit-style={textured ? menuStyle : undefined}
+      className={textured ? 'kit-panel relative flex flex-col overflow-hidden text-white' : 'relative flex flex-col overflow-hidden rounded-2xl text-white'}
+      style={textured ? { width: size.width, height: size.height, padding: screen ? 18 : 14 } : {
         width: size.width,
         height: size.height,
         padding: screen ? 18 : 14,
