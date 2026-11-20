@@ -20,6 +20,7 @@ import type { VRM } from '@pixiv/three-vrm'
 import { loadAnimationClip, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation, getClipTravel } from './forge/animation-library'
 import { buildAuthoredClip, isAuthoredClip } from './forge/authored-clips'
 import { locomotionClipId } from './forge/locomotion-set'
+import { measureStrideSpeed, pickGait, strideTimeScale } from './forge/stride-speed'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -58,6 +59,8 @@ export class AnimationController {
   // Clip cache (loaded + retargeted)
   private clips: Map<string, THREE.AnimationClip> = new Map()
   private loadingClips: Set<string> = new Set()
+  /** Ground speed of walk / run / sprint on this body (stride-speed.ts), metres a second. */
+  private naturalSpeeds: Map<string, number> = new Map()
 
   // State
   private currentState: AnimState = 'idle'
@@ -131,6 +134,12 @@ export class AnimationController {
 
       this.clips.set(animId, retargeted)
       this.loadingClips.delete(animId)
+      if (animId === 'walk' || animId === 'run' || animId === 'sprint') {
+        const natural = measureStrideSpeed(this.vrm, retargeted)
+        if (natural) this.naturalSpeeds.set(animId, natural)
+        else this.naturalSpeeds.delete(animId)
+        console.debug(`[AnimController] ${animId} (${sourceId}) steps cover ${natural ? natural.toFixed(2) + ' m/s' : 'an unreadable distance'}; root travel ${JSON.stringify(getClipTravel(retargeted))}`)
+      }
 
       // Mark ready when idle is loaded
       if (animId === 'idle') {
@@ -153,6 +162,7 @@ export class AnimationController {
   reloadClips(ids: string[]): void {
     for (const id of ids) {
       this.clips.delete(id)
+      this.naturalSpeeds.delete(id)
       void this.loadClip(id).then(() => {
         // The state that is playing now picks the new clip up at once.
         if (this.currentState === id) { const state = this.currentState; this.currentState = 'idle'; this.transitionTo(state) }
@@ -322,12 +332,11 @@ export class AnimationController {
     let targetState: AnimState
     if (speed < this.config.walkSpeedThreshold) {
       targetState = 'idle'
-    } else if (speed < this.config.runSpeedThreshold) {
-      targetState = 'walk'
-    } else if (speed < this.config.sprintSpeedThreshold) {
-      targetState = 'run'
     } else {
-      targetState = 'sprint'
+      // From the clips' measured stride speeds when known (stride-speed.ts), else the configured thresholds.
+      const current = this.currentState === 'walk' || this.currentState === 'run' || this.currentState === 'sprint' ? this.currentState : null
+      targetState = pickGait(speed, current, { walk: this.naturalSpeeds.get('walk'), run: this.naturalSpeeds.get('run') })
+        ?? (speed < this.config.runSpeedThreshold ? 'walk' : speed < this.config.sprintSpeedThreshold ? 'run' : 'sprint')
     }
 
     // Fallback chain: sprint→run→walk→idle
@@ -344,6 +353,17 @@ export class AnimationController {
     if (targetState !== this.currentState) {
       this.transitionTo(targetState)
     }
+    // Steps matched to the real speed: the feet move as fast as the body travels (no skating, no treadmill).
+    const state = this.currentState
+    if (this.currentAction && (state === 'walk' || state === 'run' || state === 'sprint')) {
+      const natural = this.naturalSpeeds.get(state)
+      if (natural) this.currentAction.timeScale = strideTimeScale(speed, natural)
+    }
+  }
+
+  /** The measured ground speed of a locomotion clip on this body (null until loaded or when unreadable). */
+  naturalSpeed(state: 'walk' | 'run' | 'sprint'): number | null {
+    return this.naturalSpeeds.get(state) ?? null
   }
 
   // ── UPDATE (call every frame) ────────────────────────────────────────

@@ -14,12 +14,15 @@ export const FOLLOW = {
   asideDistance: 1,
   /** Stepping aside ends this far away. */
   asideClear: 1.8,
-  /** Walking speed near the owner; the owner runs at 3 m/s (PlayerAvatar TPS_BASE_SPEED). */
-  walkSpeed: 3.4,
+  /**
+   * Walking speed near the owner, who walks at 1.4 m/s by default (locomotion-set.ts; 3 with the old jog pace). A
+   * brisk walk: the steps match the speed (stride-speed.ts), and a gap still closes, faster the bigger it is.
+   */
+  walkSpeed: 1.6,
   /** Catching up: the speed grows with the gap up to this (the owner sprints at 12 m/s). */
   runSpeed: 9,
   /** The gap (meters past stopDistance) at which it runs flat out. */
-  runGap: 14,
+  runGap: 12,
   /** Further than this (a teleport, a portal): appear next to the owner instead of running a marathon. */
   teleportDistance: 45,
   /** Radians per second it turns at. */

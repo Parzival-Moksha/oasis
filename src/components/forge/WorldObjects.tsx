@@ -35,6 +35,7 @@ import { extractModelStats } from './ModelPreview'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { loadAnimationClip, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation, LIB_PREFIX, getCachedClip } from '../../lib/forge/animation-library'
+import { measureStrideSpeed, pickGait, strideTimeScale, type Gait } from '../../lib/forge/stride-speed'
 import { dispatch } from '../../lib/event-bus'
 import { MindcraftWorld } from './MindcraftWorld'
 import { AgentWindow3D } from './AgentWindow3D'
@@ -1975,7 +1976,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
         const once = target === 'activity' && activityOnce
         action.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity)
         action.clampWhenFinished = once
-        // Walk anim sped up 2x — feet were lagging behind translation (oasisspec3 fix)
+        // Walk: 2x until the frame loop matches it to the real speed (walk pace, below); kept if the stride can't be read.
         if (target === 'walk') action.timeScale = 2
         if (target === 'activity') action.timeScale = 1
       }
@@ -2015,6 +2016,25 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
   }, [objectId])
 
   const stillForRef = useRef(0)
+  const walkPaceRef = useRef<{ has: boolean; x: number; z: number; speed: number; gait: Gait }>({ has: false, x: 0, z: 0, speed: 0, gait: 'walk' })
+  // The jog and the sprint (free UAL1 loops), retargeted for this body the first time it moves that fast.
+  const gaitClipsRef = useRef<Partial<Record<'run' | 'sprint', THREE.AnimationClip | 'loading'>>>({})
+  useEffect(() => { gaitClipsRef.current = {} }, [vrm])
+  const gaitClip = (gait: 'run' | 'sprint'): THREE.AnimationClip | null => {
+    const have = gaitClipsRef.current[gait]
+    if (have) return have === 'loading' ? null : have
+    const v = vrmRef.current
+    if (!v) return null
+    gaitClipsRef.current[gait] = 'loading'
+    const animId = gait === 'run' ? 'ual-jog' : 'ual-sprint'
+    loadAnimationClip(animId).then(clip => {
+      if (vrmRef.current !== v) return
+      const retargeted = clip ? retargetUALClipForVRM(clip, v, `${clipCacheKey}::${animId}`) : null
+      if (retargeted && retargeted.tracks.length > 0) gaitClipsRef.current[gait] = retargeted
+      else delete gaitClipsRef.current[gait]
+    }).catch(() => { delete gaitClipsRef.current[gait] })
+    return null
+  }
   const vrmBudgetRef = useRef({ stepper: new BackgroundStepper(), background: false, center: new THREE.Vector3(), restAt: new THREE.Vector3() })
 
   // Animation tick — expressions + spring bones + mixer (drives idle/walk/behavior)
@@ -2095,6 +2115,44 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
         // It moved while its hair and cloth were not simulated: start them from rest, not with a whip.
         if (budget.restAt.distanceTo(budget.center) > VRM_SPRING_RESET_M) v.springBoneManager?.reset()
       }
+    }
+
+    // ░▒▓ Walk pace: the steps follow how fast the body really goes (its owner moves it: a follower, a moveTarget),
+    // over each clip's stride measured on this body (stride-speed.ts); past a brisk walk it jogs, then sprints. ▓▒░
+    const pace = walkPaceRef.current
+    const moverAction = activeAnimRef.current === 'walk' ? currentActionRef.current : null
+    const walkNatural = moverAction && walkClip ? measureStrideSpeed(v, walkClip) : null
+    if (moverAction && walkClip && walkNatural && delta > 0) {
+      const world = v.scene.matrixWorld.elements
+      const size = Math.max(scale, 0.05)
+      if (!pace.has) { pace.has = true; pace.speed = walkNatural * size }
+      else {
+        const moved = Math.min(15, Math.hypot(world[12] - pace.x, world[14] - pace.z) / delta)
+        pace.speed += (moved - pace.speed) * Math.min(1, delta * 6)
+      }
+      pace.x = world[12]
+      pace.z = world[14]
+      const gaits = gaitClipsRef.current
+      const runNatural = gaits.run && gaits.run !== 'loading' ? measureStrideSpeed(v, gaits.run) : null
+      const wanted = pickGait(pace.speed / size, pace.gait, { walk: walkNatural, run: runNatural }) ?? 'walk'
+      let action = moverAction
+      if (wanted !== pace.gait) {
+        const clip = wanted === 'walk' ? walkClip : gaitClip(wanted)
+        if (clip && mixerRef.current) {
+          const next = mixerRef.current.clipAction(clip)
+          next.reset().setLoop(THREE.LoopRepeat, Infinity)
+          next.fadeIn(0.25).play()
+          moverAction.fadeOut(0.25)
+          currentActionRef.current = next
+          pace.gait = wanted
+          action = next
+        }
+      }
+      const natural = action.getClip() === walkClip ? walkNatural : measureStrideSpeed(v, action.getClip())
+      action.timeScale = strideTimeScale(pace.speed, natural ? natural * size : null, action.timeScale)
+    } else {
+      pace.has = false
+      pace.gait = 'walk'
     }
 
     v.update(delta)

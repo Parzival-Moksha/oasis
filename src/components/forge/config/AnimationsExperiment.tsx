@@ -5,12 +5,13 @@
 
 import { useState } from 'react'
 import { OPEN_ANIMATION_BROWSER } from '@/components/forge/AnimationBrowser'
-import { getLocomotionSet, setLocomotionSet, type LocomotionSet } from '@/lib/forge/locomotion-set'
+import { getDefaultPace, getLocomotionSet, PACE_SPEED, setDefaultPace, setLocomotionSet, type DefaultPace, type LocomotionSet } from '@/lib/forge/locomotion-set'
 
 export const LOCOMOTION_CHANGED_EVENT = 'oasis:locomotion-set-changed'
 
 export function AnimationsExperiment() {
   const [set, setSet] = useState<LocomotionSet>(() => getLocomotionSet())
+  const [pace, setPace] = useState<DefaultPace>(() => getDefaultPace())
   const pick = (next: LocomotionSet) => {
     setLocomotionSet(next)
     setSet(next)
@@ -36,8 +37,8 @@ export function AnimationsExperiment() {
       <div className="mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">Walk, run and sprint</div>
       <div className="mt-1.5 grid grid-cols-2 gap-2">
         {([
-          ['mixamo', 'Mixamo', 'What you have had until now. Fine on your PC; may not be shared.'],
-          ['quaternius', 'Free (Quaternius)', 'CC0 loops from the packs we already have. May be shipped.'],
+          ['quaternius', 'Free (Quaternius)', 'CC0 loops from the packs we already have. May be shipped. In use by default.'],
+          ['mixamo', 'Mixamo', 'What you had until 20 Nov. Fine on your PC; may not be shared.'],
         ] as const).map(([id, label, blurb]) => (
           <button
             key={id}
@@ -51,7 +52,25 @@ export function AnimationsExperiment() {
           </button>
         ))}
       </div>
-      <p className="mt-1 text-[10px] text-white/45">Takes effect at once: walk off and look.</p>
+      <p className="mt-1 text-[10px] text-white/45">Takes effect at once: walk off and look. Steps follow your real speed either way.</p>
+      <div className="mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">Plain WASD</div>
+      <div className="mt-1.5 grid grid-cols-2 gap-2">
+        {([
+          ['walk', 'Walk', `${PACE_SPEED.walk} m/s, a real walk. Shift ${PACE_SPEED.walk * 4} m/s, a sprint.`],
+          ['jog', 'Jog (as before)', `${PACE_SPEED.jog} m/s, which can only look like a jog. Shift ${PACE_SPEED.jog * 4} m/s.`],
+        ] as const).map(([id, label, blurb]) => (
+          <button
+            key={id}
+            type="button"
+            data-pace={id}
+            onClick={() => { setDefaultPace(id); setPace(id) }}
+            className={`rounded-lg border px-2 py-1.5 text-left transition-all ${pace === id ? 'border-fuchsia-300/70 shadow-[0_0_18px_rgba(240,171,252,0.35)]' : 'border-white/12 hover:border-white/30'}`}
+          >
+            <div className="text-[11px] font-black uppercase tracking-[0.12em] text-white">{label}{pace === id ? ' · in use' : ''}</div>
+            <div className="text-[9.5px] leading-snug text-white/55">{blurb}</div>
+          </button>
+        ))}
+      </div>
     </section>
   )
 }

@@ -22,6 +22,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { useInputManager, consumeMouseLookDelta } from '../../lib/input-manager'
 import { AnimationController } from '../../lib/animation-state-machine'
+import { playerBaseSpeed } from '../../lib/forge/locomotion-set'
 import { useAudioManager } from '../../lib/audio-manager'
 import { localToWorldXZ } from '../../lib/forge/hips-motion'
 import { startDanceMusic, stopDanceMusic, currentDanceMusic } from '../../lib/dance-music'
@@ -88,9 +89,10 @@ const PORTAL_ARRIVAL_TPS_CAMERA_ELEVATION = Math.PI / 4
 
 // TPS speed tiers: walk (space) → run (default) → sprint (shift)
 // Hardcoded — independent of noclip settings.moveSpeed
-const TPS_BASE_SPEED = 3.0      // Default WASD run speed (bumped 25%)
-const TPS_SPRINT_MULT = 4       // Shift: 4x faster (12.0)
-const TPS_WALK_MULT = 0.25      // Space: 4x slower (0.75)
+// Plain WASD: playerBaseSpeed() (locomotion-set.ts), a walk (1.4 m/s) by default or the old jog (3.0).
+const TPS_BASE_SPEED = 3.0      // the old plain speed: only the clip thresholds' fallback below
+const TPS_SPRINT_MULT = 4       // Shift: 4x faster
+const TPS_WALK_MULT = 0.25      // Space: 4x slower
 
 function normalizeAngle(angle: number): number {
   while (angle > Math.PI) angle -= Math.PI * 2
@@ -402,10 +404,12 @@ export function PlayerAvatar({
     const controller = new AnimationController(vrm, {
       crossfadeDuration: 0.3,
       walkSpeedThreshold: 0.1,                          // below 0.1 = idle
-      runSpeedThreshold: TPS_BASE_SPEED * 0.4,          // ~1.2 = walk→run
-      sprintSpeedThreshold: TPS_BASE_SPEED * 2.5,       // ~7.5 = run→sprint
-      runTimeScale: 0.7,                                // slow run animation for foot sync
-      sprintTimeScale: 1.6,                             // fast sprint animation for foot sync
+      // Walk, run or sprint is picked from the clips' measured stride speeds, and each plays at the real speed over
+      // its stride (stride-speed.ts), so the feet keep pace. These thresholds and scales only hold until then.
+      runSpeedThreshold: TPS_BASE_SPEED * 1.4,
+      sprintSpeedThreshold: TPS_BASE_SPEED * 2.5,
+      runTimeScale: 0.7,
+      sprintTimeScale: 1.6,
     })
     animControllerRef.current = controller
     controller.preloadClip('idle').then(ok => {
@@ -700,7 +704,7 @@ export function PlayerAvatar({
 
       // Speed modifier: shift=sprint (4x), space=walk (0.25x), default=run
       const speedMult = sprint || mobileSprint ? TPS_SPRINT_MULT : slow ? TPS_WALK_MULT : 1
-      const currentSpeed = TPS_BASE_SPEED * speedMult
+      const currentSpeed = playerBaseSpeed() * speedMult
 
       // Sprint VFX — same speed lines + chromatic aberration as noclip
       const targetIntensity = sprint || mobileSprint ? (TPS_SPRINT_MULT - 1) / 3 : 0
