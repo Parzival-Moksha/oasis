@@ -41,6 +41,7 @@ import { AgentWhereBar } from './AgentWhereBar'
 import { AgentPanelTabBar, ThreadFontScale, ThreadFontSlider, useAgentPanelTab } from './AgentPanelTabs'
 import { FollowWorldsToggle } from './FollowWorldsToggle'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
+import { useKitStyle } from '@/components/ui-kit'
 
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
 /** What each mode means, in one line (the restart confirm says it). */
@@ -167,6 +168,9 @@ export function AgentSessionPanel() {
   const mergedModels = useMemo(() => JSON.parse(mergedModelsKey) as ModelOption[], [mergedModelsKey])
   // Transparency + blur for all agent chats, this agent's colour (PanelLook.tsx).
   const { accent: panelAccent, ...panelLook } = usePanelLook(agent?.sessionId || agentId || '')
+  // The one menu style (ui-kit): Glass keeps this agent's own colour, see-through and blur; a textured style dresses the panel like every menu.
+  const menuStyle = useKitStyle()
+  const textured = menuStyle !== 'glass'
 
   // The page shown (thread or settings): a hook, so above the early return below.
   const panelTab = useAgentPanelTab()
@@ -213,8 +217,13 @@ export function AgentSessionPanel() {
   return (
     <div
       data-ui-panel="village-session"
-      className={`fixed flex flex-col gap-2 rounded-xl border bg-slate-950/95 p-3 text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl ${VILLAGE_TYPE_CLASS}`}
-      style={{ ...style, ...panelLook, borderColor: `${color}88`, boxShadow: `inset 0 3px 0 ${panelAccent}, 0 24px 70px rgba(0,0,0,0.55)`, fontFamily: VILLAGE_FONT_BODY }}
+      data-kit-style={textured ? menuStyle : undefined}
+      className={textured
+        ? `kit-panel fixed flex flex-col gap-2 p-3 text-white ${VILLAGE_TYPE_CLASS}`
+        : `fixed flex flex-col gap-2 rounded-xl border bg-slate-950/95 p-3 text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl ${VILLAGE_TYPE_CLASS}`}
+      style={textured
+        ? { ...style, boxShadow: `0 24px 70px rgba(0,0,0,0.55)` }
+        : { ...style, ...panelLook, borderColor: `${color}88`, boxShadow: `inset 0 3px 0 ${panelAccent}, 0 24px 70px rgba(0,0,0,0.55)`, fontFamily: VILLAGE_FONT_BODY }}
       onPointerDown={() => bringToFront('village-session')}
     >
       {geometry.side === 'right' && (
