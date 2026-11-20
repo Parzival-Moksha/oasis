@@ -8,7 +8,8 @@ import { useOasisStore } from '../../store/oasisStore'
 import { villageAgentKey } from '../../lib/village/village-layout'
 import { homeSpotWorlds } from '../../lib/village/village-homes'
 import { agentWorld, isAgentHere } from '../../lib/village/village-worlds'
-import { getVillageFollowVersion, isVillageFollowOn, subscribeVillageFollow } from './village-companion'
+import { getVillageFollowVersion, subscribeVillageFollow } from './village-companion'
+import { FOLLOW_DEFAULT } from '../../lib/village/village-follow'
 import { currentVillageWorld, getVillageHomesFile, getVillageHomesVersion, subscribeVillageHomes } from './village-homes'
 import { getVillageIdentity, getVillageIdentityVersion, queueVillageIdentity, subscribeVillageIdentity } from '../../lib/village/village-identity-client'
 
@@ -22,6 +23,20 @@ export function setVillageAgentHomeWorld(key: string, world: string | null): voi
   queueVillageIdentity([{ agent: key, set: { homeWorld: world } }])
 }
 
+/**
+ * "Follow across worlds" (its settings, next to Follow): it is in whatever world the owner is in. The shared
+ * identity store's followWorlds; absent: on for Anorak (the owner, 2026-11-20: "I want him to be following me
+ * everywhere I go"), off for everyone else.
+ */
+export function isVillageFollowAcrossWorlds(key: string, name: string | null | undefined): boolean {
+  const own = getVillageIdentity()?.agents?.[key]?.followWorlds
+  return typeof own === 'boolean' ? own : FOLLOW_DEFAULT.test(name || '')
+}
+
+export function setVillageFollowAcrossWorlds(key: string, on: boolean): void {
+  queueVillageIdentity([{ agent: key, set: { followWorlds: on } }])
+}
+
 /** The world an agent is in (null: every world, while no village world is chosen). */
 export function villageAgentWorld(agentId: string): string | null {
   const state = useOasisStore.getState()
@@ -30,7 +45,7 @@ export function villageAgentWorld(agentId: string): string | null {
   const key = villageAgentKey({ id: agentId, sessionId: agent.sessionId })
   const file = getVillageHomesFile()
   return agentWorld({
-    follows: isVillageFollowOn(key, agent.name),
+    follows: isVillageFollowAcrossWorlds(key, agent.name),
     calledTo: file.calls[key] ?? null,
     homeWorld: homeWorldOf(key),
     homeSpots: homeSpotWorlds(file, key),

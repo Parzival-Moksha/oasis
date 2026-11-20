@@ -36,6 +36,7 @@ import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { AvatarGallery } from '../forge/AvatarGallery'
 import { pressVillageFollow, setVillageFollowFor, useVillageFollowView } from './follow-view'
 import { HomeSection } from './HomeSection'
+import { FollowWorldsToggle } from './FollowWorldsToggle'
 import { showNotice } from '../forge/GlobalNotice'
 import {
   agentVoiceChosenBy,
@@ -153,6 +154,7 @@ function WalkingSection({ agentId, agentKey, name }: { agentId: string; agentKey
         <input type="checkbox" checked={follow} data-agent-follow={view} onChange={event => setVillageFollowFor(agentId, agentKey, name, event.target.checked)} className="mt-[2px] accent-amber-300" />
         <span>Follow me</span>
       </label>
+      <FollowWorldsToggle agentKey={agentKey} name={name} />
       {view === 'parked' && (
         <button type="button" data-agent-follow-again onClick={() => pressVillageFollow(agentId, agentKey, name)} className="ml-5 mt-0.5 text-[10.5px] text-amber-200/90 underline-offset-2 hover:underline">
           parked where you sent it · follow me again
