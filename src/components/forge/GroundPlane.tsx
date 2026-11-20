@@ -32,6 +32,8 @@ import {
 import { useOasisStore } from '../../store/oasisStore'
 import { DragContext } from '../scene-lib/contexts'
 import { useGraphicsPrefs } from '../../lib/use-graphics-prefs'
+import { GroundFade } from './GroundFade'
+import { getSkyTransitionStyle } from './SkyTransition'
 import { SUN_SHADOW_DIM_UNIFORM } from '../../lib/forge/sun-shadow'
 import { sunShadowDimUniform } from './SunShadows'
 import type { GroundSharpness } from '../../lib/graphics-prefs'
@@ -276,13 +278,32 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
   const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
   const { groundSharpness } = useGraphicsPrefs()
   useGroundDetail(matRef, groundSharpness)
+  // The ground melts into the next one (GroundFade): the texture on screen, and the one fading out.
+  const shownRef = useRef<{ tex: THREE.Texture | null; color: string; urlKey: string } | null>(null)
+  const [fading, setFading] = useState<{ tex: THREE.Texture | null; color: string; key: number } | null>(null)
+  const swapTo = useCallback((tex: THREE.Texture | null, urlKey: string) => {
+    const previous = shownRef.current
+    shownRef.current = { tex, color: preset.color, urlKey }
+    const style = getSkyTransitionStyle()
+    // Only a change of ground melts (not the first ground, nor a sharpness change of the same ground).
+    if (previous && previous.urlKey !== urlKey && style !== 'off') {
+      setFading(current => {
+        if (current?.tex && current.tex !== previous.tex) current.tex.dispose()
+        return { tex: previous.tex, color: previous.color, key: performance.now() }
+      })
+    } else if (previous?.tex && previous.tex !== tex) {
+      previous.tex.dispose()
+    }
+    setDiffuse(tex)
+  }, [preset.color])
+  useEffect(() => () => { shownRef.current?.tex?.dispose() }, [])
 
   useEffect(() => {
     let cancelled = false
-    let activeClone: THREE.Texture | null = null
+    const urlKey = urls ? urls.diffuse : `color:${preset.color}`
 
     if (!urls) {
-      setDiffuse(null)
+      swapTo(null, urlKey)
       return () => { cancelled = true }
     }
 
@@ -297,13 +318,13 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
         // Without this, setDiffuse triggers render with map=clone + color=#ffffff,
         // but the texture isn't in VRAM yet → white frame for 1-3 draws.
         gl.initTexture(clone)
-        activeClone = clone
-        setDiffuse(clone)
+        swapTo(clone, urlKey)
       }
     })
 
-    return () => { cancelled = true; activeClone?.dispose() }
-  }, [urls, tileRepeat, gl, groundSharpness])
+    // The clone is disposed when the next one replaces it (swapTo), after its melt.
+    return () => { cancelled = true }
+  }, [urls, tileRepeat, gl, groundSharpness, swapTo, preset.color])
 
   useEffect(() => {
     const mat = matRef.current
@@ -323,6 +344,7 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
     // commit, so every foot hovered 5 cm over the ground wherever no tile or sculpted terrain covers it (the owner,
     // 2026-11-17). Not exactly zero: tiles, rings and decals lie at +0.5 to +5 mm, and the polygon offset below
     // keeps the plane behind anything flat that is laid at zero itself.
+    <>
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, GROUND_PLANE_Y, 0]} receiveShadow>
       <planeGeometry args={[GROUND_SIZE, GROUND_SIZE]} />
       <meshStandardMaterial
@@ -339,6 +361,21 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
         polygonOffsetUnits={1}
       />
     </mesh>
+    {fading && (
+      <GroundFade
+        key={fading.key}
+        texture={fading.tex}
+        color={fading.color}
+        size={GROUND_SIZE}
+        y={GROUND_PLANE_Y}
+        style={getSkyTransitionStyle() === 'glitch' ? 'glitch' : 'melt'}
+        onDone={() => setFading(current => {
+          if (current && current.key === fading.key) { current.tex?.dispose(); return null }
+          return current
+        })}
+      />
+    )}
+    </>
   )
 }
 
