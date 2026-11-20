@@ -556,7 +556,16 @@ ${you.note}` : text);
   writeFile({ fileId, text, expectedMtimeMs, force }) { return writeTextFile(fileId, text, { expectedMtimeMs: typeof expectedMtimeMs === 'number' ? expectedMtimeMs : null, force: force === true }); },
   interrupt({ agentId, cancelQueued }) { return getAgent(agentId, { owned: true }).interrupt({ cancelQueued }); },
   setModel({ agentId, model }) { return getAgent(agentId, { owned: true }).setModel(model); },
-  setPermissionMode({ agentId, mode }) { return getAgent(agentId, { owned: true }).setPermissionMode(mode); },
+  /**
+   * restart: true (the owner confirmed a switch the running CLI refused) restarts the agent in that mode. Only from an
+   * Oasis page's socket (a browser always sends its Origin): not over HTTP, not from scripts, so an agent can't raise
+   * its own or another agent's permissions with a command. (A local process can still forge an Origin.)
+   */
+  setPermissionMode({ agentId, mode, restart }, ws) {
+    const confirmed = restart === true && Boolean(ws?.oasisPage);
+    if (restart === true && !confirmed) throw new Error('only the owner, from the Oasis page, can restart an agent into another mode');
+    return getAgent(agentId, { owned: true }).setPermissionMode(mode, { restart: confirmed });
+  },
   setEffort({ agentId, effort }) { return getAgent(agentId, { owned: true }).setEffort(effort); },
   /** Claude in Chrome for an agent (chrome.js): restarts its process with the same session. */
   setChrome({ agentId, chrome }) { return getAgent(agentId, { owned: true }).setChrome(chrome); },
@@ -1069,7 +1078,9 @@ server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
 });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  // A browser tab of the Oasis (it sends its Origin): only such a socket may confirm a mode restart.
+  ws.oasisPage = Boolean(req?.headers?.origin) && originAllowed(req.headers.origin);
   clients.add(ws);
   const bl = {};
   for (const [id, list] of backlog) if (agents.has(id)) bl[id] = list;

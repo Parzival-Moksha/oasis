@@ -6,6 +6,7 @@
 // movement key can get stuck (the WASD-stuck bug class).
 
 import { useEffect, useMemo, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
+import { kitConfirm } from '../ui-kit'
 import { CUSTOM_MODEL_VALUE, cleanModelId, mergeModelLists, type ModelOption } from '../../lib/village/village-models'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '../../lib/input-manager'
@@ -40,6 +41,41 @@ import { AgentWhereBar } from './AgentWhereBar'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
+/** What each mode means, in one line (the restart confirm says it). */
+const MODE_MEANING: Record<string, string> = {
+  default: 'It asks you before edits, commands and other tools.',
+  acceptEdits: 'It edits files without asking, and asks before commands.',
+  auto: 'It decides by itself what is safe, and asks you about the rest.',
+  plan: 'It only reads and plans: it changes nothing.',
+  bypassPermissions: 'It does everything without asking: edits, commands, the network.',
+}
+
+/**
+ * Switch an agent's mode. When the running process can't take it (bypass on a session not started with it), the
+ * Oasis asks and then restarts that agent in the mode with the same session (engine agent.js setPermissionMode).
+ */
+async function switchMode(agentId: string, name: string, mode: string): Promise<void> {
+  const client = getAgentEngineClient()
+  try {
+    await client.setPermissionMode(agentId, mode)
+  } catch (error) {
+    const data = (error as { data?: { needsRestart?: boolean } }).data
+    if (!data?.needsRestart) { showNotice(`Mode switch failed: ${describeError(error)}`, 'error'); return }
+    const ok = await kitConfirm({
+      title: `Restart ${name} in ${mode}?`,
+      body: `${MODE_MEANING[mode] || ''} Its running process can't switch to this mode, so it restarts with the same session: the conversation stays. If it is working, after this turn.`,
+      confirm: 'Restart in this mode',
+      danger: mode === 'bypassPermissions',
+    })
+    if (!ok) return
+    try {
+      const reply = await client.setPermissionMode(agentId, mode, true) as { data?: { applied?: string } }
+      showNotice(`${name} restarts in ${mode}${reply?.data?.applied === 'after this turn' ? ' after this turn' : ''}.`, 'info')
+    } catch (err) {
+      showNotice(`Mode switch failed: ${describeError(err)}`, 'error')
+    }
+  }
+}
 /** A Hermes agent's modes (ACP session/set_mode): ask before edits, allow workspace edits, allow edits except sensitive paths. */
 const HERMES_MODES = ['default', 'accept_edits', 'dont_ask']
 
@@ -268,7 +304,7 @@ export function AgentSessionPanel() {
               onChange={event => {
                 const mode = event.target.value
                 if (!mode) return
-                getAgentEngineClient().setPermissionMode(agent.id, mode).catch(error => showNotice(`Mode switch failed: ${describeError(error)}`, 'error'))
+                void switchMode(agent.id, agent.name, mode)
               }}
               onKeyDown={event => event.stopPropagation()}
               className="rounded border border-white/15 bg-black/50 px-1 py-0.5 text-[11px] text-white"

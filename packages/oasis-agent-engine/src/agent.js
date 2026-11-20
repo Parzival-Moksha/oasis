@@ -864,7 +864,13 @@ export class Agent {
     return { ok: true, data: { eyes: this.eyes } };
   }
 
-  async setPermissionMode(mode) {
+  /**
+   * restart: the owner confirmed (index.js only passes it from an Oasis page's socket). A running CLI refuses some
+   * switches (bypassPermissions when it was not started with it: "the session was not launched with dangerously
+   * skip permissions"); then it is restarted in that mode with the same session, like the Chrome switch: now when
+   * idle, else after this turn. Without restart a refusal comes back with needsRestart, so the page can ask first.
+   */
+  async setPermissionMode(mode, { restart = false } = {}) {
     // `mode` events trigger a snapshot (index.js), so every client's picker follows the change.
     if (!this.proc) { this.permissionMode = mode; this.persist(); this.emit('mode', { permissionMode: mode, applied: 'on next start' }); return { ok: true }; }
     const r = await this.request('set_permission_mode', { mode });
@@ -873,8 +879,17 @@ export class Agent {
       this.effectivePermissionMode = mode;
       this.persist();
       this.emit('mode', { permissionMode: mode });
+      return r;
     }
-    return r;
+    if (!restart) return { ...r, needsRestart: true };
+    this.permissionMode = mode;
+    this.persist();
+    this.restartPending = true;
+    let applied = 'after this turn';
+    if (!(this.turnRunning || this.pendingUser.size)) { applied = 'now'; this.kill(); }
+    this.hub.log(`[${this.name}] mode ${mode}: restarting with the same session (${applied}); the running CLI said: ${r.error || 'no'}`);
+    this.emit('mode', { permissionMode: mode, applied });
+    return { ok: true, data: { permissionMode: mode, applied, restarted: true } };
   }
 
   /**

@@ -528,7 +528,7 @@ export interface EngineCommandMap {
   send: { args: { agentId: string; text: string; priority?: 'now' | 'later'; images?: EngineSendPicture[] }; result: { uuid: string; midTurn: boolean } }
   interrupt: { args: { agentId: string; cancelQueued?: boolean }; result: { ok: boolean; data?: unknown; error?: string } }
   setModel: { args: { agentId: string; model: string }; result: { ok: boolean; data?: { model?: string }; error?: string } }
-  setPermissionMode: { args: { agentId: string; mode: string }; result: { ok: boolean; error?: string } }
+  setPermissionMode: { args: { agentId: string; mode: string; restart?: boolean }; result: { ok: boolean; error?: string; needsRestart?: boolean; data?: { permissionMode: string; applied: string; restarted: boolean } } }
   /** effort: a level, or null / 'default' for the CLI default. Live, no restart and no turn. */
   setEffort: { args: { agentId: string; effort: string | null }; result: { ok: boolean; data?: { effort: string | null; resolvedEffort?: string | null }; error?: string } }
   /** Eyes on or off for an owned agent; kept in the roster. */

@@ -276,8 +276,12 @@ export class AgentEngineClient {
     return this.cmd('setModel', { agentId, model })
   }
 
-  setPermissionMode(agentId: string, mode: string) {
-    return this.cmd('setPermissionMode', { agentId, mode })
+  /**
+   * A refusal from the running CLI rejects with error.data.needsRestart; then, after the owner confirms, `restart`
+   * restarts that agent in the mode with the same session (the engine takes it only from an Oasis page).
+   */
+  setPermissionMode(agentId: string, mode: string, restart = false) {
+    return this.cmd('setPermissionMode', { agentId, mode, ...(restart ? { restart: true } : {}) })
   }
 
   /** Eyes on or off: with it on, each message you send carries a picture from the agent's avatar. */
@@ -648,7 +652,12 @@ export class AgentEngineClient {
           if (isUnknownCommandError(text)) {
             if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(ENGINE_OUTDATED_EVENT, { detail: { cmd: pending.cmd } }))
             pending.reject(new Error(ENGINE_OLDER_THAN_PAGE))
-          } else pending.reject(new Error(text))
+          } else {
+            // What the engine answered with it (needsRestart for a mode switch) rides on the error.
+            const error = new Error(text) as Error & { data?: unknown }
+            if (data && typeof data === 'object') error.data = data
+            pending.reject(error)
+          }
         }
         return
       }
