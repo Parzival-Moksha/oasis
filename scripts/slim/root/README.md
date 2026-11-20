@@ -7,7 +7,7 @@ This repository is the packaged Oasis: the village, the agent engine, the Claude
 ## Install with Claude Code
 
 ```
-/plugin marketplace add Parzival-Moksha/oasis-lite
+/plugin marketplace add Parzival-Moksha/uploader
 /plugin install oasis@oasis
 ```
 
@@ -18,8 +18,8 @@ Then type `/oasis` in any session. The first time it downloads this repository's
 You need Node.js 20 or later and Claude Code.
 
 ```
-git clone --depth 1 https://github.com/Parzival-Moksha/oasis-lite.git
-cd oasis-lite
+git clone --depth 1 https://github.com/Parzival-Moksha/uploader.git
+cd uploader
 node scripts/oasis.mjs start
 ```
 

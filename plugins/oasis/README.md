@@ -5,7 +5,7 @@ Your Claude Code sessions as characters in a 3D village that runs on your own ma
 ## Install
 
 ```
-/plugin marketplace add Parzival-Moksha/oasis-lite
+/plugin marketplace add Parzival-Moksha/uploader
 /plugin install oasis@oasis
 ```
 

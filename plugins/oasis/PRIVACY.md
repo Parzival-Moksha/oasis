@@ -8,4 +8,4 @@ The Oasis plugin and the Oasis app run on your own machine.
 - Optional features that you switch on yourself with your own key (for example a spoken voice from a speech service) send the text to be spoken to that service under your account with it. They are off until you add a key.
 - To remove everything: uninstall the plugin and delete the Oasis folder.
 
-Questions: lvttrk@gmail.com, or open an issue at https://github.com/Parzival-Moksha/oasis-lite/issues
+Questions: lvttrk@gmail.com, or open an issue at https://github.com/Parzival-Moksha/uploader/issues

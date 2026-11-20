@@ -14,7 +14,7 @@ prerequisites:
 
 # Enter the Oasis
 
-The Oasis is a local app, open source (MIT), from https://github.com/Parzival-Moksha/oasis-lite. It runs two servers on this machine only (a page on `127.0.0.1:4516`, an agent engine on `127.0.0.1:4530`) and shows the user's agents as characters in a 3D village in the browser. The user walks around, sees who is working and who needs a decision, and talks to any of them by typing or by voice. It can start Hermes agents itself (through `hermes acp`) and Claude Code sessions.
+The Oasis is a local app, open source (MIT), from https://github.com/Parzival-Moksha/uploader. It runs two servers on this machine only (a page on `127.0.0.1:4516`, an agent engine on `127.0.0.1:4530`) and shows the user's agents as characters in a 3D village in the browser. The user walks around, sees who is working and who needs a decision, and talks to any of them by typing or by voice. It can start Hermes agents itself (through `hermes acp`) and Claude Code sessions.
 
 Use this skill when the user asks to open, start, install, enter or stop "the Oasis".
 
@@ -43,7 +43,7 @@ If that file does not exist, say what will happen and ask the user to confirm fi
 After they confirm:
 
 ```
-git clone --depth 1 --branch v0.6.0 https://github.com/Parzival-Moksha/oasis-lite.git "<install folder>"
+git clone --depth 1 --branch v0.6.0 https://github.com/Parzival-Moksha/uploader.git "<install folder>"
 node "<install folder>/scripts/oasis.mjs" start
 ```
 

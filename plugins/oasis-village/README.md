@@ -7,7 +7,7 @@ This plugin is the small way in. It adds one command and holds no code: only thi
 ## Install
 
 ```
-/plugin install oasis-village --marketplace Parzival-Moksha/oasis-lite
+/plugin install oasis-village --marketplace Parzival-Moksha/uploader
 ```
 
 ## Use
@@ -25,7 +25,7 @@ You need Node.js 20 or later and git.
 The command is a page of instructions for Claude (`commands/oasis.md`). It tells Claude to run, with your approval in the usual permission prompt, these commands and no others:
 
 - `node -e …` to find your home folder, and `node --version`.
-- **The first time only, after asking you:** `git clone --depth 1 --branch v0.6.0 https://github.com/Parzival-Moksha/oasis-lite.git` into `~/.oasis/app`. That is the Oasis's source, about 30 MB, from this project's own public repository, at a fixed tag.
+- **The first time only, after asking you:** `git clone --depth 1 --branch v0.6.0 https://github.com/Parzival-Moksha/uploader.git` into `~/.oasis/app`. That is the Oasis's source, about 30 MB, from this project's own public repository, at a fixed tag.
 - `node ~/.oasis/app/scripts/oasis.mjs start` (or `status`, `stop`). The first start installs the Oasis's npm packages from its lockfile and builds it (a few minutes, once). Then it starts two servers on your machine, the page on `127.0.0.1:4516` and the agent engine on `127.0.0.1:4530`, and opens your browser.
 
 The command does not tell Claude to read or follow instructions from what it downloads: the download is an application, not directions for Claude.
@@ -47,12 +47,12 @@ The command does not tell Claude to read or follow instructions from what it dow
 This listing cannot make a session that runs in the desktop app or a terminal talkable from the village; that needs the full Oasis plugin, which is installed from the project's own marketplace:
 
 ```
-/plugin marketplace add Parzival-Moksha/oasis-lite
+/plugin marketplace add Parzival-Moksha/uploader
 /plugin install oasis@oasis
 ```
 
 ## Privacy and licence
 
-Everything stays on your machine. Questions: https://github.com/Parzival-Moksha/oasis-lite/issues
+Everything stays on your machine. Questions: https://github.com/Parzival-Moksha/uploader/issues
 
 MIT. See [LICENSE](./LICENSE).
