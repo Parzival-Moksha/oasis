@@ -26,10 +26,12 @@ export interface GraphicsPrefs {
   shadowRefresh: ShadowRefresh
   /** Effects switch off by tiers while the frame rate stays under 30 (auto), never (all), or always (saver). */
   flopSaver: FlopSaverMode
+  /** Minutes without input before the 3D world stops drawing (src/lib/away-mode.ts); 0: only when hidden or on F8. */
+  restAfter: 0 | 1 | 3 | 5 | 10
 }
 
 export const GRAPHICS_PREFS_DEFAULT: GraphicsPrefs = {
-  groundSharpness: 2, shadows: 'avatars', shadowQuality: 'high', shadowSoftness: 0.5, shadowStrength: 0.5, shadowRefresh: 'auto', flopSaver: 'auto',
+  groundSharpness: 2, shadows: 'avatars', shadowQuality: 'high', shadowSoftness: 0.5, shadowStrength: 0.5, shadowRefresh: 'auto', flopSaver: 'auto', restAfter: 3,
 }
 
 function unit(value: unknown, fallback: number): number {
@@ -46,7 +48,9 @@ export function normalizeGraphicsPrefs(raw: unknown): GraphicsPrefs {
   const quality = value.shadowQuality
   const refresh = value.shadowRefresh
   const flop = value.flopSaver
+  const rest = value.restAfter
   return {
+    restAfter: rest === 0 || rest === 1 || rest === 3 || rest === 5 || rest === 10 ? rest : GRAPHICS_PREFS_DEFAULT.restAfter,
     flopSaver: flop === 'auto' || flop === 'all' || flop === 'saver' ? flop : GRAPHICS_PREFS_DEFAULT.flopSaver,
     shadowQuality: quality === 'low' || quality === 'medium' || quality === 'high' ? quality : GRAPHICS_PREFS_DEFAULT.shadowQuality,
     shadowSoftness: unit(value.shadowSoftness, GRAPHICS_PREFS_DEFAULT.shadowSoftness),

@@ -116,6 +116,7 @@ import { PerfHeartbeat } from './forge/PerfHeartbeat'
 import { SunShadows } from './forge/SunShadows'
 import { RenderHygiene } from './forge/RenderHygiene'
 import { FlopSaverDriver } from './forge/FlopSaverDriver'
+import { AwayModeDriver, AwayOverlay } from './forge/AwayMode'
 import { useFlopCaps } from '@/lib/use-flop-caps'
 import { GameMenu, OPEN_CONFIG_EVENT, OPEN_HELP_EVENT } from './game-menu/GameMenu'
 import { CharacterMenu } from './village/CharacterMenu'
@@ -2145,6 +2146,8 @@ export default function Scene() {
         <RenderHygiene />
         {/* Flop saver: effects off by tiers while the frame rate stays under 30 (Settings → Graphics) */}
         <FlopSaverDriver />
+        {/* Away mode: the world stops drawing while the owner is away (Settings → Graphics → Rest when away, F8) */}
+        <AwayModeDriver />
         {/* The camera's slow drift behind the main menu (Esc). No frame callback while the menu is closed. */}
         <GameMenuCameraDrift />
         {/* The selected agent's effect and right-click-to-send. Nothing mounted while no agent is selected. */}
@@ -2199,6 +2202,7 @@ export default function Scene() {
 
       {/* ─═̷─═̷─⚡ FPS DISPLAY ─═̷─═̷─⚡ */}
       <FPSDisplay enabled={settings.fpsCounterEnabled} fontSize={settings.fpsCounterFontSize} />
+      <AwayOverlay />
 
       {/* ─═̷─═̷─🎯 CROSSHAIR — Noclip + TPS when pointer locked (desktop) OR
           always on mobile in those modes, since mobile can't pointer-lock but

@@ -11,6 +11,8 @@ import { canRequestFullscreen, isFullscreenActive, setOasisFullscreen } from '@/
 import { setGraphicsPref, type FlopSaverMode, type GroundSharpness, type ShadowMode, type ShadowQuality, type ShadowRefresh } from '@/lib/graphics-prefs'
 import { useSavedGraphicsPrefs } from '@/lib/use-graphics-prefs'
 import { useFlopCaps } from '@/lib/use-flop-caps'
+import { restNow } from '@/lib/away-mode'
+import { KitButton, KitSelectField } from '@/components/ui-kit'
 
 function Choice<T extends string | number>({ label, hint, value, options, name, onChange }: {
   label: string
@@ -248,6 +250,21 @@ export function GraphicsTab({ menuOpacity, onMenuOpacityChange }: SharedTabProps
           hint={`${FLOP_HINT[graphics.flopSaver]}${flop.level > 0 ? ` Now at tier ${flop.level} of 5: some effects below are held down.` : ''}`}
           onChange={value => setGraphicsPref('flopSaver', value)}
         />
+        <div className="flex items-end gap-2 py-1.5">
+          <div className="flex-1">
+            <KitSelectField
+              label="Rest when away"
+              hint="With no mouse or key for this long, or with the window hidden or covered, the 3D world stops drawing (no graphics card or processor spent on it). Sounds, replies and the chime keep going. Any move wakes it."
+              value={String(graphics.restAfter)}
+              options={[
+                { value: '1', label: 'After 1 minute' }, { value: '3', label: 'After 3 minutes' }, { value: '5', label: 'After 5 minutes' },
+                { value: '10', label: 'After 10 minutes' }, { value: '0', label: 'Only when hidden or on F8' },
+              ]}
+              onChange={event => setGraphicsPref('restAfter', Number(event.target.value) as 0 | 1 | 3 | 5 | 10)}
+            />
+          </div>
+          <KitButton onClick={() => restNow()} title="Stops drawing until you move (F8 does the same)">Rest now (F8)</KitButton>
+        </div>
         <Choice
           label="Ground sharpness"
           name="groundSharpness"
