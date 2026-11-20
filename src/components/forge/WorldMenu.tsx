@@ -1,6 +1,7 @@
 'use client'
 
 import { useContext, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useKitStyle } from '@/components/ui-kit'
 import { useMindcraftLook } from '@/components/village/mindcraft-look'
 
 import { useOasisStore } from '@/store/oasisStore'
@@ -155,6 +156,7 @@ function formatWizardSeenAt(updatedAt: number): string {
 
 export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }) {
   useMindcraftLook() // the frame's stylesheet
+  const menuStyle = useKitStyle()
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -609,9 +611,10 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
       {isOpen && (
         <div
           data-ui-panel
-          // The spell book's jewelled iron frame (mindcraft-look.tsx, nine-sliced), like Mindcraft.
-          style={{ ['--frame-k' as string]: 0.24 }}
-          className="oasis-frame absolute left-full top-0 z-[260] ml-2 max-h-[82vh] w-[410px] overflow-y-auto px-1 pb-1 pt-0 font-mono text-white max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto max-[700px]:p-2"
+          // A kit panel: it wears the one menu style (Settings' top right), like every menu (ui-kit).
+          data-kit-style={menuStyle}
+          style={{ display: 'block' }}
+          className="kit-panel absolute left-full top-0 z-[260] ml-2 max-h-[82vh] w-[410px] overflow-y-auto px-1 pb-1 pt-0 font-mono text-white max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto max-[700px]:p-2"
           onMouseDown={event => event.stopPropagation()}
         >
           <style>{`

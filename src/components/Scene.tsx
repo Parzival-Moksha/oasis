@@ -2672,9 +2672,9 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
         <div
           data-ui-panel
           data-rail-menu="settings"
-          className="fixed bottom-4 left-[10.25rem] top-4 z-[260] flex w-[min(960px,calc(100vw-11.5rem))] overflow-hidden rounded-lg border border-white/10 font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(167,139,250,0.18)] max-[700px]:bottom-2 max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto"
-          // Blur, see-through and colour from the controls in its top right (settings-look.ts).
-          style={settingsLookStyle(settingsLook)}
+          data-kit-style={settingsLook.style}
+          className="kit-panel fixed bottom-4 left-[10.25rem] top-4 z-[260] flex w-[min(960px,calc(100vw-11.5rem))] overflow-hidden text-white shadow-[0_0_54px_rgba(0,0,0,0.68)] max-[700px]:bottom-2 max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto"
+          // A kit panel: the menu style, and for Glass the see-through, blur and colour, from its top right (ui-kit).
           onMouseDown={event => event.stopPropagation()}
         >
           {children}

@@ -8,7 +8,8 @@ const BODY_SERIF = "var(--font-cormorant), 'Palatino Linotype', Palatino, Georgi
 
 export const KIT_CSS = `
 /* ── shared ──────────────────────────────────────────────────────────────── */
-.kit-panel { position: relative; display: flex; flex-direction: column; min-height: 0; color: var(--kit-fg, #eef1f5); }
+/* No position here: the menu that uses the kit places the panel (fixed, absolute…); the kit only dresses it. */
+.kit-panel { display: flex; flex-direction: column; min-height: 0; color: var(--kit-fg, #eef1f5); }
 .kit-panel-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px 8px; }
 .kit-panel-title { flex: 1; min-width: 0; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; font-size: 13px; }
 .kit-panel-body { min-height: 0; flex: 1; overflow-y: auto; padding: 4px 12px 12px; scrollbar-width: thin; }
@@ -77,7 +78,7 @@ export const KIT_CSS = `
 [data-kit-style="glass"].kit-close { border-radius: 8px; border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.06); color: #fff; }
 
 /* ── FORGED: jewelled iron, stone plates, gold letters ──────────────────── */
-.kit-panel[data-kit-style="forged"], .kit-dialog[data-kit-style="forged"] { border-style: solid; border-color: transparent; border-width: 40px 30px 28px 30px; border-image: url(/ui/rail/frame-9.png) 165 125 115 125 / 40px 30px 28px 30px / 6px stretch; background: linear-gradient(180deg, rgba(14,15,20,0.94), rgba(8,9,13,0.97)) border-box, url(/ui/spellbook/frame/page-bg-agent.jpg) center / cover border-box; border-radius: 10px; font-family: ${BODY_SERIF}; --kit-fg: #efe6d2; }
+.kit-panel[data-kit-style="forged"], .kit-dialog[data-kit-style="forged"] { border-style: solid; border-color: transparent; border-width: 40px 30px 28px 30px; border-image: url(/ui/rail/frame-9.png) 165 125 115 125 / 40px 30px 28px 30px / 0 stretch; background: linear-gradient(180deg, rgba(14,15,20,0.94), rgba(8,9,13,0.97)) 6px 15px / calc(100% - 12.5px) calc(100% - 22px) no-repeat border-box, url(/ui/spellbook/frame/page-bg-agent.jpg) 6px 15px / calc(100% - 12.5px) calc(100% - 22px) no-repeat border-box; background-clip: border-box; border-radius: 0; font-family: ${BODY_SERIF}; --kit-fg: #efe6d2; }
 .kit-panel[data-kit-style="forged"] .kit-panel-head, .kit-dialog[data-kit-style="forged"] .kit-panel-head { padding-top: 0; }
 .kit-panel[data-kit-style="forged"] .kit-panel-title, .kit-dialog[data-kit-style="forged"] .kit-panel-title { font-family: ${SERIF}; font-size: 15px; ${GOLD_TEXT} }
 [data-kit-style="forged"] .kit-label, .kit-panel[data-kit-style="forged"] .kit-label { font-family: ${SERIF}; color: #e3c27a; opacity: 0.9; }
@@ -188,4 +189,11 @@ export const KIT_CSS = `
 .kit-field[data-size="large"] input, .kit-field[data-size="large"] textarea, .kit-field[data-size="large"] select { padding: 12px 14px; font-size: 16px; }
 .kit-field[data-size="large"] .kit-label { font-size: 12px; }
 .kit-field select option { color: #111; background: #fff; }
+
+/* ── readable text inside every kit panel, also in menus written before the kit ── */
+.kit-panel[data-kit-style="glass"], .kit-dialog[data-kit-style="glass"] { text-shadow: 0 1px 2px rgba(0,0,0,0.85), 0 0 8px rgba(0,0,0,0.45); font-family: var(--font-space-grotesk), 'Segoe UI', system-ui, sans-serif; }
+.kit-panel .font-mono { font-family: inherit; }
+.kit-panel:not([data-kit-style="parchment"]) :is(.text-gray-400, .text-gray-500, .text-gray-600, .text-white\/35, .text-white\/40, .text-white\/42, .text-white\/45, .text-white\/50, .text-white\/55, .text-white\/60) { color: rgba(236, 232, 224, 0.8) !important; }
+.kit-panel:not([data-kit-style="parchment"]) :is(.text-gray-300, .text-white\/65, .text-white\/70, .text-white\/75) { color: rgba(246, 243, 236, 0.92) !important; }
+.kit-panel[data-kit-style="forged"] .text-sm, .kit-panel[data-kit-style="rune"] .text-sm { font-size: 15px; }
 `
