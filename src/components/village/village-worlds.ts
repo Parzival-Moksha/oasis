@@ -1,7 +1,7 @@
 // ░▒▓ VILLAGE WORLDS (page) — which world each agent is in, read from what the page knows ▓▒░
 // Follow me (village-companion), calls and the village's world and home spots (the homes file, village-homes.ts).
-// Each agent's own home world will come from the shared identity store (Citizens', /api/village/identity) when it
-// lands: homeWorldOf() below is where it plugs in. The rule itself is lib/village/village-worlds.ts.
+// Each agent's own home world comes from the shared identity store (Citizens', /api/village/identity, field
+// homeWorld). The rule itself is lib/village/village-worlds.ts.
 
 import { useSyncExternalStore } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
@@ -10,10 +10,16 @@ import { homeSpotWorlds } from '../../lib/village/village-homes'
 import { agentWorld, isAgentHere } from '../../lib/village/village-worlds'
 import { getVillageFollowVersion, isVillageFollowOn, subscribeVillageFollow } from './village-companion'
 import { currentVillageWorld, getVillageHomesFile, getVillageHomesVersion, subscribeVillageHomes } from './village-homes'
+import { getVillageIdentity, getVillageIdentityVersion, queueVillageIdentity, subscribeVillageIdentity } from '../../lib/village/village-identity-client'
 
-/** Its own home world, from the shared identity store once there is one; none yet. */
-function homeWorldOf(_key: string): string | null {
-  return null
+/** Its own home world, from the shared identity store (absent: the village's world). */
+function homeWorldOf(key: string): string | null {
+  return getVillageIdentity()?.agents?.[key]?.homeWorld ?? null
+}
+
+/** Sets (or clears, with null) an agent's own home world in the shared store. */
+export function setVillageAgentHomeWorld(key: string, world: string | null): void {
+  queueVillageIdentity([{ agent: key, set: { homeWorld: world } }])
 }
 
 /** The world an agent is in (null: every world, while no village world is chosen). */
@@ -45,6 +51,7 @@ export function villageWorldName(world: string | null): string {
 export function useVillageWorldsVersion(): number {
   const homes = useSyncExternalStore(subscribeVillageHomes, getVillageHomesVersion, () => 0)
   const follow = useSyncExternalStore(subscribeVillageFollow, getVillageFollowVersion, () => 0)
+  const identity = useSyncExternalStore(subscribeVillageIdentity, getVillageIdentityVersion, () => 0)
   const world = useOasisStore(s => s.viewingWorldId || s.activeWorldId || '')
-  return homes * 1000 + follow + world.length
+  return homes * 1000 + follow * 7 + identity * 13 + world.length
 }

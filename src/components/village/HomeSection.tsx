@@ -12,6 +12,7 @@ import { HOME } from '../../lib/village/village-homes'
 import { isStageWorldName } from '../../lib/village/village-stage'
 import { showNotice } from '../forge/GlobalNotice'
 import { clearVillageHome, getVillageHome, getVillageHomesVersion, setVillageHome, subscribeVillageHomes } from './village-homes'
+import { setVillageAgentHomeWorld } from './village-worlds'
 
 const HEADING = 'mb-1 truncate text-[10px] font-bold uppercase tracking-[0.14em] text-white/55'
 const BUTTON = 'rounded border border-white/15 bg-white/5 px-2 py-0.5 text-[10.5px] text-white/80 transition hover:bg-white/15 disabled:opacity-40'
@@ -50,6 +51,8 @@ export function HomeSection({ agentKey, name }: { agentKey: string; name: string
             const pose = getPlayerAvatarPose()
             if (!pose) { showNotice('Stand somewhere in the world first (walk with your avatar).', 'warn'); return }
             const yaw = Math.atan2(pose.forward[0], pose.forward[2])
+            // This world is its home world too (village-worlds.ts), whatever spots it has elsewhere.
+            setVillageAgentHomeWorld(agentKey, world)
             run(() => setVillageHome(world, agentKey, { x: pose.position[0], z: pose.position[2], yaw }), `${name} lives here now.`)
           }}
           className={BUTTON}
