@@ -5,8 +5,8 @@
 // one style of every menu.
 
 import { useState } from 'react'
-import { MENU_STYLES, setMenuLook, useMenuLook, type MenuStyleId } from '@/lib/ui-kit/menu-look'
-import { KitButton, KitCard, KitPanel, KitPickTile, KitProgress, KitSlider, KitStyleOverride, KitTabs, KitTextField, KitTileButton, KitToggle, kitConfirm } from './index'
+import { MENU_STYLES, TOGGLE_LOOKS, setMenuLook, useMenuLook, type MenuStyleId, type ToggleLookId } from '@/lib/ui-kit/menu-look'
+import { KitButton, KitCard, KitPanel, KitToggleOverride, KitPickTile, KitProgress, KitSlider, KitStyleOverride, KitTabs, KitTextField, KitTileButton, KitToggle, kitConfirm } from './index'
 
 const TILES = [
   { picture: '/ui/spellbook/tiles/sky-background.gpt2.webp', icon: '☀', label: 'Background', sub: 'Skies and light', accent: '#ffb35c' },
@@ -54,9 +54,40 @@ function Sample({ style }: { style: MenuStyleId }) {
   )
 }
 
+function ToggleSample({ design }: { design: ToggleLookId }) {
+  const [a, setA] = useState(true)
+  const [b, setB] = useState(false)
+  const look = useMenuLook()
+  const meta = TOGGLE_LOOKS.find(t => t.id === design)!
+  return (
+    <KitToggleOverride.Provider value={design}>
+      <div data-toggle-sample={design}>
+        <KitCard title={`${meta.label}${look.toggle === design ? ' · in use' : ''}`}>
+          <div className="mb-2 text-[12px] opacity-70">{meta.blurb}</div>
+          <KitToggle checked={a} onChange={setA} label="Name tags" hint={a ? 'on' : 'off'} />
+          <KitToggle checked={b} onChange={setB} label="Shadows" hint={b ? 'on' : 'off'} />
+          <div className="mt-2"><KitButton variant={look.toggle === design ? 'plain' : 'primary'} onClick={() => setMenuLook({ toggle: design })}>{look.toggle === design ? 'In use' : 'Use this everywhere'}</KitButton></div>
+        </KitCard>
+      </div>
+    </KitToggleOverride.Provider>
+  )
+}
+
+export function KitToggleSamples() {
+  return (
+    <section data-experiment="switches">
+      <h3 className="text-[11px] font-black uppercase tracking-[0.16em] text-fuchsia-200">Switches</h3>
+      <p className="mt-1 text-[11px] leading-relaxed text-white/60">Every on/off switch in the Oasis wears one of these. Click them to feel them; &quot;Use this everywhere&quot; picks one.</p>
+      <KitPanel className="mt-3"><div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">{TOGGLE_LOOKS.map(t => <ToggleSample key={t.id} design={t.id} />)}</div></KitPanel>
+    </section>
+  )
+}
+
 export function KitSamples() {
   return (
-    <section data-experiment="menu-styles">
+    <>
+    <KitToggleSamples />
+    <section data-experiment="menu-styles" className="mt-6">
       <h3 className="text-[11px] font-black uppercase tracking-[0.16em] text-fuchsia-200">Menu styles</h3>
       <p className="mt-1 text-[11px] leading-relaxed text-white/60">
         One style for every menu built with the Oasis kit (Settings, World, Summon, the dialogs, more as they move over).
@@ -66,5 +97,6 @@ export function KitSamples() {
         {MENU_STYLES.map(style => <Sample key={style.id} style={style.id} />)}
       </div>
     </section>
+    </>
   )
 }

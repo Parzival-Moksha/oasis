@@ -21,7 +21,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { KIT_CSS } from './kit-css'
-import { MENU_BLUR_MAX, MENU_STYLES, MENU_SWATCHES, DEFAULT_MENU_LOOK, setMenuLook, useMenuLook, type MenuStyleId } from '@/lib/ui-kit/menu-look'
+import { MENU_BLUR_MAX, MENU_STYLES, MENU_SWATCHES, DEFAULT_MENU_LOOK, setMenuLook, useMenuLook, type MenuStyleId, type ToggleLookId } from '@/lib/ui-kit/menu-look'
 
 // ── style plumbing ─────────────────────────────────────────────────────────────────────────────
 
@@ -150,10 +150,16 @@ export function KitProgress({ label, value, max, format, accent }: { label?: Rea
 
 // ── inputs ─────────────────────────────────────────────────────────────────────────────────────
 
+/** Show switches in a design other than the one in use (the samples in Settings > Experiments). */
+export const KitToggleOverride = createContext<ToggleLookId | null>(null)
+
 export function KitToggle({ checked, onChange, label, hint, disabled, accent }: { checked: boolean; onChange: (next: boolean) => void; label: ReactNode; hint?: ReactNode; disabled?: boolean; accent?: string }) {
   const kit = useKitStyle()
+  const override = useContext(KitToggleOverride)
+  const look = useMenuLook()
+  const design = override ?? look.toggle
   return (
-    <label data-kit-style={kit} data-on={checked ? '1' : '0'} className="kit-toggle" style={accent ? { ['--kit-accent' as string]: accent } : undefined}>
+    <label data-kit-style={kit} data-toggle={design} data-on={checked ? '1' : '0'} className="kit-toggle" style={accent ? { ['--kit-accent' as string]: accent } : undefined}>
       <input type="checkbox" checked={checked} disabled={disabled} onChange={event => onChange(event.target.checked)} className="sr-only" />
       <span className="kit-toggle-track"><span className="kit-toggle-knob" /></span>
       <span className="kit-toggle-text">{label}{hint && <span className="kit-hint">{hint}</span>}</span>

@@ -16,8 +16,21 @@ export const MENU_STYLES: Array<{ id: MenuStyleId; label: string; blurb: string 
   { id: 'rune', label: 'Rune', blurb: 'Bronze-edged dark tablets, serif small capitals.' },
 ]
 
+export type ToggleLookId = 'gem' | 'lever' | 'flip' | 'plate' | 'slide'
+
+/** Switch designs (the owner, 2026-11-20: toggles "look so noob, so web… give me a couple of other options"). */
+export const TOGGLE_LOOKS: Array<{ id: ToggleLookId; label: string; blurb: string }> = [
+  { id: 'gem', label: 'Gem socket', blurb: 'An iron socket; on, an emerald glows in it. Off, the socket is empty.' },
+  { id: 'lever', label: 'Rune lever', blurb: 'A brass lever that throws over; on, the rune under it lights.' },
+  { id: 'flip', label: 'Flip switch', blurb: 'A machine switch on a riveted plate, up for on, with a lamp.' },
+  { id: 'plate', label: 'Check plate', blurb: 'A small framed stone; on, a gold check is set in it.' },
+  { id: 'slide', label: 'Slide', blurb: 'The sliding switch of before, in the menu style.' },
+]
+
 export interface MenuLook {
   style: MenuStyleId
+  /** The switch design of every toggle in the Oasis. */
+  toggle: ToggleLookId
   /** Glass: backdrop blur in CSS pixels. */
   blur: number
   /** Glass: 0 = solid, 100 = fully see-through. */
@@ -27,7 +40,7 @@ export interface MenuLook {
 }
 
 /** Defaults from the owner's walk-through: 75% / blur 5 at 15:17, revised at 42:39 to "default 90 transparency… blur of four". */
-export const DEFAULT_MENU_LOOK: MenuLook = { style: 'forged', blur: 4, transparency: 90, color: '#1f2125' }
+export const DEFAULT_MENU_LOOK: MenuLook = { style: 'forged', toggle: 'gem', blur: 4, transparency: 90, color: '#1f2125' }
 export const MENU_BLUR_MAX = 24
 export const MENU_SWATCHES = ['#1f2125', '#0b0c10', '#2a2d34', '#141a2a', '#1d1430', '#122326', '#2b1518', '#1a2416', '#2a2216', '#3a3f4a']
 
@@ -39,6 +52,7 @@ export function sanitizeMenuLook(raw: unknown): MenuLook {
   const num = (v: unknown, lo: number, hi: number, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback)
   return {
     style: MENU_STYLES.some(s => s.id === r.style) ? (r.style as MenuStyleId) : DEFAULT_MENU_LOOK.style,
+    toggle: TOGGLE_LOOKS.some(t => t.id === r.toggle) ? (r.toggle as ToggleLookId) : DEFAULT_MENU_LOOK.toggle,
     blur: num(r.blur, 0, MENU_BLUR_MAX, DEFAULT_MENU_LOOK.blur),
     transparency: num(r.transparency, 0, 100, DEFAULT_MENU_LOOK.transparency),
     color: typeof r.color === 'string' && /^#[0-9a-f]{6}$/i.test(r.color) ? r.color.toLowerCase() : DEFAULT_MENU_LOOK.color,

@@ -196,4 +196,37 @@ export const KIT_CSS = `
 .kit-panel:not([data-kit-style="parchment"]) :is(.text-gray-400, .text-gray-500, .text-gray-600, .text-white\/35, .text-white\/40, .text-white\/42, .text-white\/45, .text-white\/50, .text-white\/55, .text-white\/60) { color: rgba(236, 232, 224, 0.8) !important; }
 .kit-panel:not([data-kit-style="parchment"]) :is(.text-gray-300, .text-white\/65, .text-white\/70, .text-white\/75) { color: rgba(246, 243, 236, 0.92) !important; }
 .kit-panel[data-kit-style="forged"] .text-sm, .kit-panel[data-kit-style="rune"] .text-sm { font-size: 15px; }
+
+/* ══ SWITCH DESIGNS (data-toggle): win over every style's slide switch ══ */
+.kit-toggle[data-toggle]:not([data-toggle="slide"]) .kit-toggle-track { background: none; box-shadow: none; border-radius: 0; }
+.kit-toggle[data-toggle]:not([data-toggle="slide"]) .kit-toggle-knob { transform: none; }
+.kit-toggle input:focus-visible + .kit-toggle-track { outline: 2px solid #fde68a; outline-offset: 3px; }
+
+/* Gem socket: an octagonal iron socket; on, a faceted emerald glows in it */
+.kit-toggle.kit-toggle[data-toggle="gem"] .kit-toggle-track { width: 30px; height: 30px; clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%); background: linear-gradient(145deg, #b89358 0%, #5a4220 45%, #2a1d10 100%); }
+.kit-toggle.kit-toggle[data-toggle="gem"] .kit-toggle-knob { top: 4px; left: 4px; width: 22px; height: 22px; border-radius: 0; clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%); background: radial-gradient(circle at 40% 35%, #2b2b2e 0%, #0c0c0e 70%); box-shadow: inset 0 2px 4px #000; transition: background 160ms ease-out, filter 200ms ease-out; }
+.kit-toggle.kit-toggle[data-toggle="gem"][data-on="1"] .kit-toggle-knob { background: conic-gradient(from 20deg at 50% 50%, #b9ffd9, #2fd384, #0f7a47, #63f0a8, #0b5c35, #b9ffd9); filter: drop-shadow(0 0 6px #36d68a) brightness(1.15); }
+.kit-toggle.kit-toggle[data-toggle="gem"][data-on="1"] .kit-toggle-track { filter: drop-shadow(0 0 8px rgba(54, 214, 138, 0.65)); }
+
+/* Rune lever: a brass lever on a dark slot; thrown right for on, and the rune at its foot lights */
+.kit-toggle.kit-toggle[data-toggle="lever"] .kit-toggle-track { width: 40px; height: 30px; background: linear-gradient(180deg, #1b130b, #0c0805); border-radius: 4px; box-shadow: inset 0 0 0 1px #b89358, inset 0 2px 4px #000; }
+.kit-toggle.kit-toggle[data-toggle="lever"] .kit-toggle-track::after { content: 'ᚱ'; position: absolute; left: 50%; bottom: 1px; transform: translateX(-50%); font-size: 11px; line-height: 1; color: #4a3a22; transition: color 160ms, text-shadow 160ms; }
+.kit-toggle.kit-toggle[data-toggle="lever"][data-on="1"] .kit-toggle-track::after { color: #9cf3ff; text-shadow: 0 0 6px #4fd8ff, 0 0 12px #4fd8ff; }
+.kit-toggle.kit-toggle[data-toggle="lever"] .kit-toggle-knob { top: 3px; left: calc(50% - 3px); width: 6px; height: 20px; border-radius: 3px 3px 1px 1px; background: linear-gradient(90deg, #7a5216, #f5d488 45%, #9a6a24); transform-origin: 50% 100%; transform: rotate(-38deg); transition: transform 220ms cubic-bezier(0.3, 1.6, 0.5, 1); box-shadow: 0 1px 2px #000; }
+.kit-toggle.kit-toggle[data-toggle="lever"] .kit-toggle-knob::before { content: ''; position: absolute; top: -4px; left: -2px; width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff3cf, #c9952f 55%, #6b4a12); }
+.kit-toggle.kit-toggle[data-toggle="lever"][data-on="1"] .kit-toggle-knob { transform: rotate(38deg); }
+
+/* Flip switch: a machine toggle on a riveted plate; up for on, with a lamp beside it */
+.kit-toggle.kit-toggle[data-toggle="flip"] .kit-toggle-track { width: 44px; height: 30px; border-radius: 4px; background: linear-gradient(180deg, #4a4f58, #23262c); box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), inset 0 0 0 1px #0d0f12, 0 2px 3px rgba(0,0,0,0.5); }
+.kit-toggle.kit-toggle[data-toggle="flip"] .kit-toggle-track::before { content: ''; position: absolute; left: 7px; top: 9px; width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #3a1a14, #1a0a08); box-shadow: inset 0 1px 2px #000, 0 0 0 1px #0d0f12; transition: background 120ms, box-shadow 160ms; }
+.kit-toggle.kit-toggle[data-toggle="flip"][data-on="1"] .kit-toggle-track::before { background: radial-gradient(circle at 45% 35%, #fff2c2, #ffb23a 50%, #c55a00); box-shadow: 0 0 8px #ffb23a, 0 0 0 1px #0d0f12; }
+.kit-toggle.kit-toggle[data-toggle="flip"] .kit-toggle-knob { left: auto; right: 8px; top: 13px; width: 10px; height: 14px; border-radius: 2px 2px 5px 5px; background: linear-gradient(90deg, #8a9099, #e7ebf0 50%, #7b818a); box-shadow: 0 2px 2px rgba(0,0,0,0.6); transition: top 120ms ease-out, height 120ms ease-out, border-radius 120ms; }
+.kit-toggle.kit-toggle[data-toggle="flip"][data-on="1"] .kit-toggle-knob { top: 3px; border-radius: 5px 5px 2px 2px; box-shadow: 0 -1px 2px rgba(0,0,0,0.5); }
+
+/* Check plate: a small framed stone; on, a gold check is set into it */
+.kit-toggle.kit-toggle[data-toggle="plate"] .kit-toggle-track { width: 28px; height: 28px; border-radius: 3px; background: linear-gradient(160deg, #3a3d44, #1b1d21); box-shadow: inset 0 0 0 1px #b89358, inset 0 0 0 3px #15110b, inset 0 0 0 4px rgba(184,147,88,0.45), inset 0 3px 6px rgba(0,0,0,0.8); }
+.kit-toggle.kit-toggle[data-toggle="plate"] .kit-toggle-knob { top: 0; left: 0; width: 28px; height: 28px; background: none; display: flex; align-items: center; justify-content: center; }
+.kit-toggle.kit-toggle[data-toggle="plate"] .kit-toggle-knob::after { content: '✓'; font-size: 20px; font-weight: 900; line-height: 1; color: #f5c96a; text-shadow: 0 1px 0 #6b4a12, 0 0 8px rgba(245,201,106,0.8); transform: scale(0.2); opacity: 0; transition: transform 200ms cubic-bezier(0.3, 1.8, 0.5, 1), opacity 120ms; }
+.kit-toggle.kit-toggle[data-toggle="plate"][data-on="1"] .kit-toggle-knob::after { transform: scale(1); opacity: 1; }
+.kit-toggle[data-toggle]:hover .kit-toggle-track { filter: brightness(1.15); }
 `
