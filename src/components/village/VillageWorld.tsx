@@ -70,6 +70,8 @@ import { AcademyLevelTag, AcademyVillageBody, useAcademyStone, useAcademyTrainee
 import { VillageVoice } from './VillageVoice'
 import { VillageTag, VillageTagDriver, deskScreenHeight, useVillageTagReach, villageTagReach } from './VillageTags'
 import { VillageLeaveEffect } from './VillageLeaveEffect'
+import { AgentPanelTabBar, ThreadFontScale, useAgentPanelTab } from './AgentPanelTabs'
+import { AgentControls } from './AgentSessionPanel'
 import { useVillageLeaving } from './village-leave'
 import { isStageWorldName, stationAtAnchor } from '../../lib/village/village-stage'
 import { getTagSettings } from '../../lib/village/tag-style'
@@ -282,6 +284,8 @@ function DeskWindow({ agentId, nearby, mode }: { agentId: string; nearby: boolea
   const agent = useOasisStore(s => s.agentEngine.agents[agentId])
   // The full screen (F) follows the chat look: transparency + blur for all, this agent's colour (PanelLook.tsx).
   const look = usePanelLook(agent?.sessionId || agentId)
+  // The page shown on the full screen (thread or settings): a hook, so above the early return.
+  const panelTab = useAgentPanelTab()
   if (!agent) return null
   const color = agent.readOnly ? VILLAGE_OBSERVED_COLOR : statusColor(effectiveStatus(agent))
   const size = DESK_WINDOW_PX[mode]
@@ -318,11 +322,22 @@ function DeskWindow({ agentId, nearby, mode }: { agentId: string; nearby: boolea
       {/* the status color as a thin light along the top edge */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }} />
       <div className="flex min-h-0 flex-1 flex-col gap-2">
-        <AgentSessionView
-          agentId={agentId}
-          variant={screen ? 'screen' : '3d'}
-          header={<SessionWindowHeader agent={agent} nearby={nearby} screen={screen} />}
-        />
+        {/* On the full screen, the same two pages as the side panel (AgentPanelTabs.tsx). */}
+        {screen && panelTab === 'settings' ? (
+          <>
+            <SessionWindowHeader agent={agent} nearby={nearby} screen={screen} />
+            <AgentPanelTabBar />
+            <AgentControls agent={agent} />
+          </>
+        ) : (
+          <ThreadFontScale>
+            <AgentSessionView
+              agentId={agentId}
+              variant={screen ? 'screen' : '3d'}
+              header={screen ? <><SessionWindowHeader agent={agent} nearby={nearby} screen={screen} /><AgentPanelTabBar /></> : <SessionWindowHeader agent={agent} nearby={nearby} screen={screen} />}
+            />
+          </ThreadFontScale>
+        )}
       </div>
       {screen && (agent.owned || agent.bridged
         ? <VillageComposer key={agentId} agentId={agentId} large />

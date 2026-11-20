@@ -320,8 +320,8 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
       </div>
       <div className="text-[9.5px] uppercase tracking-[0.12em] text-white/55 max-[700px]:hidden">
         {large
-          ? 'T talk, T again to stop · Enter send · click the box to type · F or Esc back to the side panel · N next agent'
-          : 'T talk, T again to stop · Enter send · click the box to type · F zoom into the screen · Esc back · N next agent'}
+          ? 'T talk, T again to stop · Enter send · click the box to type · E side panel · F or Esc close · N next agent'
+          : 'T talk, T again to stop · Enter send · click the box to type · F full screen · E or Esc close · N next agent'}
       </div>
     </div>
   )

@@ -20,7 +20,7 @@ import {
   VILLAGE_FONT_DISPLAY,
   VILLAGE_TYPE_CLASS,
 } from './village-status'
-import { openVillageImages, toggleVillageScreen } from './village-actions'
+import { openVillageImages, toggleVillageScreen, leaveVillageFocus, setVillageScreen } from './village-actions'
 import { ParkedBanner } from './ParkedBanner'
 import { agentEngineFileUrl } from '../../lib/agent-engine-client'
 import { groupThread, threadImages, toolRunShape, type ThreadItem } from '../../lib/village/village-thread'
@@ -756,22 +756,35 @@ export function SessionWindowHeader({ agent, nearby, screen = false }: { agent: 
     <div className="flex shrink-0 flex-col gap-1 border-b pb-1.5" style={{ borderColor: `${color}55` }}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          {screen && (
-            <button
-              type="button"
-              onClick={() => toggleVillageScreen()}
-              title="Back to the side panel (F or Esc)"
-              className="shrink-0 rounded-md border border-white/20 bg-white/10 px-2 py-0.5 font-mono text-[11px] font-bold text-white/80 hover:bg-white/20"
-            >
-              ← F
-            </button>
-          )}
           <span className={`truncate font-bold tracking-wide text-white ${screen ? 'text-[19px]' : 'text-[16px]'}`} style={{ fontFamily: VILLAGE_FONT_DISPLAY }}>{agent.name}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <StatusPill status={status} label={status === 'needs-decision' ? 'needs you' : status} />
           {/* The agent's settings (voice, speed, avatar, colour) on its full screen too. */}
           {screen && <AgentSettingsButton agent={agent} large />}
+          {/* Where the E panel has its buttons (the owner, 2026-11-20): back to the side panel (E), close (F or Esc). */}
+          {screen && (
+            <button
+              type="button"
+              data-screen-to-panel
+              onClick={() => toggleVillageScreen()}
+              title="Back to the side panel (E)"
+              className="shrink-0 rounded-md border border-white/20 bg-white/10 px-2 py-0.5 font-mono text-[11px] font-bold text-white/80 hover:bg-white/20"
+            >
+              E panel
+            </button>
+          )}
+          {screen && (
+            <button
+              type="button"
+              data-screen-close
+              onClick={() => { setVillageScreen(null); leaveVillageFocus() }}
+              title="Close (F or Esc)"
+              className="shrink-0 rounded-md border border-white/20 bg-white/10 px-2 py-0.5 text-[12px] font-bold text-white/80 hover:bg-white/20"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
       <div className="flex items-center justify-between gap-2 text-[10px] text-white/70">

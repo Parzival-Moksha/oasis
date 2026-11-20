@@ -10,7 +10,7 @@ import { kitConfirm } from '../ui-kit'
 import { CUSTOM_MODEL_VALUE, cleanModelId, mergeModelLists, type ModelOption } from '../../lib/village/village-models'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '../../lib/input-manager'
-import { effectiveStatus } from '../../store/slices/agentEngineSlice'
+import { effectiveStatus, type EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { showNotice } from '../forge/GlobalNotice'
 import { AgentSessionView, StatusPill } from './AgentSessionView'
@@ -38,6 +38,8 @@ import { AcademyTrainToggle } from './VillageAcademyTrainee'
 import { usePanelLook } from './PanelLook'
 import { dismissVillageAgent } from './village-leave'
 import { AgentWhereBar } from './AgentWhereBar'
+import { AgentPanelTabBar, ThreadFontScale, ThreadFontSlider, useAgentPanelTab } from './AgentPanelTabs'
+import { FollowWorldsToggle } from './FollowWorldsToggle'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
@@ -166,6 +168,8 @@ export function AgentSessionPanel() {
   // Transparency + blur for all agent chats, this agent's colour (PanelLook.tsx).
   const { accent: panelAccent, ...panelLook } = usePanelLook(agent?.sessionId || agentId || '')
 
+  // The page shown (thread or settings): a hook, so above the early return below.
+  const panelTab = useAgentPanelTab()
   // F: the agent's own screen took over (camera + composer in the world); the layer above stays pushed.
   if (!agentId || !agent || screenAgentId === agentId) return null
   const geometry = getSessionPanelGeometry(viewport.width, viewport.height)
@@ -272,10 +276,51 @@ export function AgentSessionPanel() {
         </div>
       </div>
 
-      {/* An agent you only watch can be a trainee too. */}
-      {!agent.owned && <div className="flex shrink-0"><AcademyTrainToggle agent={agent} /></div>}
-      {agent.owned && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 text-[10.5px] text-white/75">
+      {/* Two pages (AgentPanelTabs.tsx): the thread, and its settings (model, mode, the switches, text size). */}
+      <AgentPanelTabBar />
+      {panelTab === 'settings' ? (
+        <AgentControls agent={agent} />
+      ) : (
+        <>
+      {/* Where it is when that is not here: Call here / Go there / Send home (village-worlds.ts). */}
+      <AgentWhereBar agentId={agent.id} />
+
+      <div className="min-h-0 flex-1">
+        <ThreadFontScale><AgentSessionView agentId={agent.id} variant="2d" /></ThreadFontScale>
+      </div>
+        </>
+      )}
+
+      {/* Keyed by agent: N to the next agent gets a fresh box, and T's "mic on" request finds it. */}
+      {agent.owned ? (
+        agent.alive || agent.status !== 'error' ? composer : (
+          <div className="shrink-0 border-t border-white/10 pt-2 text-[11.5px] text-rose-100/90">
+            The process stopped. Sending a message restarts it.
+            {composer}
+          </div>
+        )
+      ) : canTalkTo(agent) ? composer : (
+        <ObservedFooter agentId={agent.id} />
+      )}
+    </div>
+  )
+}
+
+/**
+ * The agent's settings page (its panel's Settings tab, in the side panel and on the full screen): model and mode on
+ * top, then thinking, account and its switches, Follow across worlds, and the thread's text size.
+ */
+export function AgentControls({ agent }: { agent: EngineAgentState }) {
+  const mergedModelsKey = useOasisStore(s => JSON.stringify(mergeModelLists(Object.values(s.agentEngine.agents).map(a => a.models))))
+  const mergedModels = useMemo(() => JSON.parse(mergedModelsKey) as ModelOption[], [mergedModelsKey])
+  const models = mergeModelLists([agent.models, mergedModels])
+  const currentModel = agent.model || 'default'
+  const agentKey = agent.sessionId || agent.id
+  return (
+    <div data-agent-settings-tab className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1 text-[11.5px]">
+      {agent.owned ? (
+        <>
+          <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-1">
             model
             <select
@@ -313,6 +358,8 @@ export function AgentSessionPanel() {
               {(agent.runtime === 'hermes' ? HERMES_MODES : PERMISSION_MODES).map(mode => <option key={mode} value={mode}>{mode}</option>)}
             </select>
           </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
           <EffortSelect agent={agent} />
           {/* Its Claude account (engine accounts.js), when there is more than one. */}
           <AccountSelect agent={agent} />
@@ -321,28 +368,14 @@ export function AgentSessionPanel() {
           <AcademyTrainToggle agent={agent} />
           <FollowToggle agent={agent} />
           <VoiceToggle agent={agent} />
-          <span className="ml-auto truncate text-white/60">{agent.runtime === 'hermes' ? `Hermes${agent.remoteHost ? ` on ${agent.remoteHost}` : ''} · ` : ''}{modelLabel(agent)}</span>
-        </div>
-      )}
-
-      {/* Where it is when that is not here: Call here / Go there / Send home (village-worlds.ts). */}
-      <AgentWhereBar agentId={agent.id} />
-
-      <div className="min-h-0 flex-1">
-        <AgentSessionView agentId={agent.id} variant="2d" />
-      </div>
-
-      {/* Keyed by agent: N to the next agent gets a fresh box, and T's "mic on" request finds it. */}
-      {agent.owned ? (
-        agent.alive || agent.status !== 'error' ? composer : (
-          <div className="shrink-0 border-t border-white/10 pt-2 text-[11.5px] text-rose-100/90">
-            The process stopped. Sending a message restarts it.
-            {composer}
           </div>
-        )
-      ) : canTalkTo(agent) ? composer : (
-        <ObservedFooter agentId={agent.id} />
+        </>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2"><AcademyTrainToggle agent={agent} /><FollowToggle agent={agent} /></div>
       )}
+      <FollowWorldsToggle agentKey={agentKey} name={agent.name} kit />
+      <ThreadFontSlider />
+      <div className="kit-hint">{agent.runtime === 'hermes' ? `Hermes${agent.remoteHost ? ` on ${agent.remoteHost}` : ''} · ` : ''}{modelLabel(agent)}</div>
     </div>
   )
 }
