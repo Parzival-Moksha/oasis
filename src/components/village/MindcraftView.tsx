@@ -256,7 +256,8 @@ export function clearBand(viewportWidth: number, obstacles: Array<{ left: number
   return { left, right }
 }
 
-function overlayObstacles(): Array<{ left: number; right: number }> {
+/** Fixed, narrow overlays at an edge that stand above `minZ` (the game rail, the key hints). */
+export function overlayObstacles(minZ = WINDOW_Z, ignore = '[data-ui-panel="mindcraft"]'): Array<{ left: number; right: number }> {
   const out: Array<{ left: number; right: number }> = []
   const vw = window.innerWidth
   const vh = window.innerHeight
@@ -264,8 +265,8 @@ function overlayObstacles(): Array<{ left: number; right: number }> {
     const style = getComputedStyle(el)
     if (style.position !== 'fixed' || style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity) === 0) continue
     const z = Number.parseInt(style.zIndex, 10)
-    if (!Number.isFinite(z) || z <= WINDOW_Z) continue
-    if (el.closest('[data-ui-panel="mindcraft"]')) continue
+    if (!Number.isFinite(z) || z <= minZ) continue
+    if (el.closest(ignore)) continue
     const box = el.getBoundingClientRect()
     // Edge overlays only: narrow, inside the window's height band, not full-screen layers or bars.
     if (box.width <= 0 || box.height <= 0 || box.width > vw * 0.4 || box.bottom < vh * 0.05 || box.top > vh * 0.95) continue

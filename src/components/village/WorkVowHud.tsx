@@ -4,13 +4,13 @@
 // Plain DOM, bottom left, always there in the village. It re-renders when the shown second changes
 // (work-vow-client ticks once a second), never per frame. A click opens the detail.
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react'
 import { useMindcraftLook } from './mindcraft-look'
 import { formatClock, WORK_VALOR, type WorkDayView, type WorkSnapshot, timeToGo } from '../../lib/village/work-vow'
 import { GAME_HUD_TEXT } from '../forge/GameKeycap'
 import { useOasisStore } from '../../store/oasisStore'
 import { getMissionState, subscribeMissions } from './village-mission-store'
-import { MindcraftWindow, openMindcraft } from './MindcraftView'
+import { MindcraftWindow, clearBand, openMindcraft, overlayObstacles } from './MindcraftView'
 import { getWorkVowState, setWorkFocus, setWorkMission, startWorkVow, subscribeWorkVow } from './work-vow-client'
 
 
@@ -114,10 +114,26 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
     if (status === 'missed') return ` −${day?.penaltyXp ?? 0} · missed`
     return ' · open'
   }
+  // Beside the game rail, never under it (the owner, 2026-11-19 and 20): measured from the page.
+  const [left, setLeft] = useState(12)
+  useLayoutEffect(() => {
+    const measure = () => {
+      const band = clearBand(window.innerWidth, overlayObstacles(9300, '[data-ui-panel="village-work-vow"]'))
+      setLeft(band.left > 0 ? Math.round(band.left + 12) : 12)
+    }
+    measure()
+    const late = window.setTimeout(measure, 300)
+    window.addEventListener('resize', measure)
+    return () => {
+      window.clearTimeout(late)
+      window.removeEventListener('resize', measure)
+    }
+  }, [])
   return (
     <div
       data-ui-panel="village-work-vow"
-      className="mc-scope mc-popup oasis-frame fixed bottom-[92px] left-3 z-[9300] max-h-[calc(100vh-110px)] w-[350px] overflow-y-auto p-3 text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl max-[700px]:bottom-auto max-[700px]:top-[120px]"
+      style={{ left }}
+      className="mc-scope mc-popup oasis-frame fixed bottom-[92px] z-[9300] max-h-[calc(100vh-110px)] w-[350px] overflow-y-auto p-3 text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl max-[700px]:bottom-auto max-[700px]:top-[120px]"
     >
       <div className="mb-2 flex items-start justify-between">
         <div>
@@ -128,7 +144,7 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
       </div>
       <div className={row}><span className="text-white/60">Today</span><span className="font-bold">{formatClock(liveSeconds)} · {snapshot.today.xp} XP</span></div>
       <button type="button" onClick={() => { onClose(); openMindcraft() }} className="mc-btn mt-2" data-tone="go">
-        Open Mindcraft: every day, mine and the agents&rsquo;
+        Mindcraft
       </button>
       {snapshot.agentHours && (
         <div className="mt-2 rounded-md border border-violet-300/20 bg-violet-400/5 px-2 py-1.5 text-[11.5px] leading-snug text-white/80">
