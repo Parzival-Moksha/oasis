@@ -21,6 +21,7 @@ import { getLiveObjectTransform } from '../../lib/live-object-transforms'
 import { getAgentVoiceSettings } from './village-companion'
 import { getVillageAvatar, getVillageDesk, getVillagePlaza } from './village-actions'
 import { agentDisplayName } from './village-status'
+import { isVillageIdentityOffline, isVillageIdentityReady } from '../../lib/village/village-identity-client'
 
 const EVERY_MS = 4000
 
@@ -102,6 +103,9 @@ export function VillagePresence() {
     const tick = () => {
       const connection = useOasisStore.getState().agentEngine.connection
       if (connection.status !== 'open') return
+      // Looks and voices come from the store on this PC (village-identity.ts). Without it they would be this
+      // browser's guesses, and a guess must never reach an agent's card.
+      if (!isVillageIdentityReady() || isVillageIdentityOffline()) return
       // A new connection (the engine restarted, or the socket dropped): it may know nothing, tell it all again.
       if (connection.connectedAt !== sentFor) last = ''
       let agents: EnginePresence[]

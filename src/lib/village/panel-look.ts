@@ -6,6 +6,8 @@
 // the dark background of its chat (derived from it). Random at first (a hue from its key), changeable.
 
 import { accentBackground, defaultAccent } from './village-tags'
+import { fieldMap } from './village-identity'
+import { getVillageIdentity, isVillageIdentityOffline, isVillageIdentityReady, queueVillageIdentity, subscribeVillageIdentity } from './village-identity-client'
 
 export interface PanelLook {
   /** Background opacity, 0.15 (see-through) to 1 (solid). */
@@ -94,9 +96,22 @@ export function setPanelLook(patch: Partial<PanelLook>): void {
   changed()
 }
 
+/** Accent colours live in the store on this PC (village-identity.ts) once it is loaded: the same in every window. */
+function storedAccents(): Record<string, string> | null {
+  const file = isVillageIdentityReady() && !isVillageIdentityOffline() ? getVillageIdentity() : null
+  return file ? fieldMap(file, 'accent') : null
+}
+
+subscribeVillageIdentity(() => {
+  const stored = storedAccents()
+  if (!stored || JSON.stringify(stored) === JSON.stringify(accentCache)) return
+  accentCache = stored
+  changed()
+})
+
 /** The agent's colour: the owner's pick, else its starting one (the hue of an old chat colour, or one from its key). */
 export function getAgentAccent(key: string): string {
-  accentCache ??= read<Record<string, string>>(ACCENT_KEY) || {}
+  accentCache ??= storedAccents() || read<Record<string, string>>(ACCENT_KEY) || {}
   if (accentCache[key]) return accentCache[key]
   colorsCache ??= read<Record<string, string>>(COLORS_KEY) || {}
   return defaultAccent(key, colorsCache[key] || null)
@@ -104,11 +119,12 @@ export function getAgentAccent(key: string): string {
 
 /** null: back to its starting colour. */
 export function setAgentAccent(key: string, color: string | null): void {
-  accentCache ??= read<Record<string, string>>(ACCENT_KEY) || {}
+  accentCache ??= storedAccents() || read<Record<string, string>>(ACCENT_KEY) || {}
   const next = { ...accentCache }
   if (color && hexToRgb(color)) next[key] = color
   else delete next[key]
   accentCache = next
+  queueVillageIdentity([{ agent: key, set: { accent: next[key] ?? null } }])
   write(ACCENT_KEY, next)
   changed()
 }

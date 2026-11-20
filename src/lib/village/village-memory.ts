@@ -1,9 +1,13 @@
-// ░▒▓ VILLAGE MEMORY — each agent's desk and body, kept in this browser (localStorage) ▓▒░
+// ░▒▓ VILLAGE MEMORY — each agent's desk and body, the same in every browser and app window ▓▒░
 // Keyed by session id (village-layout.ts villageAgentKey), so a reload, a world switch or a
 // "Move it here" leaves everyone where they were. One memory for all worlds: seats are numbers,
 // each world places seat N the same way around its own village origin.
+// Since 2026-11-20 the truth is the store on this PC (village-identity.ts): this module derives the memory from it
+// and sends its changes there. localStorage keeps a copy only for a page that cannot reach the store.
 
 import type { VillageMemory } from './village-layout'
+import { memoryFromIdentity, memoryOps, sameLooks } from './village-identity'
+import { getVillageIdentity, isVillageIdentityOffline, isVillageIdentityReady, queueVillageIdentity, subscribeVillageIdentity } from './village-identity-client'
 
 const STORAGE_KEY = 'oasis.village.memory.v1'
 
@@ -19,13 +23,32 @@ function read(): VillageMemory {
   }
 }
 
+function fromStore(): VillageMemory | null {
+  const file = isVillageIdentityReady() && !isVillageIdentityOffline() ? getVillageIdentity() : null
+  return file ? (memoryFromIdentity(file) as VillageMemory) : null
+}
+
 export function getVillageMemory(): VillageMemory {
-  if (!cache) cache = read()
+  if (!cache) cache = fromStore() ?? read()
   return cache
 }
 
+// Another tab or window changed a seat or a body (or the store just loaded): take it, keeping our own `seenAt`s.
+subscribeVillageIdentity(() => {
+  const stored = fromStore()
+  if (!stored) return
+  if (cache && sameLooks(stored, cache)) return
+  const seen = cache || {}
+  cache = Object.fromEntries(Object.entries(stored).map(([key, entry]) => [key, { ...entry, seenAt: Math.max(entry.seenAt || 0, seen[key]?.seenAt || 0) }]))
+  version += 1
+  listeners.forEach(listener => listener())
+})
+
 export function saveVillageMemory(next: VillageMemory): void {
+  const prev = cache || {}
   cache = next
+  const file = getVillageIdentity()
+  queueVillageIdentity(memoryOps(prev, next, file?.agents || {}))
   if (typeof window === 'undefined') return
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))

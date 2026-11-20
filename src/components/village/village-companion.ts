@@ -25,6 +25,8 @@ import { buildVisemeTimeline, createVisemeLipSync } from '../../lib/village/vill
 import { faceHeightFrom } from '../../lib/village/village-layout'
 import { parseFollowPrefs, wantsCome, wantsFollow, withComeChoice, withFollowChoice, type FollowPrefs, type VisitSpot } from '../../lib/village/village-follow'
 import { SPOKEN_MAX_CHARS, cleanSpoken } from '../../lib/village/village-spoken'
+import { fieldMap, voiceOps, voicesFromIdentity } from '../../lib/village/village-identity'
+import { getVillageIdentity, isVillageIdentityOffline, isVillageIdentityReady, queueVillageIdentity, subscribeVillageIdentity } from '../../lib/village/village-identity-client'
 import { dealVoice, parseVoicePrefs, playbackRateFor, speechSpeedPlan, speedOf, voiceChosenBy, voiceOf, withVoicePrefs, type VoicePrefs } from '../../lib/village/village-voices'
 
 // ─── follow ─────────────────────────────────────────────────────────────────
@@ -34,8 +36,15 @@ let followPrefs: FollowPrefs | null = null
 let followVersion = 0
 const followListeners = new Set<() => void>()
 
+/** The store on this PC (village-identity.ts), once it is loaded; null before that or without it. */
+function storeFile() {
+  return isVillageIdentityReady() && !isVillageIdentityOffline() ? getVillageIdentity() : null
+}
+
 function loadFollowPrefs(): FollowPrefs {
   if (followPrefs === null) {
+    const file = storeFile()
+    if (file) return (followPrefs = fieldMap(file, 'follow'))
     try {
       followPrefs = parseFollowPrefs(typeof window === 'undefined' ? null : window.localStorage.getItem(FOLLOW_KEY))
     } catch {
@@ -52,6 +61,7 @@ export function isVillageFollowOn(key: string, name: string | null | undefined):
 
 export function setVillageFollow(key: string, name: string | null | undefined, on: boolean): void {
   followPrefs = withFollowChoice(loadFollowPrefs(), key, name, on)
+  queueVillageIdentity([{ agent: key, set: { follow: key in followPrefs ? followPrefs[key] : null } }])
   try {
     window.localStorage.setItem(FOLLOW_KEY, JSON.stringify(followPrefs))
   } catch {
@@ -77,6 +87,8 @@ let comePrefs: FollowPrefs | null = null
 
 function loadComePrefs(): FollowPrefs {
   if (comePrefs === null) {
+    const file = storeFile()
+    if (file) return (comePrefs = fieldMap(file, 'come'))
     try {
       comePrefs = parseFollowPrefs(typeof window === 'undefined' ? null : window.localStorage.getItem(COME_KEY))
     } catch {
@@ -94,6 +106,7 @@ export function isVillageComeOn(key: string): boolean {
 /** Shares the Follow me listeners: both are read by the same components. */
 export function setVillageCome(key: string, on: boolean): void {
   comePrefs = withComeChoice(loadComePrefs(), key, on)
+  queueVillageIdentity([{ agent: key, set: { come: key in comePrefs ? comePrefs[key] : null } }])
   try {
     window.localStorage.setItem(COME_KEY, JSON.stringify(comePrefs))
   } catch {
@@ -298,6 +311,8 @@ const voicePrefsListeners = new Set<() => void>()
 
 function loadVoicePrefs(): VoicePrefs {
   if (voicePrefs === null) {
+    const file = storeFile()
+    if (file) return (voicePrefs = parseVoicePrefs(JSON.stringify(voicesFromIdentity(file))))
     try {
       voicePrefs = parseVoicePrefs(typeof window === 'undefined' ? null : window.localStorage.getItem(VOICES_KEY))
     } catch {
@@ -308,6 +323,7 @@ function loadVoicePrefs(): VoicePrefs {
 }
 
 function saveVoicePrefs(next: VoicePrefs, announce: boolean): void {
+  queueVillageIdentity(voiceOps(voicePrefs || {}, next))
   voicePrefs = next
   try {
     window.localStorage.setItem(VOICES_KEY, JSON.stringify(next))
@@ -318,6 +334,26 @@ function saveVoicePrefs(next: VoicePrefs, announce: boolean): void {
   voicePrefsVersion += 1
   voicePrefsListeners.forEach(listener => listener())
 }
+
+// Another tab or window changed a voice, a follow or a come-to-me (or the store just loaded): read them again.
+subscribeVillageIdentity(() => {
+  const file = storeFile()
+  if (!file) return
+  const voices = parseVoicePrefs(JSON.stringify(voicesFromIdentity(file)))
+  if (JSON.stringify(voices) !== JSON.stringify(voicePrefs)) {
+    voicePrefs = voices
+    voicePrefsVersion += 1
+    voicePrefsListeners.forEach(listener => listener())
+  }
+  const follow = fieldMap(file, 'follow')
+  const come = fieldMap(file, 'come')
+  if (JSON.stringify(follow) !== JSON.stringify(followPrefs) || JSON.stringify(come) !== JSON.stringify(comePrefs)) {
+    followPrefs = follow
+    comePrefs = come
+    followVersion += 1
+    followListeners.forEach(listener => listener())
+  }
+})
 
 export interface AgentVoiceSettings {
   /** The agent's session key (villageAgentKey). */

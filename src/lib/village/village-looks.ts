@@ -3,6 +3,8 @@
 // time to ditch it… I like the circular thing", and a dismissed avatar never just disappears. Kept in this browser
 // (localStorage), chosen in Settings > Agents.
 
+import { getVillageIdentity, isVillageIdentityOffline, isVillageIdentityReady, queueVillageIdentity, subscribeVillageIdentity } from './village-identity-client'
+
 export type LeaveEffect = 'fade' | 'spin' | 'crt' | 'poof'
 
 export const LEAVE_EFFECTS: Array<{ id: LeaveEffect; label: string; hint: string; ms: number }> = [
@@ -43,7 +45,22 @@ const listeners = new Set<() => void>()
 let version = 0
 let cache: VillageLooks | null = null
 
+/** The store on this PC (village-identity.ts) holds it once loaded: the same in every window. */
+function storedVillageLooks(): VillageLooks | null {
+  const file = isVillageIdentityReady() && !isVillageIdentityOffline() ? getVillageIdentity() : null
+  return file?.settings.looks ? clampLooks(file.settings.looks as Partial<VillageLooks>) : null
+}
+
+subscribeVillageIdentity(() => {
+  const next = storedVillageLooks()
+  if (!next || JSON.stringify(next) === JSON.stringify(cache)) return
+  cache = next
+  version += 1
+  listeners.forEach(listener => listener())
+})
+
 export function getVillageLooks(): VillageLooks {
+  if (!cache) cache = storedVillageLooks()
   if (!cache) {
     let raw: Partial<VillageLooks> | null = null
     if (typeof window !== 'undefined') {
@@ -56,6 +73,7 @@ export function getVillageLooks(): VillageLooks {
 
 export function setVillageLooks(patch: Partial<VillageLooks>): void {
   cache = clampLooks({ ...getVillageLooks(), ...patch })
+  queueVillageIdentity([], { looks: { ...cache } as Record<string, unknown> })
   if (typeof window !== 'undefined') {
     try { window.localStorage.setItem(KEY, JSON.stringify(cache)) } catch { /* storage blocked */ }
   }

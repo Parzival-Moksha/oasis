@@ -79,6 +79,7 @@ import { isProbablyMobileDevice } from '@/lib/mobile-controls'
 import { useIsHostedOasis, useOasisCapabilities } from '@/lib/oasis-mode-client'
 import { isVillageProfileClient } from '@/lib/oasis-profile'
 import { VillageWorld } from './village/VillageWorld'
+import { VillageIdentityGate } from './village/VillageIdentityGate'
 import { VillageController } from './village/VillageController'
 import { VillageHud } from './village/VillageHud'
 import { AgentSessionPanel } from './village/AgentSessionPanel'
@@ -2120,7 +2121,7 @@ export default function Scene() {
           {!villageProfile && <RookieMerlinWorldPrompt />}
         </Suspense>
         {/* ─═̷─═̷─🏘 VILLAGE — engine agents at desks around the spawn point ─═̷─═̷─🏘 */}
-        {villageProfile && <VillageWorld />}
+        {villageProfile && <VillageIdentityGate><VillageWorld /></VillageIdentityGate>}
         {/* ─═̷─═̷─⚔ Combat-bolt dispatcher — replaces the legacy FireboltLayer
             and routes to the 10 designs in src/components/forge/bolts/ based
             on settings.{spell}Design. Mounted only when RP1/exploration mode

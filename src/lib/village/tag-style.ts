@@ -1,6 +1,8 @@
 // ░▒▓ NAME TAG STYLE — how the name over an agent's head is drawn, and how big ▓▒░
 // Kept in this browser (localStorage), like the other village looks; chosen in Settings > Agents.
 
+import { getVillageIdentity, isVillageIdentityOffline, isVillageIdentityReady, queueVillageIdentity, subscribeVillageIdentity } from './village-identity-client'
+
 export type TagStyle = 'outline' | 'extruded'
 
 export const TAG_STYLES: Array<{ id: TagStyle; label: string; hint: string }> = [
@@ -45,7 +47,22 @@ const listeners = new Set<() => void>()
 let version = 0
 let cache: TagSettings | null = null
 
+/** The store on this PC (village-identity.ts) holds it once loaded: the same in every window. */
+function storedTagSettings(): TagSettings | null {
+  const file = isVillageIdentityReady() && !isVillageIdentityOffline() ? getVillageIdentity() : null
+  return file?.settings.tagStyle ? clampTagSettings(file.settings.tagStyle as Partial<TagSettings>) : null
+}
+
+subscribeVillageIdentity(() => {
+  const next = storedTagSettings()
+  if (!next || JSON.stringify(next) === JSON.stringify(cache)) return
+  cache = next
+  version += 1
+  listeners.forEach(listener => listener())
+})
+
 export function getTagSettings(): TagSettings {
+  if (!cache) cache = storedTagSettings()
   if (!cache) {
     let raw: Partial<TagSettings> | null = null
     if (typeof window !== 'undefined') {
@@ -64,6 +81,7 @@ export function getTagSettings(): TagSettings {
 
 export function setTagSettings(patch: Partial<TagSettings>): void {
   cache = clampTagSettings({ ...getTagSettings(), ...patch })
+  queueVillageIdentity([], { tagStyle: { ...cache } as Record<string, unknown> })
   if (typeof window !== 'undefined') {
     try { window.localStorage.setItem(KEY, JSON.stringify(cache)) } catch { /* storage blocked */ }
   }
