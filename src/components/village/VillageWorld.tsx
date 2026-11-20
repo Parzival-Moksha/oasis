@@ -320,7 +320,9 @@ function DeskWindow({ agentId, nearby, mode }: { agentId: string; nearby: boolea
       data-desk-mode={mode}
       data-kit-style={textured ? menuStyle : undefined}
       className={textured ? 'kit-panel relative flex flex-col overflow-hidden text-white' : 'relative flex flex-col overflow-hidden rounded-2xl text-white'}
-      style={textured ? { width: size.width, height: size.height, padding: screen ? 18 : 14 } : {
+      // willChange: its own compositing layer. Inside drei's CSS-3D transform the wheel does not scroll the thread
+      // without one (Glass gets one from its backdrop blur); measured by Companion, 2026-11-20.
+      style={textured ? { width: size.width, height: size.height, padding: screen ? 18 : 14, willChange: 'transform' } : {
         width: size.width,
         height: size.height,
         padding: screen ? 18 : 14,
