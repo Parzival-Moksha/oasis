@@ -12,6 +12,7 @@ import { DESK_SCREEN_LIMIT, isDeskScreensMode, type DeskScreensMode } from '@/li
 import { isVillageSoundOn, setVillageSoundOn, subscribeVillageSound } from '@/components/village/village-sound'
 import { TAG_SIZE, TAG_STYLES, getTagSettings, getTagSettingsVersion, setTagSettings, subscribeTagSettings } from '@/lib/village/tag-style'
 import { KitTabs, KitToggle } from '@/components/ui-kit'
+import { VillageWorldRow } from '@/components/village/VillageWorldRow'
 import { LEAVE_EFFECTS, getVillageLooks, getVillageLooksVersion, setVillageLooks, subscribeVillageLooks } from '@/lib/village/village-looks'
 import { isVillageVoiceOn, setVillageVoiceOn, subscribeVillageVoice } from '@/components/village/village-companion'
 import { WakeUpSettings } from './WakeUpSettings'
@@ -111,6 +112,7 @@ export function AgentsTab() {
       <section>
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Agents in the village</div>
         {/* The shared UI kit (components/ui-kit): its look follows Settings' style switch. */}
+        <VillageWorldRow />
         <div className="flex flex-col gap-2 py-1" data-village-looks>
           <KitToggle
             checked={looks.desks}

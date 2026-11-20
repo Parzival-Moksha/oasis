@@ -36,6 +36,7 @@ import { AgentSettingsButton } from './AgentSettingsMenu'
 import { AcademyTrainToggle } from './VillageAcademyTrainee'
 import { usePanelLook } from './PanelLook'
 import { dismissVillageAgent } from './village-leave'
+import { AgentWhereBar } from './AgentWhereBar'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
@@ -287,6 +288,9 @@ export function AgentSessionPanel() {
           <span className="ml-auto truncate text-white/60">{agent.runtime === 'hermes' ? `Hermes${agent.remoteHost ? ` on ${agent.remoteHost}` : ''} · ` : ''}{modelLabel(agent)}</span>
         </div>
       )}
+
+      {/* Where it is when that is not here: Call here / Go there / Send home (village-worlds.ts). */}
+      <AgentWhereBar agentId={agent.id} />
 
       <div className="min-h-0 flex-1">
         <AgentSessionView agentId={agent.id} variant="2d" />

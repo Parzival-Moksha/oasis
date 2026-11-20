@@ -19,6 +19,9 @@ import { accountPieces } from '../../lib/village/village-accounts'
 import { CUT_NAME_LENGTH, fullAgentName, sessionTitles } from './village-agent-labels'
 import { SUBAGENT_LOOK_COLOR } from './VillageSubagentMinis'
 import { getCouncilVersion, getStageCast, isStageWorldNow, subscribeCouncil } from './village-council'
+import { groupAgentsByWorld } from '../../lib/village/village-worlds'
+import { useVillageWorldsVersion, villageAgentWorld, villageWorldName } from './village-worlds'
+import { currentVillageWorld } from './village-homes'
 
 const COLLAPSED_KEY = 'oasis.village.agentsMenu.collapsed'
 const MARGIN = 16
@@ -215,6 +218,8 @@ export function VillageAgentsMenu() {
     }).filter(Boolean).join('\u0002')
   })
   void castVersion
+  // Agents live in worlds (village-worlds.ts): everyone is listed, this world's first, then one heading per world.
+  useVillageWorldsVersion()
   const attentionKey = useOasisStore(s => selectAttentionQueue(s.agentEngine).join(','))
   const focusedId = useOasisStore(s => s.agentEngine.focusedAgentId)
   const focusedHelper = useOasisStore(s => (s.agentEngine.focusedSubagent ? `${s.agentEngine.focusedSubagent.agentId}\u0001${s.agentEngine.focusedSubagent.key}` : ''))
@@ -241,6 +246,11 @@ export function VillageAgentsMenu() {
   if (screenAgentId) return null
 
   const rows = rowsKey ? rowsKey.split('\u0002').map(parseRow) : []
+  const worldGroups = groupAgentsByWorld(rows.map(row => row.id), villageAgentWorld, currentVillageWorld(), world => villageWorldName(world))
+  const groupHeading = new Map<string, string>()
+  if (worldGroups.length > 1) worldGroups.forEach(group => groupHeading.set(group.ids[0], group.here ? `Here · ${group.name}` : group.name))
+  const worldOrder = new Map(worldGroups.flatMap(group => group.ids).map((id, index) => [id, index]))
+  rows.sort((a, b) => (worldOrder.get(a.id) ?? 0) - (worldOrder.get(b.id) ?? 0))
   const attention = new Set(attentionKey ? attentionKey.split(',') : [])
   const helpersWorking = rows.reduce((sum, row) => sum + row.helpers.filter(helper => helper.look === 'running').length, 0)
   const geometry = getSessionPanelGeometry(viewport.width, viewport.height)
@@ -282,7 +292,7 @@ export function VillageAgentsMenu() {
       <GameMenuButton
         type="button"
         label="Agents"
-        sublabel={attention.size ? (attention.size === 1 ? 'needs you' : `${attention.size} need you`) : `${rows.length} here`}
+        sublabel={attention.size ? (attention.size === 1 ? 'needs you' : `${attention.size} need you`) : `${worldGroups.find(group => group.here)?.ids.length ?? (worldGroups.length ? 0 : rows.length)} here`}
         sublabelColor={attention.size ? ATTENTION : undefined}
         accent={ACCENT}
         active={!collapsed}
@@ -314,6 +324,9 @@ export function VillageAgentsMenu() {
             const needs = attention.has(row.id)
             return (
               <div key={row.id} className="mb-1.5 last:mb-0">
+                {groupHeading.has(row.id) && (
+                  <div data-agents-world={groupHeading.get(row.id)} className="mb-1 mt-2 px-1 font-mono text-[9.5px] uppercase tracking-[0.16em] text-white/50">{groupHeading.get(row.id)}</div>
+                )}
                 <div className="relative">
                 {needs && (
                   <span className="oasis-attn-glow pointer-events-none absolute inset-0 rounded-md" style={{ boxShadow: `0 0 12px 1px ${ATTENTION}, inset 0 0 10px ${ATTENTION}66`, border: `1px solid ${ATTENTION}` }} />

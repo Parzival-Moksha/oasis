@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
-import { EMPTY_HOMES, cleanHome, isHomeKey, parseHomesFile, withAnswer, withHome, withRequest, type HomeRequest, type HomesFile } from '@/lib/village/village-homes'
+import { EMPTY_HOMES, cleanHome, isHomeKey, parseHomesFile, withAnswer, withCall, withHome, withRequest, withVillageWorld, type HomeRequest, type HomesFile } from '@/lib/village/village-homes'
 
 export function homesFilePath(env: NodeJS.ProcessEnv = process.env): string {
   return env.OASIS_VILLAGE_HOMES_FILE || path.join(process.cwd(), 'data', 'village-homes.local.json')
@@ -15,7 +15,7 @@ export async function readHomes(file = homesFilePath()): Promise<HomesFile> {
   try {
     return parseHomesFile(JSON.parse(await fs.readFile(file, 'utf8')))
   } catch {
-    return { ...EMPTY_HOMES, homes: {}, requests: [], done: [] }
+    return { ...EMPTY_HOMES, homes: {}, requests: [], done: [], calls: {} }
   }
 }
 
@@ -83,6 +83,18 @@ export async function applyHomesAction(body: Record<string, unknown>, file = hom
         return withAnswer(next, id, { ok: body.ok !== false, note: String(body.note || '').slice(0, 300), world })
       }, file),
     }
+  }
+  if (action === 'village') {
+    const world = body.world === null ? null : body.world
+    if (world !== null && !isHomeKey(world)) throw new HomesError('world is a world id, or null')
+    return { file: await change(f => withVillageWorld(f, world), file) }
+  }
+  if (action === 'call') {
+    const agent = body.agent
+    const world = body.world === null ? null : body.world
+    if (!isHomeKey(agent)) throw new HomesError('agent is needed')
+    if (world !== null && !isHomeKey(world)) throw new HomesError('world is a world id, or null (sent home)')
+    return { file: await change(f => withCall(f, agent, world), file) }
   }
   throw new HomesError(`unknown action "${action}"`)
 }

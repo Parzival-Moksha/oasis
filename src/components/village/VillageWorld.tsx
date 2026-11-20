@@ -75,6 +75,7 @@ import { isStageWorldName, stationAtAnchor } from '../../lib/village/village-sta
 import { getTagSettings } from '../../lib/village/tag-style'
 import { getVillageLooks, subscribeVillageLooks } from '../../lib/village/village-looks'
 import { getVillageHome, getVillageHomesVersion, subscribeVillageHomes, useVillageHomesSync } from './village-homes'
+import { isVillageAgentHere, useVillageWorldsVersion } from './village-worlds'
 import { readableAccent, tagMarker } from '../../lib/village/village-tags'
 import { getAgentAccent, getPanelLookVersion, subscribePanelLook } from '../../lib/village/panel-look'
 import { getVillageCombatVersion, getVillageVitals, subscribeVillageCombat } from '../../lib/village/village-combat'
@@ -1073,17 +1074,26 @@ export function VillageWorld() {
     return map
   }, [stage, castKey, seatsKey, terrainHeights, origin])
   // The ring as seated, with the homed ones moved to their homes (the mission wall stays with the ring).
+  // Agents in another world (village-worlds.ts): not here at all, so nothing looks for them in this world.
+  const worldsVersion = useVillageWorldsVersion()
+  const awayKey = useMemo(
+    () => (stage ? '' : roster.filter(agent => !isVillageAgentHere(agent.id)).map(agent => agent.id).join(',')),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stage, roster, worldsVersion],
+  )
   const homed = useMemo(() => {
     const ids = new Set<string>()
     const map = new Map(placements)
+    for (const id of awayKey ? awayKey.split(',') : []) map.delete(id)
     for (const entry of homesKey ? homesKey.split('\u0002') : []) {
       const [id, x, z, yaw] = entry.split('\u0001')
+      if (!map.has(id)) continue
       const ground = sampleTerrainHeightAt(terrainHeights, Number(x), Number(z))
       map.set(id, stationAtAnchor([Number(x), ground, Number(z)], Number(yaw)))
       ids.add(id)
     }
     return { ids, placements: map }
-  }, [placements, homesKey, terrainHeights])
+  }, [placements, homesKey, terrainHeights, awayKey])
 
   // The desks, and out of the registry again when they change or the village goes. One effect for both: a
   // separate cleanup-only effect used to run after this one on a hot reload (React re-runs every effect then)

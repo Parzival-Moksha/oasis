@@ -38,12 +38,19 @@ export interface HomesFile {
   requests: HomeRequest[]
   /** What became of answered requests (the last few), so `me.mjs` can say what happened. */
   done: Array<{ id: string; ok: boolean; note: string; world?: string; at: number }>
+  /**
+   * The village's world: agents with no other place live here (village-worlds.ts). null: not chosen yet, and
+   * then such agents are in every world, as before 2026-11-20. "Move the village here" sets it.
+   */
+  villageWorld: string | null
+  /** Agents the owner called into a world ("Call here"), by agent key, until sent home. */
+  calls: Record<string, string>
 }
 
 /** The ground an agent may build on around its home, and how much. Told to the agent in its card. */
 export const HOME = { buildRadius: 8, objects: 40, lights: 2, requestTtlMs: 60 * 60_000, maxRequests: 50, maxDone: 30 } as const
 
-export const EMPTY_HOMES: HomesFile = { v: 1, version: 0, homes: {}, requests: [], done: [] }
+export const EMPTY_HOMES: HomesFile = { v: 1, version: 0, homes: {}, requests: [], done: [], villageWorld: null, calls: {} }
 
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 const LIMIT = 5000
@@ -69,7 +76,7 @@ export function isHomeKey(value: unknown): value is string {
 /** A file as read from disk (or sent by a client), with anything malformed dropped. */
 export function parseHomesFile(raw: unknown, now = Date.now()): HomesFile {
   const f = raw as Partial<HomesFile> | null
-  if (!f || typeof f !== 'object') return { ...EMPTY_HOMES, homes: {}, requests: [], done: [] }
+  if (!f || typeof f !== 'object') return { ...EMPTY_HOMES, homes: {}, requests: [], done: [], calls: {} }
   const homes: HomesByWorld = {}
   for (const [world, byAgent] of Object.entries(f.homes || {})) {
     if (!isHomeKey(world) || !byAgent || typeof byAgent !== 'object') continue
@@ -83,7 +90,9 @@ export function parseHomesFile(raw: unknown, now = Date.now()): HomesFile {
     .filter(r => r.kind !== 'at' || (finite(r.x) && finite(r.z)))
     .slice(-HOME.maxRequests)
   const done = (Array.isArray(f.done) ? f.done : []).filter(d => d && isHomeKey(d.id) && finite(d.at)).slice(-HOME.maxDone)
-  return { v: 1, version: finite(f.version) ? f.version : 0, homes, requests, done }
+  const calls: Record<string, string> = {}
+  for (const [key, world] of Object.entries(f.calls || {})) if (isHomeKey(key) && isHomeKey(world)) calls[key] = world
+  return { v: 1, version: finite(f.version) ? f.version : 0, homes, requests, done, villageWorld: isHomeKey(f.villageWorld) ? f.villageWorld : null, calls }
 }
 
 export function homeOf(file: HomesFile | null, world: string | null | undefined, key: string | null | undefined): VillageHome | null {
@@ -112,6 +121,24 @@ export function withAnswer(file: HomesFile, id: string, outcome: { ok: boolean; 
     requests: file.requests.filter(r => r.id !== id),
     done: [...file.done.filter(d => d.id !== id), { id, ...outcome, at: now }].slice(-HOME.maxDone),
   }
+}
+
+/** The village's world (null: none chosen). */
+export function withVillageWorld(file: HomesFile, world: string | null): HomesFile {
+  return { ...file, version: file.version + 1, villageWorld: world }
+}
+
+/** An agent called into a world (null: sent home). */
+export function withCall(file: HomesFile, key: string, world: string | null): HomesFile {
+  const calls = { ...file.calls }
+  if (world) calls[key] = world
+  else delete calls[key]
+  return { ...file, version: file.version + 1, calls }
+}
+
+/** The worlds where an agent has a home spot. */
+export function homeSpotWorlds(file: HomesFile, key: string): string[] {
+  return Object.keys(file.homes).filter(world => Boolean(file.homes[world]?.[key]))
 }
 
 /** Facing from a spot toward a point (the plaza), as a station's rotationY. */

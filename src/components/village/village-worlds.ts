@@ -1,0 +1,50 @@
+// ░▒▓ VILLAGE WORLDS (page) — which world each agent is in, read from what the page knows ▓▒░
+// Follow me (village-companion), calls and the village's world and home spots (the homes file, village-homes.ts).
+// Each agent's own home world will come from the shared identity store (Citizens', /api/village/identity) when it
+// lands: homeWorldOf() below is where it plugs in. The rule itself is lib/village/village-worlds.ts.
+
+import { useSyncExternalStore } from 'react'
+import { useOasisStore } from '../../store/oasisStore'
+import { villageAgentKey } from '../../lib/village/village-layout'
+import { homeSpotWorlds } from '../../lib/village/village-homes'
+import { agentWorld, isAgentHere } from '../../lib/village/village-worlds'
+import { getVillageFollowVersion, isVillageFollowOn, subscribeVillageFollow } from './village-companion'
+import { currentVillageWorld, getVillageHomesFile, getVillageHomesVersion, subscribeVillageHomes } from './village-homes'
+
+/** Its own home world, from the shared identity store once there is one; none yet. */
+function homeWorldOf(_key: string): string | null {
+  return null
+}
+
+/** The world an agent is in (null: every world, while no village world is chosen). */
+export function villageAgentWorld(agentId: string): string | null {
+  const state = useOasisStore.getState()
+  const agent = state.agentEngine.agents[agentId]
+  if (!agent) return null
+  const key = villageAgentKey({ id: agentId, sessionId: agent.sessionId })
+  const file = getVillageHomesFile()
+  return agentWorld({
+    follows: isVillageFollowOn(key, agent.name),
+    calledTo: file.calls[key] ?? null,
+    homeWorld: homeWorldOf(key),
+    homeSpots: homeSpotWorlds(file, key),
+  }, file.villageWorld, currentVillageWorld())
+}
+
+export function isVillageAgentHere(agentId: string): boolean {
+  return isAgentHere(villageAgentWorld(agentId), currentVillageWorld())
+}
+
+/** A world's name for people ("Zen Workshop"). */
+export function villageWorldName(world: string | null): string {
+  if (!world) return 'every world'
+  return useOasisStore.getState().worldRegistry.find(entry => entry.id === world)?.name || 'another world'
+}
+
+/** Re-renders when anything that decides where agents are changes. Returns a number that changes with it. */
+export function useVillageWorldsVersion(): number {
+  const homes = useSyncExternalStore(subscribeVillageHomes, getVillageHomesVersion, () => 0)
+  const follow = useSyncExternalStore(subscribeVillageFollow, getVillageFollowVersion, () => 0)
+  const world = useOasisStore(s => s.viewingWorldId || s.activeWorldId || '')
+  return homes * 1000 + follow + world.length
+}

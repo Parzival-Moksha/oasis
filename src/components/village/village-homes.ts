@@ -65,6 +65,28 @@ export async function clearVillageHome(world: string, key: string): Promise<void
   if (saved) changed(saved)
 }
 
+/** The whole file as this page has it (village-worlds: the village's world, calls, home spots). */
+export function getVillageHomesFile(): HomesFile {
+  return file
+}
+
+/** "Move the village here": agents with no other place live in this world (null: in every world, as before). */
+export async function setVillageWorld(world: string | null): Promise<void> {
+  changed({ ...file, villageWorld: world, version: file.version })
+  const saved = await post({ action: 'village', world })
+  if (saved) changed(saved)
+}
+
+/** "Call here" (a world) or "Send home" (null). */
+export async function callVillageAgent(key: string, world: string | null): Promise<void> {
+  const calls = { ...file.calls }
+  if (world) calls[key] = world
+  else delete calls[key]
+  changed({ ...file, calls })
+  const saved = await post({ action: 'call', agent: key, world })
+  if (saved) changed(saved)
+}
+
 /** Which agent of this page a request is for, if any. */
 function agentFor(request: HomeRequest): string | null {
   const engine = useOasisStore.getState().agentEngine
