@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
       const reports = (body.agentWork as Array<Partial<AgentWorkReport>>).filter((r): r is AgentWorkReport =>
         Boolean(r) && typeof r.key === 'string' && r.key.length > 0 && r.key.length <= 120 && typeof r.ts === 'number' && typeof r.ms === 'number' && (r.kind === 'turn' || r.kind === 'helper'))
         .map(r => ({ key: r.key, name: String(r.name || r.key).slice(0, 80), ts: r.ts, kind: r.kind, ms: r.ms }))
-      return NextResponse.json({ ok: true, ...(await reportAgentWork(reports)) })
+      return NextResponse.json({ ok: true, ...(await reportAgentWork(reports, (body as { source?: unknown }).source === 'engine')) })
     }
     if ('mission' in body) {
       if (body.mission !== null && typeof body.mission !== 'string') return NextResponse.json({ error: 'mission is a file name or null' }, { status: 400 })

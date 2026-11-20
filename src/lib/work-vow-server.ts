@@ -186,10 +186,12 @@ async function allMissions(now: number): Promise<Mission[]> {
 }
 
 /** Finished turns and helpers, from the page that heard the engine say so. */
-export function reportAgentWork(reports: AgentWorkReport[]): Promise<{ booked: number }> {
+export function reportAgentWork(reports: AgentWorkReport[], fromEngine = false): Promise<{ booked: number }> {
   return serial(async () => {
     const before = await readBook()
     let book = before
+    // The engine reports (an empty heartbeat too): pages stop relaying while it does.
+    if (fromEngine) book = { ...book, engineReportAt: Date.now() }
     let booked = 0
     const missions = reports.length ? await allMissions(Date.now()) : []
     for (const report of reports.slice(0, 200)) {

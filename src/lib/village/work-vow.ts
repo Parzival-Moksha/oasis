@@ -137,6 +137,8 @@ export interface WorkFile {
    * (2026-11-19, "fold in"). His Profile level from then on = this balance + his Mindcraft XP.
    */
   profileFold?: { oldXp: number; at: number }
+  /** When the agent engine last reported agent work (or its heartbeat): while recent, pages don't relay. */
+  engineReportAt?: number
   /** The mission an agent said it is working on, by agent name (lower case): wins over the missions' `who`. */
   agentMissions?: Record<string, string>
   /** Agent hours: the latest event booked per agent and kind, so a replayed or doubled event is not booked twice. */
@@ -199,6 +201,7 @@ export function parseWorkFile(value: unknown): WorkFile {
     file.active = { file: raw.active.file, title: String(raw.active.title || raw.active.file), priority: num(raw.active.priority), startedAt: num(raw.active.startedAt) }
   }
   if (typeof raw.released === 'string') file.released = raw.released
+  if (typeof raw.engineReportAt === 'number' && raw.engineReportAt > 0) file.engineReportAt = raw.engineReportAt
   if (typeof raw.releasedSeq === 'number') file.releasedSeq = raw.releasedSeq
   if (raw.profileFold && typeof raw.profileFold === 'object' && typeof raw.profileFold.oldXp === 'number' && raw.profileFold.oldXp >= 0) file.profileFold = { oldXp: Math.floor(raw.profileFold.oldXp), at: num(raw.profileFold.at) }
   if (raw.settings && typeof raw.settings.freeValor === 'number' && raw.settings.freeValor >= 0 && raw.settings.freeValor <= 1) file.settings = { freeValor: raw.settings.freeValor }
@@ -907,6 +910,8 @@ export interface WorkSnapshot {
   counting: boolean
   /** The agents' working hours: today, yesterday, the mark reached today and the next one. History: ?agentHours=1. */
   agentHours: { today: number; yesterday: number; best: { date: string; seconds: number } | null; mark: string | null; next: { hours: number; label: string } | null }
+  /** Who books the agents' hours: the engine (it reported in the last 15 min), or open pages. */
+  agentHoursFrom: 'engine' | 'page'
   /** Valor with nothing in focus (the owner's setting, 0.7 by default) and when a day ends. */
   settings: { freeValor: number; dayStartsAt: string }
   rule: string
@@ -952,6 +957,7 @@ export function workSnapshot(file: WorkFile, now: number, offsetMinutes = localO
     active: file.active,
     counting: Boolean(file.holder && now - file.holder.at < 60_000),
     settings: { freeValor: freeValor(file), dayStartsAt: '04:20' },
+    agentHoursFrom: file.engineReportAt && now - file.engineReportAt < 15 * 60_000 ? 'engine' : 'page',
     agentHours: (() => {
       const history = agentHoursHistory(file)
       const at = (d: string) => history.find(day => day.date === d)?.seconds || 0

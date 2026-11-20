@@ -123,6 +123,9 @@ let workTimer: number | null = null
 
 function queueAgentWork(report: AgentWorkReport): void {
   if (!maySend()) return
+  // The engine books the agents' hours itself (it sees every turn, window open or not); pages relay only
+  // while it doesn't (an engine started before 2026-11-20).
+  if (state.snapshot?.agentHoursFrom === 'engine') return
   workQueue.push(report)
   if (workTimer !== null) return
   workTimer = window.setTimeout(() => {

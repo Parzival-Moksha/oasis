@@ -39,6 +39,8 @@ import { listenScribe, hasLiveScribe, LIVE_SCRIBE_MODEL } from './scribe-live.js
 import { readTextFile, serveAttachment, writeTextFile } from './files.js';
 import { startClipWatchdog, stopClipWatchdog, clipWatchdogState } from './clip-watchdog.js';
 import { startTelegram } from './telegram.js';
+import { AgentHours } from './agent-hours.js';
+import { tokenHeaders } from './token.js';
 import { listVoices } from './voice.js';
 import { createStage, resolveStageAgent } from './stage.js';
 import fs from 'node:fs';
@@ -98,6 +100,8 @@ const BACKLOG = 400;
 
 // ------------------------------------------------------------------ hub
 const agents = new Map(); // id -> Agent | Observer | HookObserver
+/** The agents' working hours, booked in the Oasis's work book from here, open page or not (agent-hours.js). */
+const agentHours = new AgentHours({ headers: tokenHeaders, enabled: process.env.OASIS_AGENT_HOURS !== '0' && process.env.OASIS_FAKE_CLAUDE !== '1', log: (...a) => hub.log(...a) });
 const backlog = new Map(); // id -> events[]
 const clients = new Set();
 let pendingShow = null; // { agentId, at }: the agent /oasis asked to show, for the page that is about to connect
@@ -128,6 +132,7 @@ const hub = {
     }
     broadcast({ type: 'event', event });
     telegram?.onEvent(event);
+    agentHours.onEvent(event, agents.get(agentId));
     if (/^(status|init|meta|model|mode|effort|eyes|speak|voice|chrome|schedule|account|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
   },
   eyes: (agentId) => captureEyes(agentId),
@@ -1236,6 +1241,7 @@ server.listen(PORT, HOST, () => {
   journal.load();
   journal.beat();
   // Telegram first (it only starts polling on the next tick): a resumed agent that owes a reply there is known to it.
+  agentHours.start();
   telegram = startTelegram({ port: PORT, root: ROOT, log: hub.log, journal, listAgents: snapshots, send: (agentId, text, opts) => commands.send({ agentId, text, ...(opts?.source ? { source: opts.source } : {}) }), interrupt: (agentId) => commands.interrupt({ agentId }) });
   void restoreRoster();
 });
