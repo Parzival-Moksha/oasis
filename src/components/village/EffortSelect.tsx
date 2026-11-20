@@ -20,7 +20,7 @@ export function EffortSelect({ agent }: { agent: EngineAgentState }) {
   return (
     <KitSelectField
       label="Thinking"
-      hint="How hard the model thinks before it answers. Changes right away, no restart."
+      title="How hard the model thinks before it answers. Changes right away, no restart."
         value={current}
         disabled={busy}
         onChange={event => {

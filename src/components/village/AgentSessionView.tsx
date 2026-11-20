@@ -29,7 +29,6 @@ import { getOlderHistoryState, loadOlderHistory, noteThreadScroll, retryOlderHis
 import { formatMessageTime, fullMessageTime } from '../../lib/village/message-time'
 import { hideSpokenLive, splitSpoken } from '../../lib/village/village-spoken'
 import { SpokenAgentContext, SpokenReply } from './CompanionToggles'
-import { AgentSettingsButton } from './AgentSettingsMenu'
 import { VoiceClip } from './VoiceMessage'
 import { attachmentKind, downloadInPlace } from '../../lib/village/attachment-kind'
 import { openMdReader } from '../../lib/village/md-reader'
@@ -760,8 +759,6 @@ export function SessionWindowHeader({ agent, nearby, screen = false }: { agent: 
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <StatusPill status={status} label={status === 'needs-decision' ? 'needs you' : status} />
-          {/* The agent's settings (voice, speed, avatar, colour) on its full screen too. */}
-          {screen && <AgentSettingsButton agent={agent} large />}
           {/* Where the E panel has its buttons (the owner, 2026-11-20): back to the side panel (E), close (F or Esc). */}
           {screen && (
             <button

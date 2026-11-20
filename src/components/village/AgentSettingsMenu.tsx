@@ -1,7 +1,7 @@
 'use client'
 
 // ░▒▓ AGENT SETTINGS — one menu per agent: its voice and speed, its avatar, its colour, and the look of all chats ▓▒░
-// The gear in the agent window's header, on the side panel (E) and on the agent's full screen (F).
+// The Settings tab of the agent's panel, on the side panel (E) and on the agent's full screen (F) (AgentControls).
 //   Character its role in a sentence and a short "who you are", the owner's words or the agent's own; with its look
 //             and its place, which the Oasis keeps up to date (engine character.js). The agent is told what is here.
 //   Voice     one of twenty ElevenLabs voices (or the one the agent picked for itself) and how fast it talks (0.5x to 3x), per agent, remembered per session
@@ -12,8 +12,8 @@
 //   Colour    this agent's chat background (lib/village/panel-look.ts).
 //   All chats transparency and blur, for every agent.
 
-import { KitToggle } from '@/components/ui-kit'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { KitSlider, KitToggle } from '@/components/ui-kit'
+import { useState, useSyncExternalStore } from 'react'
 import { AgentSelectionSection } from './AgentSelectionSection'
 import { CharacterSection } from './CharacterSection'
 import { RenameSection } from './RenameSection'
@@ -172,8 +172,13 @@ function WalkingSection({ agentId, agentKey, name }: { agentId: string; agentKey
   )
 }
 
-export function AgentSettingsButton({ agent, large = false }: { agent: Pick<EngineAgentState, 'id' | 'name' | 'sessionId' | 'owned' | 'speak' | 'voiceChoice' | 'title' | 'cwd' | 'kind' | 'schedule' | 'appointments' | 'nextWake' | 'wakesToday'>; large?: boolean }) {
-  const [open, setOpen] = useState(false)
+/**
+ * Everything an agent's settings hold: its name, who it is, its schedule, voice, walking, home, selection, avatar,
+ * colour, and the look of all chats. Shown in its panel's Settings tab (AgentControls), in the side panel (E) and on
+ * the full screen (F). Until 2026-11-20 they rolled down from a gear in the header; the owner: "this entire gear icon
+ * that rolls down, all that needs to go to the settings menu".
+ */
+export function AgentSettingsSections({ agent }: { agent: Pick<EngineAgentState, 'id' | 'name' | 'sessionId' | 'owned' | 'speak' | 'voiceChoice' | 'title' | 'cwd' | 'kind' | 'schedule' | 'appointments' | 'nextWake' | 'wakesToday'> }) {
   const [gallery, setGallery] = useState(false)
   const [thumbFailed, setThumbFailed] = useState(false)
   useSyncExternalStore(subscribePanelLook, getPanelLookVersion, () => 0)
@@ -184,100 +189,71 @@ export function AgentSettingsButton({ agent, large = false }: { agent: Pick<Engi
   const { skin, picked } = getVillageAgentSkin(agentKey)
   const avatar = avatarLabel(skin)
   const name = agentDisplayName(agent as EngineAgentState)
-  const boxRef = useRef<HTMLDivElement>(null)
-
-  // A click outside closes it.
-  useEffect(() => {
-    if (!open) return
-    const onDown = (event: PointerEvent) => {
-      if (boxRef.current && !boxRef.current.contains(event.target as Node)) setOpen(false)
-    }
-    window.addEventListener('pointerdown', onDown, { capture: true })
-    return () => window.removeEventListener('pointerdown', onDown, { capture: true })
-  }, [open])
-
-  const size = large ? 'h-[30px] w-[30px]' : 'h-[26px] w-[26px]'
   return (
-    <div ref={boxRef} className="relative" onKeyDown={event => event.stopPropagation()}>
+    <div data-agent-settings-sections className="text-left text-[11px] font-normal normal-case tracking-normal" onKeyDown={event => event.stopPropagation()}>
+      {/* Its name (engine rename): only agents the Oasis runs; a session in another window keeps its own. */}
+      {agent.owned && <RenameSection agentId={agent.id} name={agent.name} />}
+      {/* Who it is: role and who-you-are, kept by the engine as a card per agent (CharacterSection). */}
+      <CharacterSection agentId={agent.id} name={name} />
+      {/* When it wakes up on its own (engine schedule.js). Only agents the Oasis runs can be woken. */}
+      {agent.owned && <ScheduleSection agent={agent} name={name} />}
+      {agent.owned && <VoiceSection agent={agent} agentKey={agentKey} />}
+      <WalkingSection agentId={agent.id} agentKey={agentKey} name={agent.name} />
+      <HomeSection agentKey={agentKey} name={name} />
+      <AgentSelectionSection agentId={agent.id} agentKey={agentKey} name={agent.name} />
+
+      <div className={HEADING}>Avatar · {name}</div>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
-        title="Settings for this agent: voice and speed, when it walks to you, avatar, colour; transparency and blur for all agent chats"
-        aria-label="Agent settings"
-        aria-expanded={open}
-        data-agent-settings
-        className={`flex ${size} items-center justify-center rounded-md border text-white/80 transition hover:bg-white/15 ${open ? 'border-white/45 bg-white/15' : 'border-white/15 bg-white/5'}`}
+        data-agent-avatar
+        onClick={() => setGallery(true)}
+        title={`Avatar: ${avatar.name}${picked ? ' (your pick)' : ' (automatic)'}. Click to choose another.`}
+        className="mb-3 flex w-full items-center gap-2 rounded border border-white/15 bg-white/5 py-1 pl-1 pr-2 text-left transition hover:bg-white/15"
       >
-        <svg width={large ? 16 : 14} height={large ? 16 : 14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
-        </svg>
+        <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center overflow-hidden rounded bg-black/40">
+          {avatar.thumb && !thumbFailed
+            // eslint-disable-next-line @next/next/no-img-element -- a small local thumbnail
+            ? <img src={avatar.thumb} alt="" className="h-full w-full object-cover" onError={() => setThumbFailed(true)} />
+            : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" /></svg>}
+        </span>
+        <span className="min-w-0 flex-1 truncate">{avatar.name}<span className="text-white/45">{picked ? ' · your pick' : ' · automatic'}</span></span>
+        <span className="shrink-0 text-white/55">choose…</span>
       </button>
-      {open && (
-        <div data-agent-settings-menu className="absolute right-0 top-9 z-50 max-h-[min(78vh,760px)] w-[280px] overflow-y-auto rounded-lg border border-white/15 bg-slate-950/95 p-3 text-left text-[11px] font-normal normal-case tracking-normal text-white shadow-[0_18px_50px_rgba(0,0,0,0.6)]">
-          {/* Its name (engine rename): only agents the Oasis runs; a session in another window keeps its own. */}
-          {agent.owned && <RenameSection agentId={agent.id} name={agent.name} />}
-          {/* Who it is: role and who-you-are, kept by the engine as a card per agent (CharacterSection). */}
-          <CharacterSection agentId={agent.id} name={name} />
-          {/* When it wakes up on its own (engine schedule.js). Only agents the Oasis runs can be woken. */}
-          {agent.owned && <ScheduleSection agent={agent} name={name} />}
-          {agent.owned && <VoiceSection agent={agent} agentKey={agentKey} />}
-          <WalkingSection agentId={agent.id} agentKey={agentKey} name={agent.name} />
-          <HomeSection agentKey={agentKey} name={name} />
-          <AgentSelectionSection agentId={agent.id} agentKey={agentKey} name={agent.name} />
 
-          <div className={HEADING}>Avatar · {name}</div>
+      <div className={HEADING}>Colour · {name}</div>
+      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+        {ACCENT_SWATCHES.map(swatch => (
           <button
+            key={swatch}
             type="button"
-            data-agent-avatar
-            onClick={() => { setGallery(true); setOpen(false) }}
-            title={`Avatar: ${avatar.name}${picked ? ' (your pick)' : ' (automatic)'}. Click to choose another.`}
-            className="mb-3 flex w-full items-center gap-2 rounded border border-white/15 bg-white/5 py-1 pl-1 pr-2 text-left transition hover:bg-white/15"
-          >
-            <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center overflow-hidden rounded bg-black/40">
-              {avatar.thumb && !thumbFailed
-                // eslint-disable-next-line @next/next/no-img-element -- a small local thumbnail
-                ? <img src={avatar.thumb} alt="" className="h-full w-full object-cover" onError={() => setThumbFailed(true)} />
-                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" /></svg>}
-            </span>
-            <span className="min-w-0 flex-1 truncate">{avatar.name}<span className="text-white/45">{picked ? ' · your pick' : ' · automatic'}</span></span>
-            <span className="shrink-0 text-white/55">choose…</span>
-          </button>
+            onClick={() => setAgentAccent(agentKey, swatch)}
+            aria-label={`Colour ${swatch}`}
+            className={`h-5 w-5 rounded border ${swatch === accent ? 'border-white' : 'border-white/25'}`}
+            style={{ background: swatch }}
+          />
+        ))}
+        <input type="color" value={accent} onChange={event => setAgentAccent(agentKey, event.target.value)} aria-label="Custom colour" className="h-5 w-7 cursor-pointer rounded border border-white/25 bg-transparent p-0" />
+      </div>
+      <div className="mb-3 text-[10px] text-white/45">One colour for its name tag, the rim of its marker, its panel and its screen.</div>
 
-          <div className={HEADING}>Colour · {name}</div>
-          <div className="mb-1 flex flex-wrap items-center gap-1.5">
-            {ACCENT_SWATCHES.map(swatch => (
-              <button
-                key={swatch}
-                type="button"
-                onClick={() => setAgentAccent(agentKey, swatch)}
-                aria-label={`Colour ${swatch}`}
-                className={`h-5 w-5 rounded border ${swatch === accent ? 'border-white' : 'border-white/25'}`}
-                style={{ background: swatch }}
-              />
-            ))}
-            <input type="color" value={accent} onChange={event => setAgentAccent(agentKey, event.target.value)} aria-label="Custom colour" className="h-5 w-7 cursor-pointer rounded border border-white/25 bg-transparent p-0" />
-          </div>
-          <div className="mb-3 text-[10px] text-white/45">One colour for its name tag, the rim of its marker, its panel and its screen.</div>
-
-          <div className={HEADING}>All agent chats</div>
-          <label className="mb-2 block">
-            <span className="flex justify-between"><span>Transparency</span><span className="text-white/55">{Math.round((1 - look.opacity) * 100)}%</span></span>
-            <input type="range" min={0} max={95} value={Math.round((1 - look.opacity) * 100)} onChange={event => setPanelLook({ opacity: 1 - Number(event.target.value) / 100 })} className="w-full accent-sky-300" />
-          </label>
-          <label className="block">
-            <span className="flex justify-between"><span>Blur</span><span className="text-white/55">{look.blur}px</span></span>
-            <input type="range" min={0} max={24} value={look.blur} onChange={event => setPanelLook({ blur: Number(event.target.value) })} className="w-full accent-sky-300" />
-          </label>
-          <button
-            type="button"
-            onClick={() => { setPanelLook(DEFAULT_LOOK); setAgentAccent(agentKey, null); setAgentVoiceSpeed(agentKey, SPEECH_SPEED.default) }}
-            className="mt-3 text-[10.5px] text-white/55 underline-offset-2 hover:text-white hover:underline"
-          >
-            back to the defaults (look, colour, speed)
-          </button>
-        </div>
-      )}
+      <div className={HEADING}>All agent chats</div>
+      <KitSlider
+        label="Transparency"
+        value={Math.round((1 - look.opacity) * 100)}
+        min={0}
+        max={95}
+        step={1}
+        onChange={value => setPanelLook({ opacity: 1 - value / 100 })}
+        format={value => `${value}%`}
+      />
+      <KitSlider label="Blur" value={look.blur} min={0} max={24} step={1} onChange={value => setPanelLook({ blur: value })} format={value => `${value}px`} />
+      <button
+        type="button"
+        onClick={() => { setPanelLook(DEFAULT_LOOK); setAgentAccent(agentKey, null); setAgentVoiceSpeed(agentKey, SPEECH_SPEED.default) }}
+        className="mt-3 text-[10.5px] text-white/55 underline-offset-2 hover:text-white hover:underline"
+      >
+        back to the defaults (look, colour, speed)
+      </button>
       {gallery && (
         <AvatarGallery
           currentAvatarUrl={picked ? skin : null}

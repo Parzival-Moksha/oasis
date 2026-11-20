@@ -32,14 +32,13 @@ import { EffortSelect } from './EffortSelect'
 import { AccountSelect } from './AccountSelect'
 import { EyesToggle } from './EyesToggle'
 import { ChromeToggle } from './ChromeToggle'
-import { FollowToggle, VoiceToggle, FollowKitToggle, VoiceKitToggle } from './CompanionToggles'
-import { AgentSettingsButton } from './AgentSettingsMenu'
+import { VoiceKitToggle } from './CompanionToggles'
+import { AgentSettingsSections } from './AgentSettingsMenu'
 import { AcademyTrainToggle } from './VillageAcademyTrainee'
 import { usePanelLook } from './PanelLook'
 import { dismissVillageAgent } from './village-leave'
 import { AgentWhereBar } from './AgentWhereBar'
 import { AgentPanelTabBar, ThreadFontScale, ThreadFontSlider, useAgentPanelTab } from './AgentPanelTabs'
-import { FollowWorldsToggle } from './FollowWorldsToggle'
 import { KitSelectField } from '@/components/ui-kit'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 import { useKitStyle } from '@/components/ui-kit'
@@ -254,10 +253,6 @@ export function AgentSessionPanel() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {/* One settings menu per agent: voice and speed, avatar, colour, and the look of all chats. */}
-          <AgentSettingsButton agent={agent} />
-          {/* Watched sessions have no settings row: their Follow me switch sits here. */}
-          {!agent.owned && <FollowToggle agent={agent} />}
           <button
             type="button"
             disabled={busy}
@@ -325,12 +320,12 @@ export function AgentControls({ agent }: { agent: EngineAgentState }) {
   const mergedModels = useMemo(() => JSON.parse(mergedModelsKey) as ModelOption[], [mergedModelsKey])
   const models = mergeModelLists([agent.models, mergedModels])
   const currentModel = agent.model || 'default'
-  const agentKey = agent.sessionId || agent.id
   return (
     <div data-agent-settings-tab className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1 text-[11.5px]">
       {agent.owned ? (
         <>
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Model, mode and thinking: one row (the owner, 2026-11-20: "they should fit in one line"). */}
+          <div data-agent-model-row className="grid grid-cols-3 items-end gap-2 [&>*]:min-w-0 [&_select]:w-full">
           <KitSelectField
               label="Model"
               value={models.some(m => m.value === currentModel) ? currentModel : '__current'}
@@ -362,24 +357,24 @@ export function AgentControls({ agent }: { agent: EngineAgentState }) {
               <option value="">{`settings (${agent.effectivePermissionMode || '?'})`}</option>
               {(agent.runtime === 'hermes' ? HERMES_MODES : PERMISSION_MODES).map(mode => <option key={mode} value={mode}>{mode}</option>)}
           </KitSelectField>
+          <EffortSelect agent={agent} />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-          <EffortSelect agent={agent} />
           {/* Its Claude account (engine accounts.js), when there is more than one. */}
           <AccountSelect agent={agent} />
           <EyesToggle agent={agent} />
           <ChromeToggle agent={agent} />
           <AcademyTrainToggle agent={agent} />
           </div>
-          <FollowKitToggle agent={agent} />
           <VoiceKitToggle agent={agent} />
         </>
       ) : (
-        <div className="flex flex-wrap items-center gap-2"><AcademyTrainToggle agent={agent} /><FollowToggle agent={agent} /></div>
+        <div className="flex flex-wrap items-center gap-2"><AcademyTrainToggle agent={agent} /></div>
       )}
-      <FollowWorldsToggle agentKey={agentKey} name={agent.name} kit />
       <ThreadFontSlider />
       <div className="kit-hint">{agent.runtime === 'hermes' ? `Hermes${agent.remoteHost ? ` on ${agent.remoteHost}` : ''} · ` : ''}{modelLabel(agent)}</div>
+      {/* What the gear rolled down before (name, character, schedule, voice, walking, home, avatar, colour, all chats). */}
+      <AgentSettingsSections agent={agent} />
     </div>
   )
 }
