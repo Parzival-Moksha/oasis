@@ -84,8 +84,10 @@ export function useThreadFontScale(): number {
 /** The thread at the chosen text size (one scale on the whole thread, so every part grows together). */
 export function ThreadFontScale({ children }: { children: ReactNode }) {
   const scale = useThreadFontScale()
+  // It must fill the space it is given (the thread inside scrolls): full height, whatever its parent is. Zoomed, its
+  // own height is divided by the zoom so it still ends where the space ends.
   return (
-    <div data-thread-font={scale} className="flex min-h-0 flex-1 flex-col" style={scale === 1 ? undefined : { zoom: scale }}>
+    <div data-thread-font={scale} className="flex h-full min-h-0 flex-1 flex-col" style={scale === 1 ? undefined : { zoom: scale, height: `${100 / scale}%` }}>
       {children}
     </div>
   )
