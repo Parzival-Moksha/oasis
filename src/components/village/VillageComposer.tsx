@@ -30,6 +30,7 @@ import { VILLAGE_FONT_BODY, VILLAGE_TYPE_CLASS } from './village-status'
 import { showNotice } from '../forge/GlobalNotice'
 import { canInterrupt } from '../../lib/village/village-interrupt'
 import { VoiceMessageButton } from './VoiceMessage'
+import { KitToggle } from '@/components/ui-kit'
 import { getVoiceTypingEngine } from '../../lib/voice/voice-typing-engine'
 import { PictureChips, useComposerPictures } from './ComposerPictures'
 import { subscribeVillageSend, subscribeVillageVoiceStop, subscribeVillageVoiceToggle, takeVillageVoiceRequest } from './village-actions'
@@ -288,10 +289,9 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         {owned ? (
-          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-white/75" title='priority "now": stop at the next model request and answer this'>
-            <input type="checkbox" checked={urgent} onChange={event => setUrgent(event.target.checked)} className="accent-amber-400" />
-            urgent
-          </label>
+          <span title='priority "now": stop at the next model request and answer this'>
+            <KitToggle checked={urgent} onChange={setUrgent} label="urgent" accent="#fbbf24" data-composer-urgent={urgent ? 'on' : 'off'} />
+          </span>
         ) : <span />}
         <div className="flex items-center gap-1.5">
           {pendingUser > 0 && <span className="text-[10.5px] text-white/70">{pendingUser} queued</span>}
