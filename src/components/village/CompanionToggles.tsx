@@ -15,6 +15,7 @@ import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { showNotice } from '../forge/GlobalNotice'
 import { SpokenPlayer } from './SpokenPlayer'
 import { pressVillageFollow, useVillageFollowView } from './follow-view'
+import { KitToggle } from '@/components/ui-kit'
 import {
   getVillageFollowVersion,
   getAgentVoiceSettings,
@@ -69,6 +70,44 @@ export function FollowToggle({ agent }: { agent: Pick<EngineAgentState, 'id' | '
       </svg>
       {view === 'parked' ? 'parked' : view === 'council' ? 'council' : 'follow'}
     </button>
+  )
+}
+
+/**
+ * Follow me and Voice as the kit's toggles, for the agent's Settings tab (AgentControls): the same switches as the
+ * chips above, in the shared look.
+ */
+export function FollowKitToggle({ agent }: { agent: Pick<EngineAgentState, 'id' | 'name' | 'sessionId'> }) {
+  const key = agent.sessionId || agent.id
+  const view = useVillageFollowView(agent.id, key, agent.name)
+  const hint = view === 'parked'
+    ? 'On, but parked where you sent it: switch it to have it follow again.'
+    : view === 'council'
+      ? "On; it stands in the Council's circle until the Council ends."
+      : view === 'off' ? 'It stays at its place.' : 'It walks beside you in this world.'
+  return <KitToggle checked={view !== 'off'} onChange={() => pressVillageFollow(agent.id, key, agent.name)} label="Follow me" hint={hint} />
+}
+
+export function VoiceKitToggle({ agent }: { agent: EngineAgentState }) {
+  const [busy, setBusy] = useState(false)
+  if (!agent.owned) return null
+  const known = agent.speak !== null
+  const on = agent.speak === true
+  return (
+    <KitToggle
+      checked={on}
+      disabled={busy || !known}
+      label="Voice"
+      hint={!known ? 'Needs a newer agent engine.' : on ? 'Each reply ends with a short line it says out loud (ElevenLabs, a little per reply).' : 'Silent.'}
+      onChange={next => {
+        setBusy(true)
+        getAgentEngineClient()
+          .setSpeak(agent.id, next)
+          .then(() => { if (!next) stopVillageSpeech() })
+          .catch(error => showNotice(`Voice switch failed: ${error instanceof Error ? error.message : String(error)}`, 'error'))
+          .finally(() => setBusy(false))
+      }}
+    />
   )
 }
 

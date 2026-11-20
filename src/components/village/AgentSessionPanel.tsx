@@ -32,7 +32,7 @@ import { EffortSelect } from './EffortSelect'
 import { AccountSelect } from './AccountSelect'
 import { EyesToggle } from './EyesToggle'
 import { ChromeToggle } from './ChromeToggle'
-import { FollowToggle, VoiceToggle } from './CompanionToggles'
+import { FollowToggle, VoiceToggle, FollowKitToggle, VoiceKitToggle } from './CompanionToggles'
 import { AgentSettingsButton } from './AgentSettingsMenu'
 import { AcademyTrainToggle } from './VillageAcademyTrainee'
 import { usePanelLook } from './PanelLook'
@@ -40,6 +40,7 @@ import { dismissVillageAgent } from './village-leave'
 import { AgentWhereBar } from './AgentWhereBar'
 import { AgentPanelTabBar, ThreadFontScale, ThreadFontSlider, useAgentPanelTab } from './AgentPanelTabs'
 import { FollowWorldsToggle } from './FollowWorldsToggle'
+import { KitSelectField } from '@/components/ui-kit'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 import { useKitStyle } from '@/components/ui-kit'
 
@@ -330,9 +331,8 @@ export function AgentControls({ agent }: { agent: EngineAgentState }) {
       {agent.owned ? (
         <>
           <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-1">
-            model
-            <select
+          <KitSelectField
+              label="Model"
               value={models.some(m => m.value === currentModel) ? currentModel : '__current'}
               onChange={event => {
                 let model: string | null = event.target.value
@@ -344,16 +344,13 @@ export function AgentControls({ agent }: { agent: EngineAgentState }) {
                 getAgentEngineClient().setModel(agent.id, model).catch(error => showNotice(`Model switch failed: ${describeError(error)}`, 'error'))
               }}
               onKeyDown={event => event.stopPropagation()}
-              className="max-w-[150px] rounded border border-white/15 bg-black/50 px-1 py-0.5 text-[11px] text-white"
             >
               {!models.some(m => m.value === currentModel) && <option value="__current">{modelLabel(agent)}</option>}
               {models.map(model => <option key={model.value} value={model.value}>{model.displayName || model.value}</option>)}
               <option value={CUSTOM_MODEL_VALUE}>Other model id…</option>
-            </select>
-          </label>
-          <label className="flex items-center gap-1">
-            mode
-            <select
+          </KitSelectField>
+          <KitSelectField
+              label="Mode"
               value={agent.permissionMode || ''}
               onChange={event => {
                 const mode = event.target.value
@@ -361,12 +358,10 @@ export function AgentControls({ agent }: { agent: EngineAgentState }) {
                 void switchMode(agent.id, agent.name, mode)
               }}
               onKeyDown={event => event.stopPropagation()}
-              className="rounded border border-white/15 bg-black/50 px-1 py-0.5 text-[11px] text-white"
             >
               <option value="">{`settings (${agent.effectivePermissionMode || '?'})`}</option>
               {(agent.runtime === 'hermes' ? HERMES_MODES : PERMISSION_MODES).map(mode => <option key={mode} value={mode}>{mode}</option>)}
-            </select>
-          </label>
+          </KitSelectField>
           </div>
           <div className="flex flex-wrap items-center gap-2">
           <EffortSelect agent={agent} />
@@ -375,9 +370,9 @@ export function AgentControls({ agent }: { agent: EngineAgentState }) {
           <EyesToggle agent={agent} />
           <ChromeToggle agent={agent} />
           <AcademyTrainToggle agent={agent} />
-          <FollowToggle agent={agent} />
-          <VoiceToggle agent={agent} />
           </div>
+          <FollowKitToggle agent={agent} />
+          <VoiceKitToggle agent={agent} />
         </>
       ) : (
         <div className="flex flex-wrap items-center gap-2"><AcademyTrainToggle agent={agent} /><FollowToggle agent={agent} /></div>
