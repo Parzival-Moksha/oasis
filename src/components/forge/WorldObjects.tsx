@@ -1904,7 +1904,8 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
     const animId = activityAnimationId || ''
     if (!animId || !vrm) { setActivityClip(null); return }
     let cancelled = false
-    setActivityClip(null)
+    // The clip playing now stays until the next one is ready (an agent changing idles blends across, no dip to the
+    // plain idle in between).
     loadAnimationClip(animId).then(clip => {
       if (!clip || cancelled) return
       const retargeted = isUALAnimation(animId)
@@ -1952,9 +1953,11 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
 
     // Nothing playing yet in this mixer (a fresh mount): the first clip starts at full weight, no fade from the bind pose.
     const first = !currentActionRef.current
+    // One standing clip into another (an agent's idles taking turns): a slower blend, so it reads as a change of pose.
+    const fade = activeAnimRef.current === 'activity' && target === 'activity' ? 0.6 : 0.3
     // Fade out current action
     if (currentActionRef.current) {
-      currentActionRef.current.fadeOut(0.3)
+      currentActionRef.current.fadeOut(fade)
       currentActionRef.current = null
     }
 
@@ -1990,7 +1993,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
           v.scene.visible = true
           posedVrmScenes.add(v.scene)
         }
-      } else action.reset().fadeIn(0.3).play()
+      } else action.reset().fadeIn(fade).play()
       currentActionRef.current = action
     }
 

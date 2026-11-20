@@ -227,6 +227,30 @@ export function AgentsTab() {
 
         <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
           <div
+            role="switch"
+            aria-checked={settings.agentIdleVariety !== false}
+            data-agent-idle-variety={settings.agentIdleVariety !== false ? 'on' : 'off'}
+            onClick={() => updateSetting('agentIdleVariety', settings.agentIdleVariety === false)}
+            className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
+              settings.agentIdleVariety !== false ? 'bg-cyan-600 shadow-lg shadow-cyan-500/30' : 'bg-gray-700'
+            }`}
+          >
+            <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${
+              settings.agentIdleVariety !== false ? 'translate-x-5' : 'translate-x-0.5'
+            }`} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">Idle variety</div>
+            <div className="text-[10px] text-gray-500">
+              {settings.agentIdleVariety !== false
+                ? 'Waiting for you: torch, spell, folded arms, sword, swim. Working: phone, fixing, chopping. Each agent takes turns in its own order.'
+                : 'One pose each: folded arms while waiting for you, the phone while working.'}
+            </div>
+          </div>
+        </label>
+
+        <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
+          <div
             onClick={() => updateSetting('agentActionMode', settings.agentActionMode === 'embodied' ? 'instant' : 'embodied')}
             className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
               settings.agentActionMode === 'embodied' ? 'bg-cyan-600 shadow-lg shadow-cyan-500/30' : 'bg-gray-700'

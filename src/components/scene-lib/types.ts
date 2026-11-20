@@ -24,6 +24,8 @@ export interface OasisSettings {
   agentWalkSpeed: number
   agentConjureDurationMs: number
   agentScreenshotSettleMs: number
+  /** Village: agents take turns through several idles while they wait or work (src/lib/village/agent-idles.ts). */
+  agentIdleVariety: boolean
   /** Village: which agents show the glass screen above their desk (src/lib/village/desk-screens.ts). */
   villageDeskScreens: 'off' | 'nearest' | 'all'
   /** Village: the Academy (the skill tree and stone trainees). */

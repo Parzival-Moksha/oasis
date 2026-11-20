@@ -103,10 +103,10 @@ import {
   villageLipSyncId,
 } from './village-companion'
 import { SettingsContext } from '../scene-lib/contexts'
+import { clipForPose, holdSeconds, type AgentPose } from '../../lib/village/agent-idles'
 import { DESK_SCREENS_DEFAULT, DESK_SCREEN_LIMIT, isDeskScreensMode, pickDeskScreens, type DeskDistance } from '../../lib/village/desk-screens'
 import { useKitStyle } from '@/components/ui-kit'
 
-const WORK_ANIMATION_ID = 'ual-talking'
 /** Helper labels show for the agents near the camera (the rule desk screens had before the setting). */
 const NEAR_AGENTS_MAX = 6
 /** Village overlays stay under the HUD and panels (drei's default z-range is ~16M). */
@@ -124,6 +124,24 @@ const PREFERRED_BODIES = [
   'EYEWizard', 'Juanita', 'LadyFawn', 'Mr', 'StitchWitch', 'Witch', 'VIPE_Hero__2723', 'VIPE_Hero__2784',
   'VIPE_Hero__2799', 'VIPE_Hero__2770', 'CoolAlien', 'CoolGuitar', 'EYE_Diviner', 'King_Mutatio',
 ].map(name => `/avatars/gallery/${name}.vrm`)
+
+/**
+ * What this agent's body plays while it stands (src/lib/village/agent-idles.ts): talking when it talks to the owner,
+ * a waiting idle when it needs him, a working one while it works, taking turns through its own order every 18 to
+ * 36 s. Settings > Agents "Idle variety" off: one clip per state.
+ */
+function useAgentPoseClip(agentId: string, pose: AgentPose): string | null {
+  const { settings } = useContext(SettingsContext)
+  const variety = settings.agentIdleVariety !== false
+  const [round, setRound] = useState(0)
+  const cycles = variety && (pose === 'waiting' || pose === 'working')
+  useEffect(() => {
+    if (!cycles) return
+    const timer = window.setInterval(() => setRound(r => r + 1), holdSeconds(agentId) * 1000)
+    return () => window.clearInterval(timer)
+  }, [agentId, cycles])
+  return clipForPose(agentId, pose, round, variety)
+}
 
 function useBodyPool(): string[] {
   return useMemo(() => {
@@ -704,6 +722,13 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
     const speech = getVillageSpeech()
     return speech?.agentId === agentId && speech.phase === 'speaking'
   }, () => false)
+  // In the F view it stands still and looks at you while it talks (the gesturing clip turns the head away from the camera).
+  const pose: AgentPose = focused && onScreen ? 'resting'
+    : speaking ? 'talking'
+    : needsSince !== null ? 'waiting'
+    : status === 'working' ? 'working'
+    : 'resting'
+  const poseClip = useAgentPoseClip(agentId, pose)
   const head = useRef<THREE.Group>(null)
   useEffect(() => {
     registerVillageHead(agentId, head.current)
@@ -770,8 +795,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
                 path={`${avatarUrl}#village`}
                 scale={1}
                 displayName={name}
-                // In the F view it stands still and looks at you while it talks (the gesturing clip turns the head away from the camera).
-                activityAnimationId={combatPose ? combatPose.animationId : (status === 'working' || speaking) && !(focused && onScreen) ? WORK_ANIMATION_ID : null}
+                activityAnimationId={combatPose ? combatPose.animationId : poseClip}
                 activityOnce={Boolean(combatPose)}
                 moving={follower.walking && !combatPose}
                 lipSyncId={villageLipSyncId(agentId)}

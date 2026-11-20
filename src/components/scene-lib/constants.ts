@@ -36,6 +36,7 @@ export const defaultSettings: OasisSettings = {
   agentWalkSpeed: 3,
   agentConjureDurationMs: 3000,
   agentScreenshotSettleMs: 220,
+  agentIdleVariety: true,
   villageDeskScreens: 'off',
   villageAcademy: true,
   villageAcademyTree: false,
