@@ -24,7 +24,7 @@ import { Journal, journalFileFor } from './journal.js';
 import { restartLine, transcriptTurnOpen, wasMidTurn } from './resume.js';
 import { Characters, characterNote, cardStamp, charactersDirFor } from './character.js';
 import { Looks } from './looks.js';
-import { Accounts, CLI, accountsFilesFor } from './accounts.js';
+import { Accounts, CACHE_COLD_MS, CLI, accountsFilesFor, paceLine } from './accounts.js';
 import { tinyTurn } from './probe.js';
 import { LIMIT_RESUME_TEXT } from './agent.js';
 import { Scheduler, DEFAULT_PROMPT, EVERY, REPEATS, appointmentLabel, describeSchedule, localDate, normalizeAppointment, normalizeSchedule, parseWhen, scheduleSettingsFileFor } from './schedule.js';
@@ -138,7 +138,7 @@ const hub = {
   wakesToday: (agent) => scheduler.countToday(agent),
   scheduleCheck: (agent) => { try { scheduler.check(agent); } catch (e) { hub.log(`[${agent.name}] schedule check failed: ${e.message}`); } },
   /** Claude accounts (accounts.js). The token only ever goes into a child's environment (accountEnv). */
-  chooseAccount: (agent) => accounts.choose({ pin: agent.accountPin }) || accountComingBackFirst(),
+  chooseAccount: (agent) => accounts.choose(accountAsk(agent)) || accountComingBackFirst(),
   accountEnv: (id) => accounts.envFor(id),
   accountLabel: (id) => accountLabel(id),
   noteAccount: (id, account) => accounts.noteAccount(id, account),
@@ -147,6 +147,9 @@ const hub = {
   /** The owner wrote to an agent that waits for an account: ask the accounts now rather than trust their reset times. */
   checkAccountsNow: () => { void checkOutAccounts({ asked: true }).catch((e) => hub.log(`accounts: check failed: ${e.message}`)); },
   firstAccountReset: () => accounts.firstReset(),
+  /** When an account is back from being out (ms), or null. */
+  accountBackAt: (id) => accounts.view().accounts.find((a) => a.id === id)?.exhaustedUntil || null,
+  now: () => now(),
   onLimit: (agent, limit) => failover(agent, limit),
   /** The who-you-are note for an agent and what it was made from (agent.js sends it when due). */
   character: (agent) => characterFor(agent),
@@ -273,6 +276,33 @@ function accountLabel(id) {
   const a = accounts.get(id);
   if (!a) return id;
   return a.id === CLI && a.plan ? `CLI login (${a.plan})` : a.label;
+}
+
+/**
+ * What choose() needs to know of an agent (accounts.js): its pin, its account, Chrome, how long since its last turn
+ * (its prompt cache), its last move, and how many other agents are active on each account (a turn in the last hour).
+ */
+function accountAsk(agent) {
+  const t = now();
+  const loads = {};
+  for (const other of ownedAgents()) {
+    if (other === agent || !other.accountId || !other.proc) continue;
+    const last = other.lastTurnAt || other.lastOutcome?.at || 0;
+    const active = other.turnOpenAt || (last && t - last < CACHE_COLD_MS);
+    if (!active) continue;
+    const id = other.accountId === CLI && accounts.aliasOf(CLI) ? accounts.aliasOf(CLI) : other.accountId;
+    loads[id] = (loads[id] || 0) + 1;
+  }
+  const busy = Boolean(agent.turnOpenAt);
+  // Its last turn: this run's, else the one the roster kept from before an engine restart.
+  const last = agent.lastTurnAt || agent.lastOutcome?.at || 0;
+  return { pin: agent.accountPin, current: agent.accountId, chrome: agent.chrome, idleMs: busy ? 0 : last ? t - last : Infinity, movedAt: agent.accountMovedAt || 0, loads };
+}
+
+/** Per account, the week used against the week gone and the dry date at the last 6 h's rate (accounts.js paceLine). */
+function paceLines() {
+  const t = now();
+  return accounts.view(t).accounts.filter((a) => !a.sameAs).map((a) => paceLine(accountLabel(a.id), a.pace, t));
 }
 
 /** Every account is out: start a process on the one that comes back first (a start spends nothing). */
@@ -961,7 +991,7 @@ const server = http.createServer(async (req, res) => {
   if (!requestAllowed(req, url)) return sendJson(res, 403, { error: 'not allowed: this Oasis asks for its local key (open it with /oasis or scripts/oasis.mjs)' });
   try {
     if (req.method === 'GET' && url.pathname.startsWith('/file/')) return serveAttachment(url.pathname.slice('/file/'.length), res, req);
-    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, clients: clients.size, restart: restartInfo(), accounts: accounts.view(), claude: resolveClaude(), ears: earsStatus(), clipWatchdog: clipWatchdogState(), liveScribe: { model: LIVE_SCRIBE_MODEL, ready: hasLiveScribe() }, places: { missions: setting('missionsDir'), grill: setting('grillFile') } });
+    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, clients: clients.size, restart: restartInfo(), accounts: accounts.view(), pace: paceLines(), claude: resolveClaude(), ears: earsStatus(), clipWatchdog: clipWatchdogState(), liveScribe: { model: LIVE_SCRIBE_MODEL, ready: hasLiveScribe() }, places: { missions: setting('missionsDir'), grill: setting('grillFile') } });
     if (req.method === 'GET' && url.pathname === '/api/agents') return sendJson(res, 200, snapshots());
     if (req.method === 'GET' && url.pathname === '/api/sessions') return sendJson(res, 200, await commands.listSessions({}));
     if (req.method === 'POST' && url.pathname === '/hook') {

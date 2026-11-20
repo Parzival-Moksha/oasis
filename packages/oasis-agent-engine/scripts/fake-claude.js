@@ -30,7 +30,9 @@ function turn(user) {
   out({ type: 'user', isReplay: true, uuid: user.uuid, session_id: session, message: user.message });
   const limit = s.out?.[account];
   const weekly = s.weekly?.[account];
-  log({ turn: true, text: text.slice(0, 200), refused: Boolean(limit), overloaded: Boolean(s.overload?.[account]) });
+  // The engine's notes ride as their own text blocks ([Oasis you: …], [Oasis account: …]): their first words, for tests.
+  const notes = typeof user.message?.content === 'string' ? [] : (user.message?.content || []).filter((b) => b.type === 'text' && /^\[Oasis /.test(b.text)).map((b) => b.text.slice(0, 80));
+  log({ turn: true, text: text.slice(0, 200), notes, refused: Boolean(limit), overloaded: Boolean(s.overload?.[account]) });
   if (limit) {
     // What the CLI sends when the account is out (the rate_limit_event first, then the error message and the result).
     const said = `You've hit your ${limit.window === 'seven_day' ? 'weekly' : '5-hour'} limit · resets 1:20pm (Europe/Budapest)`;

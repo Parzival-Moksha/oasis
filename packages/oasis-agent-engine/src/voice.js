@@ -51,7 +51,7 @@ export function voicePickNote(script) {
 export const VOICE_OFF_NOTE = '[Oasis voice: off now. No <spoken> line at the end of your replies any more.]';
 
 /** A text block that is one of the engine's own notes (eyes caption, voice note, who-you-are note): for the model, not for the thread. */
-export const ENGINE_NOTE = /^\[Oasis (eyes|voice|you|schedule): [^\]]*\]$/;
+export const ENGINE_NOTE = /^\[Oasis (eyes|voice|you|schedule|account): [^\]]*\]$/;
 
 /** A reply without its spoken line, for places that only show text (Telegram). */
 export function stripSpoken(text) {

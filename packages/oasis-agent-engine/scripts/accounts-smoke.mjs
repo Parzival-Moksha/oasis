@@ -94,10 +94,11 @@ try {
   const refused = await c.next((e) => c.events.indexOf(e) >= from2 && e.agentId === x.id && e.kind === 'turn.end' && e.limit);
   check('a refusal for usage is recognised', refused?.limit?.kind === 'usage_limit_reached' && refused.limit.account === 'a', JSON.stringify(refused?.limit));
   const again = await c.next((e) => c.events.indexOf(e) > c.events.indexOf(refused) && e.agentId === x.id && e.kind === 'turn.end');
-  check('the refused turn runs again on b, told to carry on', /^ok from b: Your last turn was cut off/.test(again?.result || ''), JSON.stringify(again?.result));
+  // Spread (accounts.js choose): the idle agent took b, so the refused one may go on on the CLI login; never on a.
+  check('the refused turn runs again on another account, told to carry on', /^ok from (b|cli): Your last turn was cut off/.test(again?.result || ''), JSON.stringify(again?.result));
   const starts = fakeLog().filter((l) => l.start);
   const xStarts = starts.filter((l) => l.session === x.sessionId);
-  check('same session, one process at a time', xStarts.length === 2 && xStarts[1].account === 'b' && fakeLog().some((l) => l.exit && l.pid === xStarts[0].pid && l.at <= xStarts[1].at), `${xStarts.map((l) => l.account).join(' -> ')}`);
+  check('same session, one process at a time', xStarts.length === 2 && ['b', 'cli'].includes(xStarts[1].account) && fakeLog().some((l) => l.exit && l.pid === xStarts[0].pid && l.at <= xStarts[1].at), `${xStarts.map((l) => l.account).join(' -> ')}`);
   await sleep(1500);
   const ySnap = (await c.cmd('listAgents')).find((a) => a.id === y.id);
   check('an idle agent on a moves to b at once', ySnap?.account?.id === 'b', JSON.stringify(ySnap?.account));
