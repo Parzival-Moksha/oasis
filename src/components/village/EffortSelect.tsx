@@ -8,6 +8,7 @@ import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { effortLevelsFor } from '../../lib/village/village-effort'
 import { showNotice } from '../forge/GlobalNotice'
+import { KitSelectField } from '@/components/ui-kit'
 
 export function EffortSelect({ agent }: { agent: EngineAgentState }) {
   const [busy, setBusy] = useState(false)
@@ -17,9 +18,9 @@ export function EffortSelect({ agent }: { agent: EngineAgentState }) {
   if (!levels.length && !agent.effort) return null // this model has no effort setting
   const current = agent.effort || ''
   return (
-    <label className="flex items-center gap-1" title="How hard the model thinks before it answers. Changes right away, no restart.">
-      thinking
-      <select
+    <KitSelectField
+      label="Thinking"
+      hint="How hard the model thinks before it answers. Changes right away, no restart."
         value={current}
         disabled={busy}
         onChange={event => {
@@ -36,12 +37,10 @@ export function EffortSelect({ agent }: { agent: EngineAgentState }) {
             .finally(() => setBusy(false))
         }}
         onKeyDown={event => event.stopPropagation()}
-        className="rounded border border-white/15 bg-black/50 px-1 py-0.5 text-[11px] text-white disabled:opacity-50"
       >
         <option value="">{`default${agent.resolvedEffort && !agent.effort ? ` (${agent.resolvedEffort})` : ''}`}</option>
         {levels.map(level => <option key={level} value={level}>{level}</option>)}
         {current && !levels.includes(current) && <option value={current}>{current}</option>}
-      </select>
-    </label>
+    </KitSelectField>
   )
 }

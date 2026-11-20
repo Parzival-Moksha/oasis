@@ -23,6 +23,7 @@ import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { showNotice } from '../forge/GlobalNotice'
 import { VRMCatalogRenderer } from '../forge/WorldObjects'
 import { academyKeyOf, getAcademyState, setAgentTraining, subscribeAcademy, traineeByKey, useAcademyEnabled } from './academy-store'
+import { KitToggle } from '@/components/ui-kit'
 
 const PEDESTAL_HEIGHT = 0.22
 const WAKE_S = 2.2
@@ -265,29 +266,17 @@ export function AcademyTrainToggle({ agent }: { agent: EngineAgentState }) {
     ? `In training (${trainee?.level.name}, ${trainee?.xp.score} XP): the skill tree shows its progress. Click to take it out of training.`
     : 'Train: put this agent in training. It stands as stone until it has Spirit and Body, and the skill tree shows its progress.'
   return (
-    <button
-      type="button"
-      data-academy-train={on ? 'on' : 'off'}
-      title={label}
-      aria-label={label}
-      aria-pressed={on}
+    <KitToggle
+      checked={on}
       disabled={busy}
-      onClick={() => {
+      label="Academy training"
+      hint={label}
+      onChange={() => {
         setBusy(true)
         void setAgentTraining(agent, !on)
           .then(result => { if (!result.ok) showNotice(`Academy: ${result.error}`, 'error') })
           .finally(() => setBusy(false))
       }}
-      onKeyDown={event => event.stopPropagation()}
-      className={`flex h-[22px] items-center gap-1 rounded border px-1.5 text-[10.5px] disabled:opacity-50 ${on
-        ? 'border-amber-300/60 bg-amber-400/20 text-amber-100'
-        : 'border-white/15 bg-black/50 text-white/45 hover:text-white/80'}`}
-    >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
-        <path d="M2 9l10-5 10 5-10 5z" fill={on ? 'currentColor' : 'none'} />
-        <path d="M6 11.5V16c2 2 10 2 12 0v-4.5" />
-      </svg>
-      {on ? 'training' : 'train'}
-    </button>
+    />
   )
 }
