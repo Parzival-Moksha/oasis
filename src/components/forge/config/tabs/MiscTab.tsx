@@ -9,6 +9,7 @@ import { SettingsContext } from '@/components/scene-lib/contexts'
 import type { SharedTabProps } from '../types'
 import { AppWindowSection } from '../AppWindowSection'
 import { MenuFeelSettings } from '@/components/game-menu/GameMenuExperiment'
+import { KitToggle } from '@/components/ui-kit'
 
 export function MiscTab({ consoleControl }: SharedTabProps) {
   const { settings, effectiveRp1Mode, rp1Locked, updateSetting } = useContext(SettingsContext)
@@ -34,30 +35,14 @@ export function MiscTab({ consoleControl }: SharedTabProps) {
 
       <section className="border-t border-white/10 pt-3">
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Modes</div>
-        <label className={`flex items-center gap-3 py-1.5 rounded px-1 -mx-1 transition-colors ${rp1Locked ? 'cursor-default opacity-90' : 'cursor-pointer group hover:bg-white/5'}`}>
-          <div
-            onClick={() => {
-              if (!rp1Locked) updateSetting('rp1Mode', !settings.rp1Mode)
-            }}
-            className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
-              effectiveRp1Mode ? 'bg-teal-600 shadow-lg shadow-teal-500/30' : 'bg-gray-700'
-            }`}
-          >
-            <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${
-              effectiveRp1Mode ? 'translate-x-5' : 'translate-x-0.5'
-            }`} />
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">Ready Player 1</div>
-            <div className="text-[10px] text-gray-500">
-              {rp1Locked
-                ? 'Locked for this world — exploration-only.'
-                : effectiveRp1Mode
-                  ? 'Hide all editing UI — exploration mode.'
-                  : 'Builder mode — full editing UI visible.'}
-            </div>
-          </div>
-        </label>
+        <KitToggle
+          checked={effectiveRp1Mode}
+          disabled={rp1Locked}
+          onChange={() => { if (!rp1Locked) updateSetting('rp1Mode', !settings.rp1Mode) }}
+          label="Ready Player 1"
+          hint={rp1Locked ? 'Locked for this world — exploration-only.' : effectiveRp1Mode ? 'Hide all editing UI — exploration mode.' : 'Builder mode — full editing UI visible.'}
+          data-setting="rp1-mode"
+        />
       </section>
 
       <section className="border-t border-white/10 pt-3">

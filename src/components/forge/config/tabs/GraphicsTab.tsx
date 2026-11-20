@@ -12,7 +12,7 @@ import { setGraphicsPref, type FlopSaverMode, type GroundSharpness, type ShadowM
 import { useSavedGraphicsPrefs } from '@/lib/use-graphics-prefs'
 import { useFlopCaps } from '@/lib/use-flop-caps'
 import { restNow } from '@/lib/away-mode'
-import { KitButton, KitSelectField } from '@/components/ui-kit'
+import { KitButton, KitSelectField, KitToggle } from '@/components/ui-kit'
 
 function Choice<T extends string | number>({ label, hint, value, options, name, onChange }: {
   label: string
@@ -89,37 +89,9 @@ const SHADOW_HINT: Record<ShadowMode, string> = {
   all: 'World objects cast shadows too. Costs the most per frame.',
 }
 
-function Toggle({
-  label,
-  active,
-  onChange,
-  accent = 'bg-purple-600',
-}: {
-  label: string
-  active: boolean
-  onChange: () => void
-  accent?: string
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={active}
-      onClick={onChange}
-      className="flex w-full items-center gap-3 py-1.5 text-left cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors"
-    >
-      <div
-        className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
-          active ? `${accent} shadow-lg shadow-purple-500/30` : 'bg-gray-700'
-        }`}
-      >
-        <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${
-          active ? 'translate-x-5' : 'translate-x-0.5'
-        }`} />
-      </div>
-      <span className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">{label}</span>
-    </button>
-  )
+/** An on/off row: the kit switch (the design picked in Settings > Experiments > Switches). */
+function Toggle({ label, active, onChange }: { label: string; active: boolean; onChange: () => void; accent?: string }) {
+  return <KitToggle checked={active} onChange={onChange} label={label} data-setting-switch={label} />
 }
 
 function Slider({

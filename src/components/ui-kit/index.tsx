@@ -153,14 +153,18 @@ export function KitProgress({ label, value, max, format, accent }: { label?: Rea
 /** Show switches in a design other than the one in use (the samples in Settings > Experiments). */
 export const KitToggleOverride = createContext<ToggleLookId | null>(null)
 
-export function KitToggle({ checked, onChange, label, hint, disabled, accent }: { checked: boolean; onChange: (next: boolean) => void; label: ReactNode; hint?: ReactNode; disabled?: boolean; accent?: string }) {
+export function KitToggle({ checked, onChange, label, hint, disabled, accent, ...data }: {
+  checked: boolean; onChange: (next: boolean) => void; label: ReactNode; hint?: ReactNode; disabled?: boolean; accent?: string
+  /** data-* attributes (what tests and agents find the switch by) go on the row. */
+  [attr: `data-${string}`]: string | undefined
+}) {
   const kit = useKitStyle()
   const override = useContext(KitToggleOverride)
   const look = useMenuLook()
   const design = override ?? look.toggle
   return (
-    <label data-kit-style={kit} data-toggle={design} data-on={checked ? '1' : '0'} className="kit-toggle" style={accent ? { ['--kit-accent' as string]: accent } : undefined}>
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={event => onChange(event.target.checked)} className="sr-only" />
+    <label {...data} data-kit-style={kit} data-toggle={design} data-on={checked ? '1' : '0'} className="kit-toggle" style={accent ? { ['--kit-accent' as string]: accent } : undefined}>
+      <input type="checkbox" role="switch" aria-checked={checked} checked={checked} disabled={disabled} onChange={event => onChange(event.target.checked)} className="sr-only" />
       <span className="kit-toggle-track"><span className="kit-toggle-knob" /></span>
       <span className="kit-toggle-text">{label}{hint && <span className="kit-hint">{hint}</span>}</span>
     </label>

@@ -5,6 +5,7 @@
 // Lab, and the per-spell Spell Sounds selector.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { KitToggle } from '@/components/ui-kit'
 import { useContext, useState, useSyncExternalStore } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent, getFootstepVolume, setFootstepVolume, subscribeFootstepVolume } from '@/lib/audio-manager'
@@ -198,18 +199,13 @@ export function SoundTab() {
             value={settings.ambientVolume}
             onChange={v => updateSetting('ambientVolume', v)}
           />
-          <label className="flex items-center gap-2 rounded-lg border border-violet-400/30 bg-violet-500/[0.06] p-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.spatialAudioEnabled}
-              onChange={e => updateSetting('spatialAudioEnabled', e.target.checked)}
-              className="w-3.5 h-3.5 accent-violet-500"
-            />
-            <div className="flex-1">
-              <div className="text-[11px] font-bold text-violet-200">3D spatial audio</div>
-              <div className="text-[10px] text-white/55">Bolts emit positional sound; volume falls off with distance from the camera</div>
-            </div>
-          </label>
+          <KitToggle
+            checked={settings.spatialAudioEnabled}
+            onChange={next => updateSetting('spatialAudioEnabled', next)}
+            label="3D spatial audio"
+            hint="Bolts emit positional sound; volume falls off with distance from the camera"
+            data-setting="spatial-audio"
+          />
         </div>
       </section>
 

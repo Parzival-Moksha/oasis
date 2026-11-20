@@ -1,5 +1,6 @@
 'use client'
 
+import { KitToggle } from '@/components/ui-kit'
 import { useEffect, useState } from 'react'
 import {
   DEFAULT_PORTAL_TRANSITION_SETTINGS,
@@ -115,15 +116,7 @@ export function PortalTransitionSettingsPanel() {
           <div className="text-[10px] text-cyan-300 uppercase tracking-wider font-mono">Portal Transition Lab</div>
           <div className="text-[9px] text-gray-500">Swallow, tunnel, reveal</div>
         </div>
-        <label className="flex items-center gap-1.5 text-[10px] text-gray-400">
-          <input
-            type="checkbox"
-            checked={settings.enabled}
-            onChange={event => patch({ enabled: event.target.checked })}
-            className="accent-cyan-400"
-          />
-          enabled
-        </label>
+        <KitToggle checked={settings.enabled} onChange={next => patch({ enabled: next })} label="Enabled" data-setting="portal-transition" />
       </div>
 
       <div className="grid grid-cols-3 gap-1.5">
@@ -168,15 +161,7 @@ export function PortalTransitionSettingsPanel() {
         >
           Reset
         </button>
-        <label className="ml-auto flex items-center gap-1.5 text-[10px] text-gray-400">
-          <input
-            type="checkbox"
-            checked={settings.rollReveal}
-            onChange={event => patch({ rollReveal: event.target.checked })}
-            className="accent-cyan-400"
-          />
-          Roll reveal
-        </label>
+        <span className="ml-auto"><KitToggle checked={settings.rollReveal} onChange={next => patch({ rollReveal: next })} label="Roll reveal" data-setting="portal-roll-reveal" /></span>
         <span className="text-[9px] text-gray-500 font-mono">{settings.rollReveal ? (rollReady ? 'ready' : 'loading') : 'off'}</span>
       </div>
     </div>

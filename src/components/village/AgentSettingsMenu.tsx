@@ -12,6 +12,7 @@
 //   Colour    this agent's chat background (lib/village/panel-look.ts).
 //   All chats transparency and blur, for every agent.
 
+import { KitToggle } from '@/components/ui-kit'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AgentSelectionSection } from './AgentSelectionSection'
 import { CharacterSection } from './CharacterSection'
@@ -146,15 +147,21 @@ function WalkingSection({ agentId, agentKey, name }: { agentId: string; agentKey
   return (
     <div className="mb-3">
       <div className={HEADING}>Walking · {name}</div>
-      <label className="mb-1 flex cursor-pointer items-start gap-2" title="When it needs a decision from you, has finished, or is stuck, it walks from its desk to you and waits in front of you. It waits there in silence: its spoken line plays when you open it (E or F). It goes back once you answered it, or opened its panel and closed it again. While you talk to another agent it waits a few metres back.">
-        <input type="checkbox" checked={come} data-agent-come={come ? 'on' : 'off'} onChange={event => setVillageCome(agentKey, event.target.checked)} className="mt-[2px] accent-amber-300" />
-        <span>Come to me when you need me</span>
-      </label>
-      <label className="flex cursor-pointer items-start gap-2" title="It walks beside you all the time (the same switch as “follow” in the panel).">
-        <input type="checkbox" checked={follow} data-agent-follow={view} onChange={event => setVillageFollowFor(agentId, agentKey, name, event.target.checked)} className="mt-[2px] accent-amber-300" />
-        <span>Follow me</span>
-      </label>
-      <FollowWorldsToggle agentKey={agentKey} name={name} />
+      <KitToggle
+        checked={come}
+        onChange={next => setVillageCome(agentKey, next)}
+        label="Come to me when you need me"
+        hint="When it needs a decision, has finished or is stuck, it walks to you and waits in silence; its line plays when you open it (E or F)."
+        data-agent-come={come ? 'on' : 'off'}
+      />
+      <KitToggle
+        checked={follow}
+        onChange={next => setVillageFollowFor(agentId, agentKey, name, next)}
+        label="Follow me"
+        hint="It walks beside you all the time (the same switch as “follow” in the panel)."
+        data-agent-follow={view}
+      />
+      <FollowWorldsToggle agentKey={agentKey} name={name} kit />
       {view === 'parked' && (
         <button type="button" data-agent-follow-again onClick={() => pressVillageFollow(agentId, agentKey, name)} className="ml-5 mt-0.5 text-[10.5px] text-amber-200/90 underline-offset-2 hover:underline">
           parked where you sent it · follow me again
