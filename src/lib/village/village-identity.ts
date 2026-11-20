@@ -35,6 +35,8 @@ export interface IdentityAgent {
   follow?: boolean
   /** The world it lives in (a world id); absent or null: the default village world. Companion's homes (village-worlds.ts). */
   homeWorld?: string | null
+  /** Follow across worlds: it is in whatever world the owner is in. Absent: the page's default (on for Anorak, off for the rest). */
+  followWorlds?: boolean
 }
 
 export interface IdentitySettings {
@@ -79,7 +81,7 @@ export function isIdentityKey(value: unknown): value is string {
   return typeof value === 'string' && KEY.test(value)
 }
 
-const FIELDS = ['seat', 'skin', 'skinPicked', 'seenAt', 'voice', 'voicePicked', 'speed', 'accent', 'come', 'follow', 'homeWorld'] as const
+const FIELDS = ['seat', 'skin', 'skinPicked', 'seenAt', 'voice', 'voicePicked', 'speed', 'accent', 'come', 'follow', 'homeWorld', 'followWorlds'] as const
 type FieldName = typeof FIELDS[number]
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
@@ -94,7 +96,7 @@ export function cleanField(name: FieldName, value: unknown): unknown {
     case 'speed': return finite(value) && value >= 0.3 && value <= 4 ? Math.round(value * 100) / 100 : undefined
     case 'accent': return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : undefined
     case 'homeWorld': return typeof value === 'string' && value.length > 0 && value.length <= 200 ? value : undefined
-    case 'skinPicked': case 'voicePicked': case 'come': case 'follow': return typeof value === 'boolean' ? value : undefined
+    case 'skinPicked': case 'voicePicked': case 'come': case 'follow': case 'followWorlds': return typeof value === 'boolean' ? value : undefined
   }
 }
 
