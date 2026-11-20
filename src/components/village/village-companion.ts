@@ -17,6 +17,7 @@
 // nothing can queue ramps on a suspended context the way the listener once did.
 
 import { speakInBrowser, stopBrowserSpeech } from '../../lib/village/browser-speech'
+import { detectSpokenLanguage } from '../../lib/village/spoken-language'
 import * as THREE from 'three'
 import { getAudioListener } from '../CameraController'
 import { registerLipSync, unregisterLipSync, type LipSyncController } from '../../lib/lip-sync'
@@ -738,6 +739,7 @@ export async function speakVillageAgent(agentId: string, rawText: string, settin
       const said = speakInBrowser(text, {
         voiceKey: voice,
         rate: settings.speed,
+        lang: detectSpokenLanguage(text),
         onEnd: () => {
           if (token !== speechToken) return
           setSpeech(null)

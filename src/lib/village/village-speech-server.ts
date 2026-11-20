@@ -9,6 +9,7 @@ import path from 'node:path'
 
 import type { ElevenLabsAlignment } from '@/lib/lip-sync-lab'
 import { SPOKEN_MAX_CHARS, cleanSpoken } from '@/lib/village/village-spoken'
+import { defaultModelSpeaks, detectSpokenLanguage } from '@/lib/village/spoken-language'
 import { VILLAGE_VOICES, clampModelSpeed, villageVoice } from '@/lib/village/village-voices'
 
 /** Voices from before each agent had its own (same ids as /api/media/voice): clips asked for by these names still resolve. */
@@ -51,6 +52,19 @@ export function resolveSpeechVoice(voice: unknown, env: EnvLike = process.env): 
 
 export function speechModel(env: EnvLike = process.env): string {
   return env.OASIS_VILLAGE_VOICE_MODEL || 'eleven_multilingual_v2'
+}
+
+/**
+ * The model for a line in `language` (spoken-language.ts; null: English or another language the default model
+ * knows). The default model when it speaks the language, so English lines are made exactly as before; else one
+ * that does (eleven_v4: 90+ languages, Hungarian among them, the same price per character as the default), told the
+ * language with `language_code`. OASIS_VILLAGE_VOICE_MODEL_OTHER swaps it (eleven_flash_v2_5: half the price, faster).
+ */
+export function speechModelFor(language: string | null, env: EnvLike = process.env): { model: string; languageCode: string | null } {
+  const model = speechModel(env)
+  if (!language || (model === 'eleven_multilingual_v2' && defaultModelSpeaks(language))) return { model, languageCode: null }
+  if (model !== 'eleven_multilingual_v2') return { model, languageCode: language }
+  return { model: env.OASIS_VILLAGE_VOICE_MODEL_OTHER || 'eleven_v4', languageCode: language }
 }
 
 /** The clip's name: what is said, by which voice and model, at which model speed (1 keeps the names clips had before speeds). */
@@ -106,12 +120,14 @@ export class SpeechError extends Error {
  * capped at SPOKEN_MAX_CHARS first, so a long or marked-up line can never cost more than that.
  * `speed`: ElevenLabs' own voice speed (0.7 to 1.2; the page plays the rest of a faster setting itself).
  */
-export async function speak(rawText: unknown, voice: unknown, options: { env?: EnvLike; fetcher?: typeof fetch; speed?: unknown } = {}): Promise<SpokenClip> {
+export async function speak(rawText: unknown, voice: unknown, options: { env?: EnvLike; fetcher?: typeof fetch; speed?: unknown; language?: unknown } = {}): Promise<SpokenClip> {
   const env = options.env || process.env
   const text = typeof rawText === 'string' ? cleanSpoken(rawText, SPOKEN_MAX_CHARS) : ''
   if (!text) throw new SpeechError('Nothing to say', 400)
   const voiceId = resolveSpeechVoice(voice, env)
-  const model = speechModel(env)
+  // Its language: the caller's word (a two- or three-letter code), else a look at the line itself.
+  const asked = typeof options.language === 'string' && /^[a-z]{2,3}$/.test(options.language) ? options.language : null
+  const { model, languageCode } = speechModelFor(asked ?? detectSpokenLanguage(text), env)
   const modelSpeed = clampModelSpeed(options.speed)
   const id = speechClipId(text, voiceId, model, modelSpeed)
   const dir = speechDir(env)
@@ -129,6 +145,7 @@ export async function speak(rawText: unknown, voice: unknown, options: { env?: E
       body: JSON.stringify({
         text,
         model_id: model,
+        ...(languageCode ? { language_code: languageCode } : {}),
         voice_settings: { stability: 0.42, similarity_boost: 0.78, style: 0.18, use_speaker_boost: true, ...(modelSpeed === 1 ? {} : { speed: modelSpeed }) },
       }),
     })
@@ -142,7 +159,7 @@ export async function speak(rawText: unknown, voice: unknown, options: { env?: E
     const alignment = isAlignment(payload.normalized_alignment) ? payload.normalized_alignment : isAlignment(payload.alignment) ? payload.alignment : null
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(path.join(dir, `${id}.mp3`), Buffer.from(payload.audio_base64, 'base64'))
-    await fs.writeFile(path.join(dir, `${id}.json`), JSON.stringify({ id, text, voiceId, model, modelSpeed, createdAt: Date.now(), alignment }), 'utf8')
+    await fs.writeFile(path.join(dir, `${id}.json`), JSON.stringify({ id, text, voiceId, model, ...(languageCode ? { language: languageCode } : {}), modelSpeed, createdAt: Date.now(), alignment }), 'utf8')
     void prune(dir)
     return { id, text, voiceId, alignment, modelSpeed, cached: false }
   })()

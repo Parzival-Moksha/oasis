@@ -50,12 +50,16 @@ export function stopBrowserSpeech(): void {
   window.speechSynthesis.cancel()
 }
 
-/** Say `text` in the browser's voice for `voiceKey`. Returns false when the browser cannot. `onEnd` runs once, at the end or on failure. */
-export function speakInBrowser(text: string, options: { voiceKey: string; rate?: number; onEnd?: () => void }): boolean {
+/**
+ * Say `text` in the browser's voice for `voiceKey`. Returns false when the browser cannot. `onEnd` runs once, at the
+ * end or on failure. `lang`: the line's own language (spoken-language.ts), so a Hungarian line gets one of the
+ * machine's Hungarian voices where it has one; else the page's language.
+ */
+export function speakInBrowser(text: string, options: { voiceKey: string; rate?: number; lang?: string | null; onEnd?: () => void }): boolean {
   if (!browserSpeechAvailable() || !text.trim()) return false
   stopBrowserSpeech()
   const utterance = new SpeechSynthesisUtterance(text)
-  const voice = pickBrowserVoice(window.speechSynthesis.getVoices(), options.voiceKey, document.documentElement.lang || navigator.language || 'en')
+  const voice = pickBrowserVoice(window.speechSynthesis.getVoices(), options.voiceKey, options.lang || document.documentElement.lang || navigator.language || 'en')
   if (voice) {
     utterance.voice = voice
     utterance.lang = voice.lang
